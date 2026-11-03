@@ -9616,6 +9616,20 @@ class ResponderTests(unittest.TestCase):
         self.assertIn("Передам владельцу", self.to_group(e)[-1]["text"])  # only once
         self.assertEqual(len(fake.calls("session.start")), 2)
 
+    def fake_codex(self):
+        """A signed-in Codex of its own in a temporary home: the tests need no codex on the machine, only bwrap."""
+        td = tempfile.TemporaryDirectory()
+        self.addCleanup(td.cleanup)
+        home = self.codex_home = td.name
+        os.makedirs(os.path.join(home, ".codex"))
+        open(os.path.join(home, ".codex", "auth.json"), "w").close()
+        os.makedirs(os.path.join(home, "pkg", "bin"))
+        codex = os.path.join(home, "pkg", "bin", "codex")
+        with open(codex, "w") as f:
+            f.write("#!/bin/sh\n")
+        os.chmod(codex, 0o755)
+        return {"HOME": home, "CC_CODEX_BIN": codex}
+
     def codex_case(self, env=None, rc=0, out="Ответ кодекса"):
         e, fake = responder_env(self)
         calls = []
@@ -9624,7 +9638,7 @@ class ResponderTests(unittest.TestCase):
             calls.append((cmd, kw))
             return subprocess.CompletedProcess(cmd, rc, out, "")
         e.bot._spawn = lambda fn, *a: fn(*a)
-        with mock.patch.dict(os.environ, env or {}), mock.patch.object(cc.subprocess, "run", run):
+        with mock.patch.dict(os.environ, {**self.fake_codex(), **(env or {})}), mock.patch.object(cc.subprocess, "run", run):
             e.bot.handle_update(gmsg("@cctg_bot вопрос про квоту"))
             e.bot.sdk_on_event({"event": "session.state", "data": {"session": fake.session(
                 id="s-aabbccdd", state="error", chat=True, detail="rate_limit")}})
@@ -9634,7 +9648,7 @@ class ResponderTests(unittest.TestCase):
         e, fake, calls = self.codex_case()
         cmd, kw = calls[0]
         self.assertTrue(cmd[0].endswith("bwrap"))  # Codex «read-only» still reads the home: confined to the clone
-        self.assertIn(os.path.expanduser("~"), cmd[cmd.index("--tmpfs", cmd.index("/tmp")) + 1:][:1])
+        self.assertIn(self.codex_home, cmd[cmd.index("--tmpfs", cmd.index("/tmp")) + 1:][:1])
         i = cmd.index("exec")
         self.assertEqual(cmd[i:i + 3], ["exec", "--sandbox", "read-only"])
         self.assertEqual(cmd[-2], "--")
@@ -9653,7 +9667,7 @@ class ResponderTests(unittest.TestCase):
             calls.append(cmd)
             return subprocess.CompletedProcess(cmd, 0, "Ответ кодекса", "")
         e.bot._spawn = lambda fn, *a: fn(*a)
-        with mock.patch.object(cc.subprocess, "run", run):
+        with mock.patch.dict(os.environ, self.fake_codex()), mock.patch.object(cc.subprocess, "run", run):
             e.bot.handle_update(gmsg("@cctg_bot как успехи?"))
             # verbatim from the 02.11 outage: the CLI's own result on an API key with no credit
             e.bot.sdk_on_event({"event": "turn.result", "data": {
@@ -9685,7 +9699,8 @@ class ResponderTests(unittest.TestCase):
             calls.append(cmd)
             return subprocess.CompletedProcess(cmd, rc if len(calls) == 1 else 0, "Ответ кодекса", "")
         e.bot._spawn = lambda fn, *a: fn(*a)
-        with mock.patch.object(cc.subprocess, "run", run):
+        with mock.patch.object(cc.subprocess, "run", run), mock.patch.object(
+                cc, "codex_boxed", lambda cwd, prompt, model="": ["codex", "exec"] + (["-m", model] if model else []) + ["--", prompt]):
             for i in range(n):
                 e.bot.handle_update(gmsg("@cctg_bot вопрос %d" % i, mid=10 + i))
         return e, fake, calls
