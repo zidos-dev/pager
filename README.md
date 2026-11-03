@@ -22,6 +22,21 @@
   </picture>
 </p>
 
+## Download
+
+| System | File | What happens |
+|---|---|---|
+| macOS (Apple silicon) | [cc-tgbot-Setup-macos-arm64.dmg](https://github.com/kavioavio/cc-tgbot/releases/latest/download/cc-tgbot-Setup-macos-arm64.dmg) | Open the app: it starts the install wizard in your browser |
+| macOS (Intel) | [cc-tgbot-Setup-macos-x86_64.dmg](https://github.com/kavioavio/cc-tgbot/releases/latest/download/cc-tgbot-Setup-macos-x86_64.dmg) | Same |
+| Windows | [cc-tgbot-Setup-windows.exe](https://github.com/kavioavio/cc-tgbot/releases/latest/download/cc-tgbot-Setup-windows.exe) | Starts the install wizard in your browser |
+| Linux / server | [cc-tgbot-linux.tar.gz](https://github.com/kavioavio/cc-tgbot/releases/latest/download/cc-tgbot-linux.tar.gz) or `git clone` | Unpack, then `python3 setup.py` |
+
+macOS will say it cannot check the developer: open System Settings → Privacy & Security, press Open Anyway, or run `xattr -dr com.apple.quarantine "/Volumes/cc-tgbot Setup/cc-tgbot Setup.app"`. The app copies its own Python to `~/.local/share/cc-tgbot` (keep it: the bot runs on it).
+
+Windows: SmartScreen may warn about an unknown publisher: More info → Run anyway. The bot itself runs in WSL2 (the wizard installs it there).
+
+Check the files against [SHA256SUMS](https://github.com/kavioavio/cc-tgbot/releases/latest/download/SHA256SUMS).
+
 Control your [Claude Code](https://docs.claude.com/en/docs/claude-code) background sessions from your phone:
 a Telegram bot with a `claude agents`-style control panel, per-session topics, a mini-app / installable PWA
 and push notifications. One Python file, standard library only (`cryptography` is optional, for push).

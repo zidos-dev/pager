@@ -22,6 +22,21 @@
   </picture>
 </p>
 
+## Скачать
+
+| Система | Файл | Что будет |
+|---|---|---|
+| macOS (Apple silicon) | [cc-tgbot-Setup-macos-arm64.dmg](https://github.com/kavioavio/cc-tgbot/releases/latest/download/cc-tgbot-Setup-macos-arm64.dmg) | Откройте приложение: в браузере запустится мастер установки |
+| macOS (Intel) | [cc-tgbot-Setup-macos-x86_64.dmg](https://github.com/kavioavio/cc-tgbot/releases/latest/download/cc-tgbot-Setup-macos-x86_64.dmg) | То же |
+| Windows | [cc-tgbot-Setup-windows.exe](https://github.com/kavioavio/cc-tgbot/releases/latest/download/cc-tgbot-Setup-windows.exe) | В браузере запустится мастер установки |
+| Linux / сервер | [cc-tgbot-linux.tar.gz](https://github.com/kavioavio/cc-tgbot/releases/latest/download/cc-tgbot-linux.tar.gz) или `git clone` | Распакуйте и выполните `python3 setup.py` |
+
+macOS скажет, что не может проверить разработчика: откройте Системные настройки → Конфиденциальность и безопасность и нажмите «Всё равно открыть», либо выполните `xattr -dr com.apple.quarantine "/Volumes/cc-tgbot Setup/cc-tgbot Setup.app"`. Приложение копирует свой Python в `~/.local/share/cc-tgbot` — не удаляйте его, бот работает на нём.
+
+Windows: SmartScreen может предупредить о неизвестном издателе: «Подробнее» → «Выполнить в любом случае». Сам бот работает в WSL2 (мастер ставит его туда).
+
+Файлы можно сверить по [SHA256SUMS](https://github.com/kavioavio/cc-tgbot/releases/latest/download/SHA256SUMS).
+
 Управляйте фоновыми сессиями [Claude Code](https://docs.claude.com/en/docs/claude-code) с телефона: Telegram-бот
 с пультом в духе `claude agents`, топиками под каждую сессию, мини-аппом / устанавливаемым PWA и push-уведомлениями.
 Один файл на Python, только стандартная библиотека (`cryptography` нужна по желанию — для push).
