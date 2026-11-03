@@ -1,0 +1,23 @@
+[Unit]
+Description=cc-tgbot: speech-to-text runner
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Adjust the paths to where you cloned the repository and created the virtualenv
+# (python -m venv .venv-stt && .venv-stt/bin/pip install faster-whisper numpy); ffmpeg and ffprobe must be installed.
+# The runner reads only its own environment, loaded from stt.env (not from the bot's env file): cloud API keys
+# stay out of the bot's environment. See the CC_STT_* block in env.example.
+# The first request with a model that is not cached yet downloads it (large-v3-turbo: about 1.6 GB).
+# Set HF_HUB_OFFLINE=1 in stt.env to forbid downloads.
+EnvironmentFile=-%h/.config/cc-tgbot/stt.env
+ExecStart=%h/cc-tgbot/.venv-stt/bin/python -u %h/cc-tgbot/stt_runner.py serve
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+# Recognition is CPU-heavy: keep it from starving the rest of the machine.
+Nice=10
+
+[Install]
+WantedBy=default.target

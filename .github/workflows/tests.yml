@@ -1,0 +1,16 @@
+name: tests
+on: [push, pull_request]
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install cryptography  # the push tests sign with it; the bot itself needs it only for Web Push
+      - run: python3 -m unittest discover -s tests -q
+      - run: bash -n deploy/setup.sh deploy/setup-macos.sh deploy/cc-tgbot-tunnel.sh

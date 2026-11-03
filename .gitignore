@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+assets/list-pick/
+assets/webapp-preview/
+assets/logo/pick.html
+*.log
+.env
+state/
+.remember/
+assets/logo/a-list.svg
+assets/logo/c-ring.svg
+assets/logo/sheet.html
+.workflow/
+.venv-sdk/
+.venv-stt/
+tests/webapp/*.png
+.impeccable/

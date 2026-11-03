@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+"""cc-send: send a file to the owner in Telegram from a Claude Code session.
+
+  cc-send <path> [caption] [--session <id>]
+
+The session is taken from CLAUDE_JOB_DIR (its last component is the short id) or from --session.
+A request is queued for the bot (~/.local/state/cc-tgbot/outbox); the bot sends the file to the session topic.
+Messages are in English; set CC_LANG=ru for Russian.
+"""
+import argparse
+import json
+import os
+import sys
+import time
+
+MSG_EN = {"path": "path to the file", "caption": "caption (optional)",
+          "session": "session id (default: from CLAUDE_JOB_DIR)",
+          "nosession": "cc-send: cannot tell the session (no CLAUDE_JOB_DIR) — pass --session <id>",
+          "nofile": "cc-send: file not found: %s", "queued": "cc-send: request queued, the bot will send %s"}
+MSG_RU = {"path": "путь к файлу", "caption": "подпись (необязательно)",
+          "session": "id сессии (по умолчанию из CLAUDE_JOB_DIR)",
+          "nosession": "cc-send: не удалось определить сессию (нет CLAUDE_JOB_DIR) — укажите --session <id>",
+          "nofile": "cc-send: файл не найден: %s", "queued": "cc-send: заявка принята, бот отправит %s"}
+MSG = MSG_RU if os.environ.get("CC_LANG", "").strip().lower() == "ru" else MSG_EN
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog="cc-send", description=__doc__.split("\n")[0])
+    ap.add_argument("path", help=MSG["path"])
+    ap.add_argument("caption", nargs="*", help=MSG["caption"])
+    ap.add_argument("--session", help=MSG["session"])
+    a = ap.parse_args(argv)
+    sid = a.session
+    if not sid:
+        job = os.environ.get("CLAUDE_JOB_DIR", "").rstrip("/")
+        sid = os.path.basename(job) if job else ""
+    if not sid:
+        print(MSG["nosession"], file=sys.stderr)
+        return 2
+    path = os.path.abspath(os.path.expanduser(a.path))
+    if not os.path.isfile(path):
+        print(MSG["nofile"] % path, file=sys.stderr)
+        return 1
+    home = os.environ.get("HOME") or os.path.expanduser("~")
+    outbox = os.environ.get("CC_OUTBOX") or os.path.join(home, ".local/state/cc-tgbot/outbox")
+    os.makedirs(outbox, mode=0o700, exist_ok=True)
+    name = "%d-%d.json" % (int(time.time() * 1000), os.getpid())
+    tmp = os.path.join(outbox, "." + name + ".tmp")
+    req = {"sid": sid, "path": path, "caption": " ".join(a.caption), "ts": time.time()}
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(req, f, ensure_ascii=False)
+    os.replace(tmp, os.path.join(outbox, name))  # atomic: the bot only sees finished requests
+    print(MSG["queued"] % os.path.basename(path))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

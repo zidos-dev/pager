@@ -1,0 +1,2412 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sessions</title>
+<link rel="manifest" href="/app/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/app/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/app/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/app/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Sessions">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#f1f2f5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f0f0f" media="(prefers-color-scheme: dark)">
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+/* Смысл токенов:
+   --canvas   фон экрана (вторичный фон темы Telegram)
+   --panel    карточки и блоки (основной фон темы)
+   --ink      основной текст; --muted подписи и причины
+   --action   единственный цвет действия: главная кнопка, выбранный фильтр, отмеченный вариант
+   --danger   только «Остановить» и ошибки
+   Состояние сессии передаёт значок и тег, а не цвет фона или полоска. Разделение — тон и отступ, без линий. */
+:root{
+  --canvas:var(--tg-theme-secondary-bg-color,#eceff5);
+  --panel:var(--tg-theme-section-bg-color,var(--tg-theme-bg-color,#ffffff));
+  --ink:var(--tg-theme-text-color,#0f1222);
+  --muted:color-mix(in srgb,var(--tg-theme-hint-color,#5e6478) 75%,var(--tg-theme-text-color,#5e6478));  /* hint Telegram (#8e8e93) на белом — 3.3:1; с четвертью текста — ≥4.5:1 */
+  --action:var(--tg-theme-button-color,#2f7de1);
+  --action-ink:var(--tg-theme-button-text-color,#ffffff);
+  --link:var(--tg-theme-link-color,#2f7de1);
+  --danger:var(--tg-theme-destructive-text-color,#d6453d);
+  --soft:color-mix(in srgb,var(--ink) 7%,var(--panel));
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Text",Roboto,"Segoe UI",system-ui,sans-serif;
+  --r:16px;
+  --gut:16px;  /* one screen edge for every block: titles, tiles, cards, feed, composer, sheet */
+  --perm-danger:#d70015;
+  --shadow:none;
+  --glass-bar:color-mix(in srgb,var(--canvas) 88%,transparent);
+  --glass-cap:color-mix(in srgb,var(--panel) 88%,transparent);
+  --glass-fx:blur(20px) saturate(1.2);
+}
+@media (prefers-color-scheme: dark){
+  :root:not(.in-tg){--canvas:#0d0f16;--panel:#1a1d27;--ink:#eef0f7;--muted:#a2a8ba;--shadow:none;--action:#d2fb4a;--action-ink:#111214;--link:#b9e83a;--danger:#ff6b61;--perm-danger:#ff6b61;color-scheme:dark}
+}
+:root:not(.in-tg){--action:#111214;--action-ink:#ffffff;--link:#2f6fd6}
+@media (prefers-color-scheme: dark){ :root:not(.in-tg){--action:#d2fb4a;--action-ink:#111214;--link:#c4ef55} }
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+.sa-top{padding-top:env(safe-area-inset-top,0px)}
+.back{display:inline-flex;align-items:center;gap:2px;color:var(--link);font-size:17px;letter-spacing:-.2px;min-height:44px;padding:0 6px 0 2px;flex:none}
+.navbar{position:sticky;top:0;z-index:8;display:flex;align-items:center;gap:8px;min-height:52px;margin:0 -12px;padding:calc(env(safe-area-inset-top,0px) + 4px) 12px 4px;background:var(--canvas)}
+.back svg{margin-left:-6px}
+.navbar .nt{min-width:0;flex:1;font-weight:600;font-size:17px;letter-spacing:-.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:0;transition:opacity .15s}
+.navbar.scrolled .nt{opacity:1}
+.fab{position:fixed;left:16px;right:16px;bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:12;max-width:688px;margin:0 auto;background:var(--action);color:var(--action-ink);border-radius:16px;padding:13px 26px;font-weight:600;font-size:16px;min-height:50px;box-shadow:0 8px 24px rgba(0,0,0,.18)}
+.fab:disabled{background:var(--panel);color:var(--muted);box-shadow:none}
+#new-screen ~ .fab{}
+.gate{padding:40px 8px;display:grid;gap:14px}
+.gate h2{margin:0;font-size:24px;letter-spacing:-.4px}
+.gate ol{margin:0;padding-left:20px;display:grid;gap:8px;color:var(--ink)}
+.gate p{margin:0;color:var(--muted)}
+.topbar{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.iconbtn{min-width:44px;min-height:44px;border-radius:12px;background:var(--panel);font-size:18px;display:grid;place-items:center}
+.me.pending{opacity:.7}
+.it{display:flex;flex-direction:column;gap:6px;min-width:0}
+.live{align-self:flex-start;display:flex;gap:8px;align-items:center;font-size:13.5px;color:var(--muted);padding:4px 2px;max-width:100%}
+.live .dots{display:inline-flex;gap:3px;flex:none}.live .dots i{width:6px;height:6px;border-radius:50%;background:var(--muted);animation:dot 1.2s infinite ease-in-out}
+.live .dots i:nth-child(2){animation-delay:.15s}.live .dots i:nth-child(3){animation-delay:.3s}
+.live span{min-width:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+@keyframes dot{0%,80%,100%{opacity:.25}40%{opacity:1}}
+@media (prefers-reduced-motion:reduce){.live .dots i{animation:none;opacity:.6}}
+.squota{font-size:12px;color:var(--muted);text-align:center;padding:2px 0 max(env(safe-area-inset-bottom,0px),14px);font-variant-numeric:tabular-nums}
+.subbtn{display:inline-flex;align-items:center;gap:6px;margin-top:10px;padding:7px 12px;border-radius:999px;background:var(--panel);font-size:13.5px;font-weight:500}
+.subbtn b{font-weight:600}
+.subl{display:grid;gap:6px}
+.subi{display:grid;grid-template-columns:20px minmax(0,1fr) auto;gap:2px 8px;background:var(--soft);border-radius:12px;padding:10px 12px;text-align:left;width:100%}
+.subi .sn{font-weight:600;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.subi .sm{grid-column:2/4;font-size:12.5px;color:var(--muted)}
+.subi .sl{grid-column:2/4;font-size:13.5px;color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.task{background:var(--panel);border-radius:14px;padding:12px 14px;font-size:14px;line-height:1.45;color:var(--ink);white-space:pre-wrap;max-height:200px;overflow:hidden;-webkit-mask-image:linear-gradient(#000 70%,transparent);mask-image:linear-gradient(#000 70%,transparent)}
+.task.open{max-height:none;-webkit-mask-image:none;mask-image:none}
+.task .tlab{font-size:13px;font-weight:600;color:var(--muted);margin-bottom:4px}
+.task h4{font-size:15px;margin:8px 0 2px}.task code{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;background:var(--soft);border-radius:5px;padding:0 4px}
+.tmore{align-self:flex-start;color:var(--link);font-size:14px;font-weight:500;padding:6px 2px;min-height:36px}
+.squota b{font-weight:600;color:var(--ink)}.squota b.hot{color:var(--danger)}
+html,body{margin:0;background:var(--canvas);color:var(--ink);font:16px/1.35 var(--font);-webkit-font-smoothing:antialiased}
+body{padding-bottom:0}
+#list-screen,#new-screen{padding-bottom:calc(env(safe-area-inset-bottom,0px) + 16px)}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
+button:focus-visible{outline:2px solid var(--link);outline-offset:2px}
+textarea:focus,input:focus,textarea:focus-visible,input:focus-visible{outline:none}
+[hidden]{display:none!important}
+.screen{max-width:720px;margin:0 auto;padding:0 var(--gut)}
+#session-screen:not([hidden]){position:fixed;left:0;right:0;top:var(--vvtop,0px);height:var(--vvh,100dvh);display:flex;flex-direction:column;background:var(--canvas);z-index:10;will-change:transform}
+#s-body{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:var(--s-head,112px) var(--gut) calc(var(--s-foot,84px) + var(--ask-space,0px));max-width:720px;width:100%;margin:0 auto}
+.sfoot{position:absolute;left:0;right:0;bottom:0;z-index:8;padding:0 var(--gut);background:linear-gradient(transparent,var(--sfbg,var(--canvas)) 55%)}
+.sfoot>*{max-width:696px;margin-left:auto;margin-right:auto}
+#s-body .navbar{margin:0 calc(-1 * var(--gut))}
+.swipe-under{position:fixed;inset:0;z-index:9;pointer-events:none;background:#000;opacity:0}
+/* слои поверх списка: сессия → сабтаск / новая сессия; у каждого своя прокрутка */
+#sub-screen:not([hidden]),#new-screen:not([hidden]){position:fixed;left:0;right:0;top:var(--vvtop,0px);height:var(--vvh,100dvh);overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;background:var(--canvas);z-index:11;max-width:none;padding:0 12px;will-change:transform}  /* слой слайда постоянный: will-change не переключаем на каждом переходе */
+#sub-screen>*,#new-screen>*{max-width:696px;margin-left:auto;margin-right:auto}
+#sub-screen .navbar,#new-screen .navbar{max-width:none}
+.layer{will-change:transform;box-shadow:-10px 0 30px rgba(0,0,0,0)}
+.layer.moving{box-shadow:-10px 0 30px rgba(0,0,0,.2)}
+html.locked,html.locked body{overflow:hidden}
+/* клавиатура iOS (PWA): окно не уменьшается, видимая область уезжает вниз — под панелью клавиатуры виден сам прокручиваемый список.
+   Пока открыт слой и клавиатура, список не рисуется (visibility сохраняет высоту и прокрутку); кнопка списка под слоями скрыта. */
+html.locked:has(:is(textarea,input):focus) #list-screen{visibility:hidden}
+html[data-view="session"] .fab,html[data-view="sub"] .fab{display:none}
+.scrim{position:fixed;inset:0;z-index:29;background:#000;opacity:0;pointer-events:none}
+.scrim.on{pointer-events:none}  /* касания над листом ловит .shade — он и закрывает лист */
+.sheet .grab{display:block;width:38px;height:5px;border-radius:3px;background:var(--muted);opacity:.35;margin:-4px auto 10px}
+.enter{animation:msgIn .26s cubic-bezier(.2,.9,.25,1) both}
+@keyframes msgIn{from{opacity:0;transform:translate3d(0,10px,0)}to{opacity:1;transform:none}}
+.toast{transition:opacity .18s ease,transform .22s cubic-bezier(.2,.9,.25,1)}
+.toast.off{opacity:0;transform:translateY(8px)}
+.btn,.chip,.opt,.subi,.iconbtn,.slash,.clip,.send,.back,.subbtn,.fab{transition:transform .12s ease-out,opacity .12s}
+/* нажатие — тоном и прозрачностью, без масштаба (вкус владельца, designkit-owner) */
+.btn:active,.chip:active,.opt:active,.subi:active,.iconbtn:active,.slash:active,.clip:active,.send:active,.subbtn:active,.fab:active{opacity:.6}
+.card:active{background:color-mix(in srgb,var(--panel) 80%,var(--ink))}  /* press tone ΔL* ≥15 in both themes (owner 27.10: 8–10 % is too little) */
+.cw.act .card{transition:none}  /* transform ведут палец и пружина — CSS-переход их не догоняет */
+.lb{transition:none}
+
+@media (prefers-reduced-motion:reduce){.enter{animation:msgFade .15s both}@keyframes msgFade{from{opacity:0}to{opacity:1}}}
+/* клавиатура открыта: отступ под полоску «Домой» не нужен — поле ввода прямо над клавиатурой */
+.kb .squota{padding-bottom:6px}
+.kb #session-screen .compose{padding-bottom:4px}
+/* поле у самого низа: нижний безопасный отступ iPhone несёт только строка квоты под полем; с клавиатурой строки нет — поле прилегает к клавиатуре (владелец 20.10: «поле слишком высоко») */
+html.kb #session-screen .sfoot .squota{display:none}
+#session-screen .compose{position:static;margin-bottom:6px;padding:6px;gap:4px;border-radius:30px;background:var(--glass-cap);-webkit-backdrop-filter:var(--glass-fx);backdrop-filter:var(--glass-fx);box-shadow:var(--shadow)}
+#s-attach{display:flex;gap:8px;overflow-x:auto;padding:0 0 8px;scrollbar-width:none}
+#s-attach[hidden]{display:none}
+#s-attach::-webkit-scrollbar{display:none}
+.att{position:relative;flex:none;display:flex;align-items:center;gap:8px;padding:4px;border-radius:16px;background:var(--glass-cap);color:var(--ink);animation:attIn .18s cubic-bezier(.32,.72,0,1) both}
+.att img{width:56px;height:56px;border-radius:12px;object-fit:cover;display:block}
+.att .an{max-width:130px;padding:0 30px 0 8px;font-size:13px;line-height:1.3;min-width:0}
+.att .an b{display:block;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.att .an span{color:var(--muted);font-size:12px}
+.att-x{position:absolute;top:0;right:0;width:44px;height:44px;border-radius:50%;background:transparent;color:var(--canvas);display:block}
+.att-x::before{content:"×";position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;background:var(--ink);font-size:16px;line-height:21px;text-align:center}
+.att-x:focus-visible{outline:none}
+.att-x:focus-visible::before{outline:2px solid var(--action);outline-offset:2px}
+@keyframes attIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.att{animation:attFade .15s both}@keyframes attFade{from{opacity:0}to{opacity:1}}}
+#session-screen .compose textarea,#session-screen .compose textarea:focus{background:transparent;padding:11px 8px}
+#session-screen .clip,#session-screen .slash{background:transparent;color:var(--muted)}
+#session-screen .send{background:var(--lab-lime);color:var(--lab-lime-ink)}#session-screen .send:disabled{background:var(--soft);color:var(--muted)}
+/* шапка списка */
+.top{background:var(--canvas);padding:8px 0 0}
+.chipbar{position:sticky;top:0;z-index:5;background:var(--canvas);margin:0 -12px;padding:10px 0 8px;padding-top:calc(env(safe-area-inset-top,0px) + 10px)}
+.chipbar .chips{margin:0;padding:0 12px;-webkit-mask-image:linear-gradient(90deg,transparent 0,#000 12px,#000 calc(100% - 24px),transparent);mask-image:linear-gradient(90deg,transparent 0,#000 12px,#000 calc(100% - 24px),transparent);scroll-snap-type:x proximity}
+.chipbar .chip{scroll-snap-align:start}
+.chipbar .chips{scroll-padding-inline:12px}
+.tbtns{display:flex;gap:8px}
+.iconbtn svg{display:block}
+.iconbtn.plus{background:var(--action);color:var(--action-ink)}
+.lsec{font-size:15px;font-weight:600;color:var(--ink);letter-spacing:-.1px;margin:16px 0 4px}
+.lsec:first-child{margin-top:0}  /* the list's own top padding keeps it 24 px under the quota tiles */
+.dot{width:9px;height:9px;border-radius:50%;margin-top:6px;background:var(--muted)}
+.dot.wait{background:#e8a33d}.dot.work{background:#3e8cf5}.dot.done{background:#34b26a}.dot.fail{background:var(--danger)}.dot.ask{background:#e8a33d;box-shadow:0 0 0 3px color-mix(in srgb,#e8a33d 25%,transparent)}
+.sc{grid-row:1/3;align-self:start;width:32px;height:32px;border-radius:50%;background:var(--soft);display:grid;place-items:center}
+.sc .dot{width:8px;height:8px;margin:0;box-shadow:none}
+.pi{width:18px;height:18px;margin-top:3px;color:#e8a33d;display:block}.sc .pi{width:16px;height:16px;margin:0}
+.card.perm .nm{font-weight:650}
+.sw{font-size:12.5px;font-weight:600;color:var(--muted)}
+.sw.wait{color:#c9852a}.sw.fail{color:var(--danger)}
+.top h1{font-size:34px;font-weight:600;letter-spacing:-1px;margin:0;transition:opacity 160ms var(--m-fade,ease)}
+.lbar{position:fixed;left:0;right:0;top:0;z-index:7;height:calc(env(safe-area-inset-top,0px) + 48px);padding-top:env(safe-area-inset-top,0px);display:grid;place-items:center;font-size:17px;font-weight:600;color:var(--ink);opacity:0;pointer-events:none;background:var(--glass-bar);-webkit-backdrop-filter:var(--glass-fx);backdrop-filter:var(--glass-fx);transition:opacity 180ms var(--m-fade,ease)}
+#lb-new{position:absolute;right:12px;top:calc(env(safe-area-inset-top,0px) + 6px);min-width:36px;min-height:36px;pointer-events:auto}#lb-new svg{width:20px;height:20px}#lb-new::after{content:"";position:absolute;inset:-4px}html:not(.list-scrolled) #lb-new,html.locked #lb-new{visibility:hidden}
+html.list-scrolled .lbar{opacity:1}html.list-scrolled .top h1{opacity:0}html.locked .lbar{opacity:0}
+@media (prefers-reduced-motion:reduce){.lbar,.top h1{transition:none}}
+/* ≥1000: список — колонка слева, сессия — панель справа; полка в колонке столбиком, без среза карточек */
+.pane-empty{display:none}
+@media (min-width:1000px){
+  #list-screen{max-width:none;width:380px;margin:0 0 0 12px}
+  #session-screen:not([hidden]){left:404px;right:12px;top:12px;height:calc(100dvh - 24px);border-radius:28px;background:var(--panel);--sfbg:var(--panel);overflow:hidden}
+  #session-screen .session-header{background:color-mix(in srgb,var(--panel) 72%,transparent)}
+  #session-screen .msg:not(.thinking){background:var(--soft);box-shadow:none}
+  html[data-view="list"] .pane-empty{display:grid;place-items:center;position:fixed;left:404px;right:12px;top:12px;bottom:12px;border-radius:28px;background:var(--panel);color:var(--muted);font-size:15px}
+  .lbar{width:404px;right:auto}
+}
+.sum{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:4px;color:var(--muted);font-size:14px}
+.sum b{color:var(--ink);font-weight:600}
+.quota{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:6px 10px;align-items:center;margin-top:10px;font-size:13px;color:var(--muted)}
+.qbar{height:6px;border-radius:3px;background:var(--soft);overflow:hidden}
+.qbar i{display:block;height:100%;border-radius:3px;background:var(--ink);opacity:.75}
+.qbar i.hot{background:var(--danger);opacity:1}
+.qv{font-variant-numeric:tabular-nums;color:var(--ink);white-space:nowrap}
+.qv small{color:var(--muted);font-size:12px}
+.chips{display:flex;gap:6px;margin:12px -12px 0;padding:0 12px 2px;overflow-x:auto;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:none;padding:9px 15px;border-radius:999px;background:var(--panel);font-size:14px;font-weight:500;min-height:40px}
+.chip[aria-pressed="true"]{background:var(--action);color:var(--action-ink)}
+.chip .n{opacity:.65;margin-left:4px;font-variant-numeric:tabular-nums}
+/* карточки */
+.list{display:grid;gap:8px;padding:24px 0 96px}  /* 24 from the quota tiles to the first label or card, on every tab */
+/* полка «ждут вас»: карточки вбок над списком; карточка — настоящая .card[data-id], раскрытие растёт из неё */
+.card{display:grid;grid-template-columns:32px minmax(0,1fr) auto;gap:2px 12px;align-items:center;background:var(--panel);border-radius:var(--r);box-shadow:var(--shadow);padding:13px 16px;text-align:left;width:100%}
+.st{font-size:15px;line-height:1.35}
+.nm{font-weight:500;font-size:16px;line-height:1.3;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+.tm{font-size:13px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+.ds{grid-column:2/4;color:var(--muted);font-size:14px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.tags{grid-column:2/4;display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.tag{font-size:12.5px;padding:2px 8px;border-radius:8px;background:var(--soft);color:var(--muted)}
+.tag.cur{color:var(--ink)}
+.empty{color:var(--muted);text-align:center;padding:48px 16px}
+.cw{position:relative;border-radius:var(--r);touch-action:pan-y}
+.cw .ca{position:absolute;inset:0 0 0 auto;width:112px;display:flex;padding-left:8px}
+.cw .ca button{flex:1;background:var(--soft);color:var(--ink);font-weight:600;font-size:14px;line-height:1.2;padding:0 8px;border-radius:var(--r)}
+.cw .card{position:relative;transition:transform .2s cubic-bezier(.2,.8,.2,1),background-color .12s}
+.cw .card{will-change:transform}
+/* экран сессии */
+.head{padding:16px 4px 8px}
+.head h2{font-size:24px;font-weight:600;letter-spacing:-.4px;margin:0;overflow-wrap:anywhere;text-wrap:balance}
+.state{color:var(--muted);font-size:14.5px;margin-top:4px}
+.chain{display:block;margin-top:6px;font-size:14px;color:var(--muted);text-align:left;padding:6px 0;min-height:32px}
+.chain::after{content:"\00a0›";color:var(--link)}  /* неразрывный пробел: «›» переносится вместе с последним словом, не один на строке (владелец 21.10) */
+.block{background:var(--panel);border-radius:var(--r);padding:14px;margin-top:10px}
+.block h3{font-size:13px;font-weight:600;color:var(--muted);letter-spacing:.3px;text-transform:uppercase;margin:0 0 8px}
+.reason{font-size:16px;line-height:1.4;overflow-wrap:anywhere}
+.q{font-size:17px;font-weight:600;line-height:1.35;margin-bottom:10px}
+.qstep{color:var(--muted);font-size:13px;margin-bottom:4px}
+.opts{display:grid;gap:6px}
+.opt{display:flex;gap:10px;align-items:flex-start;background:var(--soft);border-radius:12px;padding:11px 12px;text-align:left;min-height:44px;width:100%}
+.opt .mk{flex:none;width:20px;text-align:center}
+.opt small{display:block;color:var(--muted);font-size:13.5px;margin-top:2px}
+.opt[aria-pressed="true"]{background:var(--action);color:var(--action-ink)}
+.opt[aria-pressed="true"] small{color:inherit;opacity:.8}
+.row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.btn{flex:1 1 auto;min-height:44px;border-radius:12px;padding:9px 14px;background:var(--soft);font-weight:500;font-size:15px}
+.btn.pri{background:var(--action);color:var(--action-ink)}
+/* Разрешение использует тот же родной блок вопроса. */
+.lab-perm-summary{font-size:15px;line-height:1.35;margin:0 0 8px;overflow-wrap:anywhere}
+.lab-perm-path,.lab-perm-body{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
+.lab-perm-path{font-size:12px;margin:0 0 8px}
+.lab-perm-body{font-size:13px;line-height:1.4;background:var(--soft);border-radius:12px;padding:10px;margin:0 0 10px;max-height:clamp(72px,calc(var(--vvh,100dvh) * .28),320px);overflow:auto;overscroll-behavior:contain;touch-action:pan-y}
+.lab-perm-note{font-size:12.5px;line-height:1.35;opacity:.65;margin:0 0 10px;overflow-wrap:anywhere}
+.lab-perm-question{font-size:14px;line-height:1.35;margin:0 0 8px;overflow-wrap:anywhere}
+.perm-card .perm-deny{margin-top:10px;background:var(--panel);color:var(--perm-danger)}
+.perm-card .perm-selected{background:color-mix(in srgb,var(--ink) 12%,var(--panel))}
+.btn.dng{color:var(--danger)}
+.hist{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+.hrow{display:flex;align-items:flex-start;gap:10px}.hrow h2{flex:1;min-width:0}
+.iconbtn.more{background:transparent;color:var(--link);margin:-6px -8px 0 0}
+.alist{display:grid;gap:2px;background:var(--soft);border-radius:14px;overflow:hidden;margin-bottom:10px}
+.arow{text-align:left;padding:13px 14px;min-height:48px;font-size:16px;background:var(--panel)}
+.arow.dng{color:var(--danger)}
+.me{align-self:flex-end;max-width:86%;background:var(--ink);color:var(--panel);border-radius:20px 20px 6px 20px;padding:9px 13px;font-size:15.5px;line-height:1.4;white-space:pre-wrap;overflow-wrap:anywhere}
+.cmd{align-self:flex-end;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13.5px;background:var(--soft);border-radius:12px;padding:6px 10px;color:var(--ink)}
+.out{align-self:stretch;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;line-height:1.4;color:var(--muted);background:var(--soft);border-radius:12px;padding:8px 10px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto}
+.note{align-self:center;font-size:12.5px;color:var(--muted)}
+.me.q{opacity:.6}
+.pv{display:block;width:auto;height:auto;max-width:100%;max-height:min(340px,55vh);border-radius:12px;margin-top:8px;background:var(--soft);object-fit:contain}
+.msg .pv,.pvwrap .pv{max-width:100%}
+.pvwrap{min-width:0}
+.album{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3px;width:min(300px,100%);margin-left:auto;margin-top:8px;border-radius:14px;overflow:hidden}
+.album.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.album .pv{width:100%;height:100%;max-height:none;aspect-ratio:1;object-fit:cover;border-radius:0;margin:0}
+.album .more{display:grid;place-items:center;aspect-ratio:1;background:var(--soft);color:var(--muted);font-weight:600}
+.me .pv{margin-left:auto}
+.pvwrap{align-self:flex-end;max-width:86%}
+.pv{cursor:zoom-in}
+.lb{position:fixed;left:0;right:0;top:0;height:var(--tg-viewport-height,100vh);z-index:40;background:rgba(0,0,0,.92);display:flex;align-items:center;justify-content:center;touch-action:pinch-zoom;overflow:auto}
+.lb img{width:auto;height:auto;max-width:100%;max-height:calc(var(--tg-viewport-height,100vh) - 120px);object-fit:contain;touch-action:pinch-zoom}
+.lb .lbx{position:fixed;top:calc(env(safe-area-inset-top,0px) + 10px);right:12px;width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.18);color:#fff;font-size:20px;display:grid;place-items:center}
+.lb .lbd{position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 16px);left:50%;transform:translateX(-50%);background:rgba(255,255,255,.18);color:#fff;border-radius:12px;padding:10px 16px;font-weight:500}
+.files{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.file{display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px 10px;align-items:center;background:var(--soft);border-radius:12px;padding:8px 10px}
+.file .fi{width:20px;height:20px;grid-row:1/3;color:var(--muted)}
+.ic{width:16px;height:16px;flex:none;vertical-align:-3px;margin-right:6px}.mk .ic{margin:0}
+.file .fn{font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file .fa{display:flex;gap:6px;flex-wrap:wrap}
+.file .fa button{font-size:13px;font-weight:500;color:var(--link);padding:2px 0;min-height:28px}
+.clip{flex:none;width:44px;height:44px;color:var(--ink);border-radius:50%;background:var(--panel);font-size:18px;display:grid;place-items:center}.qlab{align-self:flex-end;font-size:12px;color:var(--muted);margin-top:-2px}
+.sheet{position:fixed;inset:auto 0 0 0;width:100%;max-width:720px;margin:0 auto;z-index:30;will-change:transform;background:var(--panel);border-radius:20px 20px 0 0;padding:14px 14px calc(env(safe-area-inset-bottom,0px) + 14px);max-height:78vh;overflow:auto;box-shadow:0 -12px 40px rgba(0,0,0,.25)}
+.sheet h3{margin:0 0 10px;font-size:17px;font-weight:600}
+.shade{position:fixed;inset:0;z-index:29;background:transparent}
+.cmdl{display:grid;gap:6px}
+.cmdi{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;align-items:center;background:var(--soft);border-radius:12px;padding:10px 12px;text-align:left;width:100%}
+.cmdi b{font-weight:600}.cmdi code{font-size:13px;color:var(--muted)}
+.cmdi.dng b{color:var(--danger)}
+.args{grid-column:1/3;display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.args .chip{background:var(--panel)}
+.scr{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;line-height:1.35;white-space:pre;overflow:auto;background:var(--soft);border-radius:12px;padding:10px;max-height:46vh}
+.keys{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;margin-top:10px}
+.keys .btn{min-height:44px;padding:8px 4px}
+.slash{flex:none;width:44px;height:44px;color:var(--ink);border-radius:50%;background:var(--panel);font:600 18px ui-monospace,Menlo,monospace;display:grid;place-items:center}
+.msg{background:var(--panel);border-radius:20px;box-shadow:var(--shadow);padding:12px 14px;font-size:15.5px;line-height:1.45;overflow-wrap:anywhere;white-space:pre-wrap}
+.msg pre{white-space:pre-wrap;background:var(--soft);border-radius:10px;padding:10px;font-size:13px;overflow-x:auto;margin:6px 0}
+.msg.thinking{background:none;box-shadow:none;color:var(--muted);font-size:14px;line-height:1.45;padding:2px 14px}
+.msg .thk{font-size:12px;font-weight:600;margin-bottom:2px}
+.msg code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13.5px}
+/* таблицы ответа: узкий экран — прокрутка вбок внутри пузыря; строки разделяет тон, а не линии */
+.msg .tbl{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:6px -6px;padding:0 6px;white-space:normal}
+.msg table{border-collapse:separate;border-spacing:0;font-size:14px;line-height:1.35;min-width:100%}
+.msg th,.msg td{padding:7px 10px;text-align:left;vertical-align:top;min-width:4.5em;max-width:18em;overflow-wrap:normal;hyphens:auto;-webkit-hyphens:auto}
+.msg th{font-weight:600;color:var(--muted);font-size:13px}
+.msg tbody tr:nth-child(odd) td{background:var(--soft)}
+.msg tbody tr td:first-child{border-radius:8px 0 0 8px;font-weight:600}.msg tbody tr td:last-child{border-radius:0 8px 8px 0}
+.msg a{color:var(--link)}
+.meta{color:var(--muted);font-size:13px;margin-top:12px;padding:0 4px;overflow-wrap:anywhere}
+.compose{position:sticky;bottom:0;background:var(--canvas);padding:10px 0 calc(env(safe-area-inset-bottom,0px) + 10px);display:flex;gap:8px;align-items:flex-end}
+.compose textarea{flex:1;min-width:0;resize:none;border:0;border-radius:22px;background:var(--panel);color:var(--ink);font:inherit;font-size:16px;padding:11px 15px;max-height:160px;min-height:44px}
+.send{flex:none;width:44px;height:44px;border-radius:50%;background:var(--action);color:var(--action-ink);font-size:18px;display:grid;place-items:center}
+.send:disabled{background:var(--panel);color:var(--muted)}
+.compose textarea::placeholder{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.compose textarea{caret-color:var(--action)}
+.field{width:100%;border:0;border-radius:12px;background:var(--soft);color:var(--ink);font:inherit;padding:11px 12px}
+textarea.field{min-height:120px;resize:vertical}
+.dirs{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.dirs .chip{background:var(--soft)}
+.dirs .chip[aria-pressed="true"]{background:var(--action);color:var(--action-ink)}
+#model-sheet{max-height:92dvh;overflow-y:auto;overscroll-behavior:contain}
+#m-list .chip{min-height:44px;padding:0 16px;font-size:15px}
+#m-list .chip[aria-pressed="true"]{background:var(--ink);color:var(--panel)}
+#m-form{display:grid;gap:6px;margin-top:14px}
+#m-form .field{min-height:44px}
+.m-l{color:var(--muted);font-size:14.5px;margin-top:6px}
+.m-err{margin:6px 0 0;color:var(--danger);font-size:14.5px}
+#m-save{margin-top:10px;min-height:48px}
+#m-form .state{margin:6px 0 0}
+.toast{position:fixed;left:16px;right:16px;margin:0 auto;width:max-content;max-width:calc(100% - 32px);bottom:calc(env(safe-area-inset-bottom,0px) + 96px);background:var(--ink);color:var(--canvas);padding:11px 14px;border-radius:14px;font-size:14.5px;line-height:1.35;z-index:40;display:flex;align-items:center;gap:14px;box-shadow:0 8px 28px rgba(0,0,0,.22)}
+.toast .ta{flex:none;color:var(--action);font-weight:600;padding:4px 2px;min-height:32px}
+:root:not(.in-tg) .toast .ta{color:var(--link)}
+.skel{height:76px;border-radius:var(--r);background:var(--panel);opacity:.6}
+
+/* — разбор №2 — */
+.alist{background:transparent!important;gap:6px!important;overflow:visible!important}
+.arow{border-radius:14px;background:var(--soft)!important}
+.album.a3{grid-template-columns:2fr 1fr;grid-template-rows:1fr 1fr}
+.album.a3 .pv:first-child{grid-row:1/3;aspect-ratio:auto;height:100%}
+.pvwrap{display:flex;flex-direction:column;align-items:flex-end;align-self:flex-end;max-width:86%}
+.pvwrap .album{margin-left:0}
+.lb{background:#000!important}
+.lb .lbx{width:44px;height:44px}
+.toast .ta{color:var(--canvas)!important;font-weight:700;text-decoration:underline;text-underline-offset:3px}
+.toast span{text-wrap:balance}
+.chipbar .chips{-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 24px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 24px),transparent)}
+.chipbar .chips.scrolled{-webkit-mask-image:linear-gradient(90deg,transparent 0,#000 16px,#000 calc(100% - 24px),transparent);mask-image:linear-gradient(90deg,transparent 0,#000 16px,#000 calc(100% - 24px),transparent)}
+.chip{min-height:44px}
+.tmore{min-height:44px}
+.file .fa button{min-height:40px;padding:4px 2px}
+.cw .ca{visibility:hidden}.cw.act .ca{visibility:visible}
+.iconbtn{border-radius:50%}
+.compose textarea:focus{background:color-mix(in srgb,var(--panel) 88%,var(--ink))}
+.field:focus{background:color-mix(in srgb,var(--soft) 80%,var(--ink))}
+.cmdi .btn{flex:none;min-height:40px;padding:8px 14px;font-size:14px}
+.sheet .sx{position:absolute;top:10px;right:10px;width:44px;height:44px;border-radius:50%;display:grid;place-items:center;color:var(--muted)}
+.sheet{position:fixed}
+.sheet h3{padding-right:44px}
+@media (min-width:1000px){.sheet{left:404px;right:12px;width:auto}}  /* редизайн В: листы — над панелью сессии */
+
+/* — разбор №3 — */
+.navbar::after{content:"";position:absolute;left:0;right:0;top:100%;height:12px;background:linear-gradient(var(--canvas),transparent);pointer-events:none}
+.cmdi .btn{background:var(--panel);color:var(--link)}
+:root{--r:18px}
+.compose textarea{border-radius:22px}
+.btn,.opt,.arow,.alist,.toast,.task,.file{border-radius:12px}
+.tsep{align-self:center;font-size:12px;color:var(--muted);padding:8px 0 2px;font-variant-numeric:tabular-nums}
+.aval{float:right;color:var(--muted);font-size:15px}
+
+.cmdi .btn{min-height:44px}
+.tag{max-width:100%;overflow-wrap:anywhere}
+/* лист «Боты»: те же токены и компоненты, что у «Модели»; разделяет тон и отступ */
+#bots-sheet{max-height:92dvh;overflow-y:auto;overscroll-behavior:contain}
+#b-list{display:grid;gap:8px;margin-top:6px}
+.brow{display:grid;grid-template-columns:40px minmax(0,1fr) auto;align-items:center;gap:12px;width:100%;min-height:56px;padding:8px 14px;border-radius:14px;background:var(--soft);text-align:left}
+.brow .av{width:40px;height:40px;border-radius:50%;background:var(--panel);display:grid;place-items:center;font-weight:600;font-size:16px;text-transform:uppercase}
+.brow .bn{display:block;font-size:16px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.brow .bm{display:block;color:var(--muted);font-size:13.5px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bst{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;color:var(--muted);white-space:nowrap}
+.bst::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.bst.on{color:var(--ink)}.bst.bad{color:var(--danger)}
+#bots-sheet .btn.pri{width:100%;margin-top:12px;min-height:48px}
+#bots-sheet .btn.quiet{width:100%;margin-top:8px;min-height:48px}
+.b-empty{display:grid;gap:4px;padding:6px 0 2px}
+.b-empty p{margin:0;color:var(--muted);font-size:15px;line-height:1.4}
+.b-form{display:grid;gap:6px;margin-top:10px}
+.b-form .field{min-height:44px}
+.b-form textarea.field{min-height:96px;resize:vertical}
+.b-h{margin:14px 0 0;font-size:13px;font-weight:600;color:var(--muted);letter-spacing:.3px;text-transform:uppercase}
+.b-back{display:inline-flex;align-items:center;min-height:44px;padding:0 4px;margin-left:-4px;color:var(--link);font-size:16px}
+#bots-sheet .m-l{margin-top:8px}
+.b-groups{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.b-groups .chip{background:var(--soft)}
+.b-groups .chip[aria-pressed="true"]{background:var(--ink);color:var(--panel)}
+.b-ok{margin:6px 0 0;color:var(--ink);font-size:14.5px}
+#bots-sheet button:focus-visible,#bots-sheet .field:focus-visible{outline:2px solid var(--link);outline-offset:2px}
+</style>
+<link rel="stylesheet" href="/app/clio.css">
+<link rel="stylesheet" href="/app/menu.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+<symbol id="i-clip" viewBox="0 0 24 24"><path d="M20 11.5 12.4 19a5 5 0 0 1-7.1-7.1l8-8a3.4 3.4 0 0 1 4.8 4.8l-8 8a1.7 1.7 0 0 1-2.4-2.4l7.4-7.4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="i-slash" viewBox="0 0 24 24"><path d="M15.5 4 8.5 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+<symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V6M6 11.5 12 5.5l6 6" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5 8 12l7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="i-file" viewBox="0 0 24 24"><path d="M7 3.5h6.5L18 8v11.5a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1v-15a1 1 0 0 1 1-1Z M13.5 3.5V8H18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+<symbol id="i-subs" viewBox="0 0 24 24"><path d="m12 4 8 4-8 4-8-4 8-4Zm-8 8 8 4 8-4M4 16l8 4 8-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="m6 12.5 4 4 8-9" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="9.5" rx="2.6" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
+<symbol id="i-more" viewBox="0 0 24 24"><circle cx="5.5" cy="12" r="1.9" fill="currentColor"/><circle cx="12" cy="12" r="1.9" fill="currentColor"/><circle cx="18.5" cy="12" r="1.9" fill="currentColor"/></symbol>
+<symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16.5h12l-1.4-2V10a4.6 4.6 0 0 0-9.2 0v4.5L6 16.5Zm4 2.5a2 2 0 0 0 4 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+<symbol id="i-bell-off" viewBox="0 0 24 24"><path d="M6 16.5h12l-1.4-2V10a4.6 4.6 0 0 0-9.2 0v4.5L6 16.5Zm4 2.5a2 2 0 0 0 4 0M4 4l16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/></symbol>
+</defs></svg>
+<main id="list-screen" class="screen">
+  <header class="top">
+    <div class="topbar"><h1 data-i18n="sessions">Sessions</h1><span class="tbtns"><button class="iconbtn" type="button" id="bots-btn" aria-label="Bots" data-i18n-attr="aria-label:botsTitle"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 8V5M9.5 13.5h.01M14.5 13.5h.01"/><circle cx="12" cy="4" r="1"/></svg></button><button class="iconbtn" type="button" id="model-btn" aria-label="Model" data-i18n-attr="aria-label:modelTitle"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M18 7h2M4 17h2M11 17h9"/><circle cx="15.5" cy="7" r="2.5"/><circle cx="8.5" cy="17" r="2.5"/></svg></button><button class="iconbtn" type="button" id="push-btn" hidden aria-label="Notifications on this device" data-i18n-attr="aria-label:pushDevice"><svg width="22" height="22"><use href="#i-bell-off"/></svg></button><button class="iconbtn plus" type="button" id="new-btn" hidden aria-label="New session" data-i18n-attr="aria-label:newSession"><svg width="22" height="22"><use href="#i-plus"/></svg></button></span></div>
+    <div class="sum" id="sum" hidden><span data-i18n="loading">Loading…</span></div>
+    <div class="quota" id="quota" hidden></div>
+  </header>
+  <div class="chipbar"><nav class="chips" id="chips" aria-label="Filter" data-i18n-attr="aria-label:filter"></nav></div>
+  <section class="list" id="list" aria-live="polite"><div class="skel"></div><div class="skel"></div><div class="skel"></div></section>
+</main>
+
+<main id="session-screen" hidden>
+ <header class="session-header">
+  <div class="session-header-row">
+   <div class="session-back"><button class="back" type="button" data-nav data-back hidden><svg width="26" height="26" aria-hidden="true"><use href="#i-back"/></svg><span data-i18n="sessions">Sessions</span></button></div>
+   <div class="session-heading"><h2 id="s-name"></h2><div class="session-status"><span id="s-dot" class="dot" aria-hidden="true"></span><span id="s-state"></span></div></div>
+   <button class="iconbtn more" type="button" id="s-more" aria-label="Session actions" data-i18n-attr="aria-label:sessionActions" aria-haspopup="menu" aria-expanded="false"><svg width="24" height="24" aria-hidden="true"><use href="#i-more"/></svg></button>
+  </div>
+  <div class="session-links" id="s-links" hidden><button class="subbtn" type="button" id="s-subs" hidden></button><button class="chain" id="s-chain" type="button" hidden></button></div>
+ </header>
+ <div class="sbody" id="s-body">
+  <section id="s-question" class="block" hidden></section>
+  <section id="s-reason" class="block" hidden><h3 data-i18n="whatNow">What's happening</h3><div class="reason" id="s-reason-t"></div></section>
+  <section style="margin-top:14px"><div class="hist" id="s-hist"></div></section>
+ </div>
+ <div class="sfoot">
+  <div id="s-attach" hidden></div>
+  <div class="compose"><button class="slash" type="button" id="s-slash" aria-label="Claude Code commands" data-i18n-attr="aria-label:slashAria"><svg width="22" height="22"><use href="#i-slash"/></svg></button><button class="clip" type="button" id="s-clip" aria-label="Attach files" data-i18n-attr="aria-label:attachAria"><svg width="22" height="22"><use href="#i-clip"/></svg></button><input type="file" id="s-file" multiple hidden><textarea id="s-text" rows="1" placeholder="Message" aria-label="Message to the session" data-i18n-attr="aria-label:messageAria"></textarea><button class="send" type="button" id="s-send" aria-label="Send" data-i18n-attr="aria-label:send" disabled><svg width="22" height="22"><use href="#i-up"/></svg></button></div>
+  <div class="squota" id="s-quota" hidden></div>
+ </div>
+</main>
+
+<main id="new-screen" class="screen" hidden>
+  <div class="navbar" data-nav hidden><button class="back" type="button" data-back><svg width="26" height="26"><use href="#i-back"/></svg><span data-i18n="sessions">Sessions</span></button><span class="nt" data-i18n="newSession">New session</span></div>
+  <header class="head"><h2 data-i18n="newSession">New session</h2><div class="state" data-i18n="newIntro">Describe a task — Claude Code will start a background session.</div></header>
+  <section class="block"><label for="n-text" class="state" style="display:block;margin:0 0 8px" data-i18n="task">Task</label><textarea class="field" id="n-text" placeholder="For example: check last night's nginx logs and tell me if there were any 5xx" data-i18n-attr="placeholder:taskPh"></textarea>
+    <div class="state" style="margin-top:12px" data-i18n="folder">Folder</div><div class="dirs" id="n-dirs"></div></section>
+</main>
+
+<main id="gate-screen" class="screen" hidden><section class="gate">
+  <h2 data-i18n="gateTitle">Sign in to Sessions</h2>
+  <p data-i18n="gateIntro">This is the Claude Code session remote. Sign in with a one-time link from the bot.</p>
+  <ol><li data-i18n="gateStep1">On iPhone, install it first: in Safari tap Share → Add to Home Screen, then open the app from the Home Screen.</li>
+  <li data-i18n-html="gateStep2">In Telegram, message the bot <b>/pwa</b> — it will send you a code.</li>
+  <li data-i18n="gateStep3">Copy the code and paste it here.</li></ol>
+  <form id="gate-form" style="display:grid;gap:8px"><label for="gate-code" class="state" data-i18n="gateCode">Code from the bot</label>
+  <input class="field" id="gate-code" autocomplete="one-time-code" autocapitalize="off" spellcheck="false" placeholder="Paste the code or link" data-i18n-attr="placeholder:gatePaste">
+  <button class="btn pri" type="submit" data-i18n="signIn">Sign in</button></form>
+  <p id="gate-msg"></p>
+</section></main>
+<div class="lbar"><span aria-hidden="true" data-i18n="sessions">Sessions</span><button class="iconbtn plus" type="button" id="lb-new" hidden aria-label="New session" data-i18n-attr="aria-label:newSession"><svg width="22" height="22"><use href="#i-plus"/></svg></button></div>
+<div class="pane-empty" data-i18n="paneEmpty">Choose a session on the left</div>
+<button class="fab" type="button" id="fab" hidden data-i18n="newSession">New session</button>
+<div class="shade" id="shade" hidden></div>
+<div class="scrim" id="scrim"></div>
+<section class="sheet" id="act-sheet" hidden aria-label="Session actions" data-i18n-attr="aria-label:sessionActions"><span class="grab"></span><button class="sx" type="button" aria-label="Close" data-i18n-attr="aria-label:close" data-close-sheet><svg width="18" height="18" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button><h3 data-i18n="actions">Actions</h3>
+  <div class="alist">
+    <button class="arow" type="button" id="a-watch">Notifications</button>
+    <button class="arow" type="button" id="a-rename" data-i18n="rename">Rename</button>
+    <button class="arow" type="button" id="a-arch">Archive</button>
+    <button class="arow dng" type="button" id="a-stop" data-i18n="stop">Stop</button>
+  </div>
+  <div class="meta" id="s-meta"></div>
+</section>
+<section class="sheet" id="sub-sheet" hidden aria-label="Subtasks" data-i18n-attr="aria-label:subsAria"><span class="grab"></span><button class="sx" type="button" aria-label="Close" data-i18n-attr="aria-label:close" data-close-sheet><svg width="18" height="18" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button><h3 data-i18n="subsTitle">Session subtasks</h3><div class="subl" id="sub-list"></div></section>
+<main id="sub-screen" class="screen" hidden>
+  <div class="navbar" data-nav-sub><button class="back" type="button" id="sub-back"><svg width="26" height="26"><use href="#i-back"/></svg><span data-i18n="session">Session</span></button><span class="nt" id="sub-navname"></span></div>
+  <header class="head"><h2 id="sub-name"></h2><div class="state" id="sub-state"></div></header>
+  <div class="hist" id="sub-hist"></div>
+  <div style="height:24px"></div>
+</main>
+<section class="sheet" id="model-sheet" hidden aria-label="Model" data-i18n-attr="aria-label:modelTitle"><span class="grab"></span><button class="sx" type="button" aria-label="Close" data-i18n-attr="aria-label:close" data-close-sheet><svg width="18" height="18" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+  <h3 data-i18n="modelTitle">Model</h3>
+  <p class="state" id="m-now" aria-live="polite"></p>
+  <div class="dirs" id="m-list" role="radiogroup" aria-label="Provider" data-i18n-attr="aria-label:modelProvider"></div>
+  <form id="m-form" novalidate>
+    <label class="m-l" id="m-base-l" for="m-base" hidden data-i18n="modelBase">Address</label>
+    <input class="field" id="m-base" inputmode="url" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="https://" hidden>
+    <label class="m-l" id="m-model-l" for="m-model" data-i18n="modelName">Model name</label>
+    <input class="field" id="m-model" autocapitalize="off" autocomplete="off" spellcheck="false">
+    <label class="m-l" id="m-key-l" for="m-key" data-i18n="modelKey">API key</label>
+    <input class="field" id="m-key" type="password" autocapitalize="off" autocomplete="off" spellcheck="false">
+    <p class="state" id="m-note" hidden></p>
+    <p class="m-err" id="m-err" role="alert" hidden></p>
+    <button class="btn pri" id="m-save" type="submit" data-i18n="modelSave">Check and connect</button>
+  </form>
+</section>
+<section class="sheet" id="bots-sheet" hidden aria-label="Bots" data-i18n-attr="aria-label:botsTitle"><span class="grab"></span><button class="sx" type="button" aria-label="Close" data-i18n-attr="aria-label:close" data-close-sheet><svg width="18" height="18" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+  <div id="b-vlist">
+    <h3 data-i18n="botsTitle">Bots</h3>
+    <p class="state" id="b-load" aria-live="polite"></p>
+    <div id="b-list"></div>
+    <button class="btn pri" type="button" id="b-add" data-i18n="botsAdd">Add a bot</button>
+  </div>
+  <form id="b-vadd" class="b-form" novalidate hidden>
+    <button class="b-back" type="button" data-b-back data-i18n="botsBack">Bots</button>
+    <h3 data-i18n="botsAddTitle">New bot</h3>
+    <label class="m-l" for="b-token" data-i18n="botsToken">Bot token</label>
+    <input class="field" id="b-token" type="password" autocapitalize="off" autocomplete="off" spellcheck="false">
+    <p class="state" data-i18n="botsTokenHint">Open @BotFather in Telegram, send /newbot and paste the token it gives you.</p>
+    <p class="m-err" id="b-err-add" role="alert" hidden></p>
+    <button class="btn pri" id="b-add-go" type="submit" data-i18n="botsAddGo">Add</button>
+  </form>
+  <form id="b-vedit" class="b-form" novalidate hidden>
+    <button class="b-back" type="button" data-b-back data-i18n="botsBack">Bots</button>
+    <h3 id="b-title"></h3>
+    <p class="state" id="b-sub"></p>
+    <p class="b-h" data-i18n="botsPersona">Personality</p>
+    <label class="m-l" for="b-about" data-i18n="botsAbout">About the project</label>
+    <textarea class="field" id="b-about" maxlength="8000"></textarea>
+    <button class="btn quiet" id="b-gen" type="button" data-i18n="botsGen">Generate</button>
+    <p class="m-err" id="b-err-persona" role="alert" hidden></p>
+    <label class="m-l" for="b-name" data-i18n="botsName">Name</label>
+    <input class="field" id="b-name" autocomplete="off">
+    <label class="m-l" for="b-short" data-i18n="botsShort">Short description</label>
+    <input class="field" id="b-short" autocomplete="off">
+    <label class="m-l" for="b-brief" data-i18n="botsBrief">Instructions for the bot</label>
+    <textarea class="field" id="b-brief" maxlength="20000"></textarea>
+    <p class="b-h" data-i18n="botsContext">Context</p>
+    <label class="m-l" for="b-cwd" data-i18n="botsCwd">Project folder</label>
+    <input class="field" id="b-cwd" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="~/code/project">
+    <label class="m-l" for="b-site" data-i18n="botsSite">Site (optional)</label>
+    <input class="field" id="b-site" inputmode="url" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="https://">
+    <p class="m-l" id="b-grp-l" data-i18n="botsGroup">Group</p>
+    <div class="b-groups" id="b-groups" role="radiogroup" aria-labelledby="b-grp-l"></div>
+    <p class="state" data-i18n="botsGroupHint">Add the bot to a group and write there; the group will appear here.</p>
+    <p class="m-err" id="b-err-ctx" role="alert" hidden></p>
+    <p class="b-h" data-i18n="modelTitle">Model</p>
+    <div class="dirs" id="b-prov" role="radiogroup" aria-label="Provider" data-i18n-attr="aria-label:modelProvider"></div>
+    <label class="m-l" id="b-base-l" for="b-base" hidden data-i18n="modelBase">Address</label>
+    <input class="field" id="b-base" inputmode="url" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="https://" hidden>
+    <label class="m-l" id="b-model-l" for="b-model" data-i18n="modelName">Model name</label>
+    <input class="field" id="b-model" autocapitalize="off" autocomplete="off" spellcheck="false">
+    <label class="m-l" id="b-key-l" for="b-key" data-i18n="modelKey">API key</label>
+    <input class="field" id="b-key" type="password" autocapitalize="off" autocomplete="off" spellcheck="false">
+    <p class="state" id="b-note" hidden></p>
+    <p class="m-err" id="b-err-model" role="alert" hidden></p>
+    <p class="m-err" id="b-err-save" role="alert" hidden></p>
+    <p class="b-ok" id="b-ok" role="status" hidden></p>
+    <button class="btn pri" id="b-save" type="submit" data-i18n="botsSave">Save</button>
+    <button class="btn quiet dng" id="b-del" type="button" data-i18n="botsDel">Delete bot</button>
+    <div class="row" id="b-sure" hidden><p class="state" style="flex:1 1 100%;margin:0" id="b-sure-t"></p><button class="btn dng" id="b-del-yes" type="button" data-i18n="botsDelYes">Yes, delete</button><button class="btn" id="b-del-no" type="button" data-i18n="cancel">Cancel</button></div>
+  </form>
+</section>
+<section class="sheet" id="cmd-sheet" hidden aria-label="Commands" data-i18n-attr="aria-label:cmdsAria"><span class="grab"></span><button class="sx" type="button" aria-label="Close" data-i18n-attr="aria-label:close" data-close-sheet><svg width="18" height="18" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button><h3 data-i18n="cmdsTitle">Session commands</h3><div class="cmdl" id="cmd-list"></div></section>
+<section class="sheet" id="scr-sheet" hidden aria-label="Session screen" data-i18n-attr="aria-label:screenAria"><span class="grab"></span><button class="sx" type="button" aria-label="Close" data-i18n-attr="aria-label:close" data-close-sheet><svg width="18" height="18" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button><h3 data-i18n="screenTitle">Session is waiting for a choice</h3><div class="scr" id="scr-text"></div>
+  <div class="keys" id="scr-keys">
+    <button class="btn" type="button" data-k="1">1</button><button class="btn" type="button" data-k="2">2</button><button class="btn" type="button" data-k="3">3</button><button class="btn" type="button" data-k="4">4</button><button class="btn" type="button" data-k="5">5</button>
+    <button class="btn" type="button" data-k="up">↑</button><button class="btn" type="button" data-k="down">↓</button><button class="btn" type="button" data-k="tab">Tab</button><button class="btn" type="button" data-k="esc">Esc</button><button class="btn pri" type="button" data-k="enter">⏎</button>
+  </div><div class="row"><button class="btn" type="button" id="scr-close" data-i18n="done">Done</button></div></section>
+<div class="lb" id="lb" hidden role="dialog" aria-label="Image viewer" data-i18n-attr="aria-label:viewerAria"><img id="lb-img" alt=""><button class="lbx" type="button" id="lb-x" aria-label="Close" data-i18n-attr="aria-label:close"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button><button class="lbd" type="button" id="lb-dl" data-i18n="download">Download</button></div>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script>
+(function(){
+"use strict";
+const STR = {
+ "en": {
+  "sessions": "Sessions",
+  "modelTitle": "Model",
+  "botsTitle": "Bots",
+  "botsBack": "Bots",
+  "botsAdd": "Add a bot",
+  "botsEmpty": "Assistant bots answer in your Telegram groups with their own name, context and model.",
+  "botsAddTitle": "New bot",
+  "botsToken": "Bot token",
+  "botsTokenHint": "Open @BotFather in Telegram, send /newbot and paste the token it gives you.",
+  "botsAddGo": "Add",
+  "botsAdding": "Adding…",
+  "botsPersona": "Personality",
+  "botsAbout": "About the project",
+  "botsGen": "Generate",
+  "botsGenning": "Generating…",
+  "botsName": "Name",
+  "botsShort": "Short description",
+  "botsBrief": "Instructions for the bot",
+  "botsContext": "Context",
+  "botsCwd": "Project folder",
+  "botsSite": "Site (optional)",
+  "botsGroup": "Group",
+  "botsGroupNone": "No group",
+  "botsGroupHint": "Add the bot to a group and write there; the group will appear here.",
+  "botsRefresh": "Refresh",
+  "botsSave": "Save",
+  "botsSaving": "Saving…",
+  "botsSaved": "Saved.",
+  "botsDel": "Delete bot",
+  "botsDelAsk": "Delete {n}? Its settings and history are removed.",
+  "botsDelYes": "Yes, delete",
+  "botsNoGroup": "group not chosen",
+  "botsOn": "working",
+  "botsOff": "stopped",
+  "botsBad": "error",
+  "botsLoadErr": "Could not load the bots. Close the sheet and open it again.",
+  "botsKeyStored": "key saved",
+  "botsGenerated": "Generated. Review and save.",
+  "botErr_token": "Telegram did not accept this token.",
+  "botErr_busy": "The bot is busy right now. Try again in a minute.",
+  "botErr_net": "No answer. Check the network and try again.",
+  "botErr_slug": "This bot name cannot be used.",
+  "botErr_cwd": "This folder does not exist on the server.",
+  "botErr_site": "The site address must start with https://",
+  "botErr_chat": "This group is not available.",
+  "botErr_provider": "Unknown provider.",
+  "botErr_exists": "This bot is already added.",
+  "botErr_missing": "The bot was not found. Refresh the list.",
+  "botErr_persona_codex": "Generation does not work with Codex. Fill the fields by hand.",
+  "botErr_persona_fail": "Could not generate. Try again or fill the fields by hand.",
+  "botErr_persona_nomodel": "Choose a model and a key below and save first: the bot's own model writes the personality.",
+  "botErr_balance": "No money left at the provider.",
+  "botErr_limit": "The provider is limiting requests: the limit is used up or there are too many requests. Try again later.",
+  "botErr_codex": "Codex is not signed in on the server. Run codex login there.",
+  "modelProvider": "Provider",
+  "modelBase": "Address",
+  "modelName": "Model name",
+  "modelKey": "API key",
+  "modelKeyStored": "Key is saved",
+  "modelSave": "Check and connect",
+  "modelChecking": "Checking…",
+  "modelCustom": "Other",
+  "modelNow": "Now: {n}",
+  "modelNoneYet": "No model connected yet",
+  "modelLoadErr": "Could not load the settings. Close the sheet and open it again.",
+  "modelBusy": "Running sessions: {n}. Connecting will stop them.",
+  "modelCodexNote": "Answers in the group and only reads files. Sign in on the server: codex login. Only for a group of people you trust: the model can read the Codex login file.",
+  "modelKimiNote": "Needs a Kimi Code subscription.",
+  "modelDone": "Connected: {n}",
+  "modelRestart": "Saved. Restart cc-tgbot-sdk on the server.",
+  "modelErr_key": "The provider did not accept this key.",
+  "modelErr_balance": "No money left at the provider.",
+  "modelErr_limit": "The provider is limiting requests: the limit is used up or there are too many requests. Try again later.",
+  "modelErr_model": "The provider does not know this model.",
+  "modelErr_net": "The provider did not answer. Check the address and the network.",
+  "modelErr_base": "The address must start with https://",
+  "modelErr_codex": "Codex is not signed in on the server. Run codex login there.",
+  "pushDevice": "Notifications on this device",
+  "newSession": "New session",
+  "loading": "Loading…",
+  "filter": "Filter",
+  "sessionActions": "Session actions",
+  "updateAvailable": "Update available",
+  "updateNow": "Update",
+  "whatNow": "What's happening",
+  "slashAria": "Claude Code commands",
+  "attachAria": "Attach files",
+  "removeAria": "Remove",
+  "message": "Message",
+  "messageAria": "Message to the session",
+  "send": "Send",
+  "session": "Session",
+  "newIntro": "Describe a task — Claude Code will start a background session.",
+  "task": "Task",
+  "taskPh": "For example: check last night's nginx logs and tell me if there were any 5xx",
+  "folder": "Folder",
+  "gateTitle": "Sign in to Sessions",
+  "gateIntro": "This is the Claude Code session remote. Sign in with a one-time link from the bot.",
+  "gateStep1": "On iPhone, install it first: in Safari tap Share → Add to Home Screen, then open the app from the Home Screen.",
+  "gateStep2": "In Telegram, message the bot <b>/pwa</b> — it will send you a code.",
+  "gateStep3": "Copy the code and paste it here.",
+  "gateCode": "Code from the bot",
+  "gatePaste": "Paste the code or link",
+  "signIn": "Sign in",
+  "close": "Close",
+  "actions": "Actions",
+  "notifications": "Notifications",
+  "rename": "Rename",
+  "archiveIt": "Archive",
+  "stop": "Stop",
+  "subsAria": "Subtasks",
+  "subsTitle": "Session subtasks",
+  "cmdsAria": "Commands",
+  "cmdsTitle": "Session commands",
+  "screenAria": "Session screen",
+  "screenTitle": "Session is waiting for a choice",
+  "done": "Done",
+  "viewerAria": "Image viewer",
+  "download": "Download",
+  "authMsg": "Your sign-in has expired — close the mini app and open it again from Telegram",
+  "gWait": "Waiting",
+  "gWork": "Working",
+  "gArch": "Archive",
+  "gActive": "Active",
+  "sumWait": "waiting",
+  "sumWork": "working",
+  "noSessions": "No sessions",
+  "listFail": "Couldn't load sessions",
+  "retry": "Retry",
+  "permTitle": "Permission",
+  "permPill": "Permission · {title}",
+  "permWait": "Needs permission",
+  "secPerm": "Needs permission · {n}",
+  "paneEmpty": "Choose a session on the left",
+  "permSent": "Sent",
+  "permClosed": "Request already closed",
+  "h5": "5 h",
+  "d7": "7 d",
+  "until": "until {t}",
+  "staleShort": " · stale",
+  "staleQuota": "Quota data is out of date",
+  "archAll": "Archive all done · {n}",
+  "curVer": "current version",
+  "contIn": "continued in “{name}”",
+  "stArchived": "archived",
+  "watchedTag": "notifications",
+  "unarchive": "Restore",
+  "toArchive": "Archive",
+  "secWait": "Waiting for you · {n}",
+  "secWork": "Working · {n}",
+  "emptyAct": "Nothing waiting or running.",
+  "emptyHere": "Nothing here.",
+  "restored": "Restored from archive",
+  "failed": "Something went wrong",
+  "stoppedArch": "Stopped and archived",
+  "archived": "Archived",
+  "undo": "Undo",
+  "confWork": "“{name}” is running. Stop and archive it?",
+  "confArch": "Archive “{name}”?",
+  "confWorkKeep": "“{name}” is running. Stop and archive it? The conversation is kept.",
+  "confArchKeep": "Archive “{name}”? The conversation is kept.",
+  "archivedCount": "Archived: {n}",
+  "confAll": "Archive all finished sessions? The conversations are kept.",
+  "confAllPlain": "Archive all finished sessions?",
+  "openFromTg": "Open the list from Telegram with the “Sessions” button in the bot chat.",
+  "stStopped": "stopped",
+  "stWait": "waiting for you",
+  "stWork": "working",
+  "stDone": "done",
+  "stOld": "replaced",
+  "stFailed": "error",
+  "subsRun": "Subtasks · <b>{w} running</b> of {t}",
+  "subsAll": "Subtasks · {t}",
+  "chainOld": "Older version — continued in “{name}”",
+  "chainPrev": "Continuation #{k} · previous “{name}”",
+  "watchOn": "on",
+  "watchOff": "off",
+  "unarchiveAct": "Restore from archive",
+  "queued": "queued — the session will read it after the current step",
+  "thinking": "Thinking",
+  "toTelegram": "To Telegram",
+  "liveWork": "working…",
+  "liveWorkD": "working: {d}",
+  "emptyHist": "No messages yet.",
+  "reviewAns": "Review your answers",
+  "submitAns": "Submit answers",
+  "cancel": "Cancel",
+  "qOf": "Question {s} of {n} · ",
+  "qHint": "choose — the answer is sent right away",
+  "next": "Next",
+  "ownAns": "Your answer",
+  "skip": "Skip",
+  "netRetry": "No connection, please try again",
+  "yourAnswer": "Your answer",
+  "newName": "New name",
+  "ansSent": "Sent",
+  "nameSaved": "Name saved",
+  "menuWait": "The session is waiting for an answer — pick an option above",
+  "notSent": "Not sent",
+  "netKeep": "No connection, your text is kept in the field",
+  "dlFail": "Couldn't download",
+  "szB": "B",
+  "szK": "KB",
+  "szM": "MB",
+  "decSep": ".",
+  "tgSent": "File sent to Telegram",
+  "fileNotSent": "Not sent",
+  "openFromTgShort": "Open from Telegram",
+  "failedWith": "Failed: {m}",
+  "max10": "No more than 10 files at once",
+  "over50": "A file is larger than 50 MB",
+  "over100": "Over 100 MB in total — send in parts",
+  "uploadingN": "Uploading {n} files…",
+  "uploading1": "Uploading {name}…",
+  "filesSent": "Files sent to the session: {n}",
+  "fileSent": "File sent to the session",
+  "attLost": "The app restarted — attachments were dropped, pick them again",
+  "tooBig": "The file is too large",
+  "uploadFail": "Upload failed",
+  "netFile": "No connection — file not sent",
+  "noSubs": "No subtasks.",
+  "loadFail": "Couldn't load",
+  "bgTag": "background",
+  "runs": "runs: {n}",
+  "agoNow": "now",
+  "agoMin": "{n} min",
+  "agoHr": "{n} h",
+  "agoDay": "{n} d",
+  "emptySub": "Nothing yet.",
+  "showAll": "Show all",
+  "collapse": "Collapse",
+  "cmdsFail": "Couldn't load the command list",
+  "enter": "Enter",
+  "run": "Run",
+  "sure": "Are you sure?",
+  "notRun": "Didn't run",
+  "cmdSent": "Command sent: {c}",
+  "cmdFail": "Couldn't send the command",
+  "keyFail": "Key press failed",
+  "watchOnToast": "Notifications on",
+  "watchOffToast": "Notifications off",
+  "sessStopped": "Session stopped",
+  "stopFail": "Couldn't stop",
+  "confStop": "Stop “{name}”? The conversation is kept.",
+  "confStopPlain": "Stop the session?",
+  "homeDir": "Home (~)",
+  "start": "Start",
+  "launched": "Session started",
+  "notStarted": "Didn't start",
+  "launchFail": "Couldn't start",
+  "pasteCode": "Paste the code from the bot.",
+  "loggedIn": "Signed in",
+  "tooMany": "Too many attempts — wait a minute.",
+  "codeExpired": "The code has expired or was already used. Ask for a new one: /pwa.",
+  "noNet": "No connection — try again.",
+  "pushOff": "Notifications on this device are off — they will go to Telegram again",
+  "pushDenied": "Notifications aren't allowed — turn them on in your phone settings",
+  "pushOn": "Done: notifications will now arrive here instead of Telegram",
+  "pushFail": "Couldn't turn on notifications: {m}"
+ },
+ "ru": {
+  "sessions": "Сессии",
+  "modelTitle": "Модель",
+  "botsTitle": "Боты",
+  "botsBack": "Боты",
+  "botsAdd": "Добавить бота",
+  "botsEmpty": "Боты-ассистенты отвечают в ваших группах Telegram под своим именем, со своим контекстом и моделью.",
+  "botsAddTitle": "Новый бот",
+  "botsToken": "Токен бота",
+  "botsTokenHint": "Откройте @BotFather в Telegram, отправьте /newbot и вставьте выданный токен.",
+  "botsAddGo": "Добавить",
+  "botsAdding": "Добавляю…",
+  "botsPersona": "Личность",
+  "botsAbout": "О проекте",
+  "botsGen": "Сгенерировать",
+  "botsGenning": "Генерирую…",
+  "botsName": "Имя",
+  "botsShort": "Короткое описание",
+  "botsBrief": "Инструкции для бота",
+  "botsContext": "Контекст",
+  "botsCwd": "Папка проекта",
+  "botsSite": "Сайт (необязательно)",
+  "botsGroup": "Группа",
+  "botsGroupNone": "Без группы",
+  "botsGroupHint": "Добавьте бота в группу и напишите там, группа появится здесь.",
+  "botsRefresh": "Обновить",
+  "botsSave": "Сохранить",
+  "botsSaving": "Сохраняю…",
+  "botsSaved": "Сохранено.",
+  "botsDel": "Удалить бота",
+  "botsDelAsk": "Удалить {n}? Настройки и история будут стёрты.",
+  "botsDelYes": "Да, удалить",
+  "botsNoGroup": "группа не выбрана",
+  "botsOn": "работает",
+  "botsOff": "стоит",
+  "botsBad": "ошибка",
+  "botsLoadErr": "Боты не загрузились. Закройте лист и откройте снова.",
+  "botsKeyStored": "ключ сохранён",
+  "botsGenerated": "Готово. Проверьте и сохраните.",
+  "botErr_token": "Telegram не принял этот токен.",
+  "botErr_busy": "Бот сейчас занят. Повторите через минуту.",
+  "botErr_net": "Нет ответа. Проверьте сеть и повторите.",
+  "botErr_slug": "Это имя бота использовать нельзя.",
+  "botErr_cwd": "Такой папки нет на сервере.",
+  "botErr_site": "Адрес сайта должен начинаться с https://",
+  "botErr_chat": "Эта группа недоступна.",
+  "botErr_provider": "Неизвестный провайдер.",
+  "botErr_exists": "Этот бот уже добавлен.",
+  "botErr_missing": "Бот не найден. Обновите список.",
+  "botErr_persona_codex": "С Codex генерация не работает. Заполните поля вручную.",
+  "botErr_persona_fail": "Не получилось сгенерировать. Повторите или заполните вручную.",
+  "botErr_persona_nomodel": "Сначала выберите модель и ключ ниже и сохраните: личность пишет модель самого бота.",
+  "botErr_balance": "У провайдера закончились деньги.",
+  "botErr_limit": "Провайдер ограничил запросы: лимит исчерпан или запросов слишком много. Попробуйте позже.",
+  "botErr_codex": "На сервере нет входа в Codex. Выполните там codex login.",
+  "modelProvider": "Провайдер",
+  "modelBase": "Адрес",
+  "modelName": "Название модели",
+  "modelKey": "Ключ API",
+  "modelKeyStored": "Ключ сохранён",
+  "modelSave": "Проверить и подключить",
+  "modelChecking": "Проверяю…",
+  "modelCustom": "Другой",
+  "modelNow": "Сейчас: {n}",
+  "modelNoneYet": "Модель ещё не подключена",
+  "modelLoadErr": "Настройки не загрузились. Закройте лист и откройте снова.",
+  "modelBusy": "Идёт сессий: {n}. Подключение их оборвёт.",
+  "modelCodexNote": "Отвечает в группе и только читает файлы. Вход выполняется на сервере: codex login. Только для группы своих: модель может прочитать файл входа Codex.",
+  "modelKimiNote": "Нужна подписка Kimi Code.",
+  "modelDone": "Подключено: {n}",
+  "modelRestart": "Сохранено. Перезапустите cc-tgbot-sdk на сервере.",
+  "modelErr_key": "Провайдер не принял этот ключ.",
+  "modelErr_balance": "У провайдера закончились деньги.",
+  "modelErr_limit": "Провайдер ограничил запросы: лимит исчерпан или запросов слишком много. Попробуйте позже.",
+  "modelErr_model": "Провайдер не знает такую модель.",
+  "modelErr_net": "Провайдер не ответил. Проверьте адрес и сеть.",
+  "modelErr_base": "Адрес должен начинаться с https://",
+  "modelErr_codex": "На сервере нет входа в Codex. Выполните там codex login.",
+  "pushDevice": "Уведомления на этом устройстве",
+  "newSession": "Новая сессия",
+  "loading": "Загружаю…",
+  "filter": "Фильтр",
+  "sessionActions": "Действия с сессией",
+  "updateAvailable": "Доступно обновление",
+  "updateNow": "Обновить",
+  "whatNow": "Что сейчас",
+  "slashAria": "Команды Claude Code",
+  "attachAria": "Прикрепить файлы",
+  "removeAria": "Убрать",
+  "message": "Сообщение",
+  "messageAria": "Сообщение в сессию",
+  "send": "Отправить",
+  "session": "Сессия",
+  "newIntro": "Опишите задачу — Claude Code запустит фоновую сессию.",
+  "task": "Задача",
+  "taskPh": "Например: проверь логи nginx за ночь и скажи, были ли 5xx",
+  "folder": "Папка",
+  "gateTitle": "Вход в «Сессии»",
+  "gateIntro": "Это приложение пульта сессий Claude Code. Войти можно по одноразовой ссылке из бота.",
+  "gateStep1": "На iPhone сначала установите: в Safari «Поделиться» → «На экран Домой», и откройте приложение с экрана.",
+  "gateStep2": "В Telegram напишите боту <b>/pwa</b> — он пришлёт код.",
+  "gateStep3": "Скопируйте код и вставьте сюда.",
+  "gateCode": "Код из бота",
+  "gatePaste": "Вставьте код или ссылку",
+  "signIn": "Войти",
+  "close": "Закрыть",
+  "actions": "Действия",
+  "notifications": "Уведомления",
+  "rename": "Переименовать",
+  "archiveIt": "Убрать в архив",
+  "stop": "Остановить",
+  "subsAria": "Сабтаски",
+  "subsTitle": "Сабтаски сессии",
+  "cmdsAria": "Команды",
+  "cmdsTitle": "Команды сессии",
+  "screenAria": "Экран сессии",
+  "screenTitle": "Сессия ждёт выбора",
+  "done": "Готово",
+  "viewerAria": "Просмотр картинки",
+  "download": "Скачать",
+  "authMsg": "Вход устарел — закройте и откройте мини-апп заново из Telegram",
+  "gWait": "Ждут",
+  "gWork": "В работе",
+  "gArch": "Архив",
+  "gActive": "Активные",
+  "sumWait": "ждут",
+  "sumWork": "в работе",
+  "noSessions": "Сессий нет",
+  "listFail": "Не удалось загрузить сессии",
+  "retry": "Повторить",
+  "permTitle": "Разрешение",
+  "permPill": "Разрешение · {title}",
+  "permWait": "Нужно разрешение",
+  "secPerm": "Нужно разрешение · {n}",
+  "paneEmpty": "Выберите сессию слева",
+  "permSent": "Ответ отправлен",
+  "permClosed": "Запрос уже закрыт",
+  "h5": "5 ч",
+  "d7": "7 дн",
+  "until": "до {t}",
+  "staleShort": " · устарело",
+  "staleQuota": "Данные о квоте устарели",
+  "archAll": "Всё готовое в архив · {n}",
+  "curVer": "текущая версия",
+  "contIn": "продолжена в «{name}»",
+  "stArchived": "в архиве",
+  "watchedTag": "уведомления",
+  "unarchive": "Из архива",
+  "toArchive": "В архив",
+  "secWait": "Ждут вас · {n}",
+  "secWork": "В работе · {n}",
+  "emptyAct": "Ничего не ждёт и не работает.",
+  "emptyHere": "Здесь пусто.",
+  "restored": "Возвращена из архива",
+  "failed": "Не получилось",
+  "stoppedArch": "Остановлена и убрана в архив",
+  "archived": "Убрана в архив",
+  "undo": "Отменить",
+  "confWork": "«{name}» сейчас работает. Остановить и убрать в архив?",
+  "confArch": "Убрать «{name}» в архив?",
+  "confWorkKeep": "«{name}» сейчас работает. Остановить и убрать в архив? Разговор сохранится.",
+  "confArchKeep": "Убрать «{name}» в архив? Разговор сохранится.",
+  "archivedCount": "В архиве: {n}",
+  "confAll": "Убрать все готовые сессии в архив? Разговоры сохранятся.",
+  "confAllPlain": "Убрать все готовые в архив?",
+  "openFromTg": "Откройте список из Telegram — кнопкой «Сессии» в чате с ботом.",
+  "stStopped": "остановлена",
+  "stWait": "ждёт вас",
+  "stWork": "работает",
+  "stDone": "готово",
+  "stOld": "сменилась",
+  "stFailed": "ошибка",
+  "subsRun": "Сабтаски · <b>{w} работают</b> из {t}",
+  "subsAll": "Сабтаски · {t}",
+  "chainOld": "Старая версия — продолжена в «{name}»",
+  "chainPrev": "Продолжение №{k} · предыдущая «{name}»",
+  "watchOn": "включены",
+  "watchOff": "выключены",
+  "unarchiveAct": "Вернуть из архива",
+  "queued": "в очереди — сессия прочтёт после текущего шага",
+  "thinking": "Ход мыслей",
+  "toTelegram": "В Telegram",
+  "liveWork": "работает…",
+  "liveWorkD": "работает: {d}",
+  "emptyHist": "Переписки пока нет.",
+  "reviewAns": "Проверьте ответы",
+  "submitAns": "Отправить ответы",
+  "cancel": "Отмена",
+  "qOf": "Вопрос {s} из {n} · ",
+  "qHint": "выберите — ответ уйдёт сразу",
+  "next": "Далее",
+  "ownAns": "Свой ответ",
+  "skip": "Пропустить",
+  "netRetry": "Сеть недоступна, попробуйте ещё раз",
+  "yourAnswer": "Ваш ответ",
+  "newName": "Новое имя",
+  "ansSent": "Ответ отправлен",
+  "nameSaved": "Имя сохранено",
+  "menuWait": "Сессия ждёт ответа на вопрос — выберите вариант выше",
+  "notSent": "Не отправлено",
+  "netKeep": "Сеть недоступна, текст сохранён в поле",
+  "dlFail": "Не получилось скачать",
+  "szB": "Б",
+  "szK": "КБ",
+  "szM": "МБ",
+  "decSep": ",",
+  "tgSent": "Файл отправлен в Telegram",
+  "fileNotSent": "Не отправился",
+  "openFromTgShort": "Откройте из Telegram",
+  "failedWith": "Не получилось: {m}",
+  "max10": "Не больше 10 файлов за раз",
+  "over50": "Есть файл больше 50 МБ",
+  "over100": "Вместе больше 100 МБ — отправьте частями",
+  "uploadingN": "Загружаю {n} файла(ов)…",
+  "uploading1": "Загружаю {name}…",
+  "filesSent": "Файлы отправлены в сессию: {n}",
+  "fileSent": "Файл отправлен в сессию",
+  "attLost": "Приложение перезапустилось — вложения сброшены, выберите их ещё раз",
+  "tooBig": "Файл слишком большой",
+  "uploadFail": "Не загрузился",
+  "netFile": "Сеть недоступна — файл не отправлен",
+  "noSubs": "Сабтасков нет.",
+  "loadFail": "Не загрузилось",
+  "bgTag": "фоновый",
+  "runs": "запусков: {n}",
+  "agoNow": "сейчас",
+  "agoMin": "{n} мин",
+  "agoHr": "{n} ч",
+  "agoDay": "{n} дн",
+  "emptySub": "Пока пусто.",
+  "showAll": "Показать полностью",
+  "collapse": "Свернуть",
+  "cmdsFail": "Не загрузился список команд",
+  "enter": "Ввести",
+  "run": "Выполнить",
+  "sure": "Точно?",
+  "notRun": "Не выполнилась",
+  "cmdSent": "Команда отправлена: {c}",
+  "cmdFail": "Не получилось отправить команду",
+  "keyFail": "Клавиша не нажалась",
+  "watchOnToast": "Уведомления включены",
+  "watchOffToast": "Уведомления выключены",
+  "sessStopped": "Сессия остановлена",
+  "stopFail": "Не получилось остановить",
+  "confStop": "Остановить «{name}»? Разговор сохранится.",
+  "confStopPlain": "Остановить сессию?",
+  "homeDir": "Домашняя (~)",
+  "start": "Запустить",
+  "launched": "Сессия запущена",
+  "notStarted": "Не запустилась",
+  "launchFail": "Не получилось запустить",
+  "pasteCode": "Вставьте код из бота.",
+  "loggedIn": "Вход выполнен",
+  "tooMany": "Слишком много попыток — подождите минуту.",
+  "codeExpired": "Код устарел или уже использован. Попросите новый: /pwa.",
+  "noNet": "Нет сети — попробуйте ещё раз.",
+  "pushOff": "Уведомления на этом устройстве выключены — они снова будут приходить в Telegram",
+  "pushDenied": "Уведомления не разрешены — включите их в настройках телефона",
+  "pushOn": "Готово: уведомления будут приходить сюда, а не в Telegram",
+  "pushFail": "Не получилось включить уведомления: {m}"
+ }
+};
+function detectLang(){
+  let l = null; try{ l = localStorage.getItem("cc-lang"); }catch(e){}
+  if (l !== "ru" && l !== "en") l = /^ru/i.test(navigator.language || "") ? "ru" : "en";
+  return l;
+}
+let LANG = detectLang();
+function t(key, vars){
+  let s = STR[LANG] && STR[LANG][key]; if (s == null) s = STR.en[key]; if (s == null) s = key;
+  return vars ? s.replace(/\{(\w+)\}/g, (m, k) => k in vars ? vars[k] : m) : s;
+}
+const LOC = () => LANG === "ru" ? "ru-RU" : "en-US";
+function applyI18n(){
+  document.documentElement.lang = LANG;
+  document.title = t("sessions");
+  const am = document.querySelector('meta[name="apple-mobile-web-app-title"]'); if (am) am.setAttribute("content", t("sessions"));
+  document.querySelectorAll("[data-i18n]").forEach(el => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll("[data-i18n-html]").forEach(el => { el.innerHTML = t(el.dataset.i18nHtml); });
+  document.querySelectorAll("[data-i18n-attr]").forEach(el => el.dataset.i18nAttr.split(";").forEach(p => { const i = p.indexOf(":"); el.setAttribute(p.slice(0, i), t(p.slice(i + 1))); }));
+  const st = document.getElementById("s-text"); if (st) st.placeholder = t(MODES[st.dataset.mode || "send"]);
+  if (sess) $("a-arch").textContent = t((sess.group === "archived" || sess.group === "old") ? "unarchiveAct" : "archiveIt");
+  else $("a-arch").textContent = t("archiveIt");
+  $("a-watch").innerHTML = `${t("notifications")}${sess ? ` <span class="aval">${t(sess.watched ? "watchOn" : "watchOff")}</span>` : ""}`;
+}
+/* язык приходит с сервера в поле lang; при смене — сохранить и перерисовать текущий экран */
+function setLang(l){
+  if (l !== "ru" && l !== "en") return;
+  try{ localStorage.setItem("cc-lang", l); }catch(e){}
+  if (l === LANG) return;
+  LANG = l; cmds = null;
+  applyI18n(); lastHist = "";
+  renderList(); quotaLine(); mainButton();
+  if (sess && (view === "session" || view === "sub")) renderSession();
+  if (view === "sub" && curSub) loadSub();
+}
+const tgRaw = window.Telegram && window.Telegram.WebApp;
+const initData = (tgRaw && tgRaw.initData) || "";
+const tg = initData ? tgRaw : null;  // вне Telegram (PWA, браузер) — свои кнопки и своя тема
+if (tg) document.documentElement.classList.add("in-tg");
+const STANDALONE = !tg;
+/* iPhone: при показанной кнопке «назад» Telegram свайп от края забирает себе — снимок прошлой страницы едет поверх,
+   а потом у нас ещё проигрывается сворачивание (владелец 20.10: «свайп на айфоне просто открывает предыдущую страницу»).
+   На iOS назад ведём сами: своя кнопка в шапке и свой свайп за пальцем (морф clio); на Android кнопка Telegram = системная «назад». */
+const OWN_BACK = STANDALONE || (!!tg && tg.platform === "ios");
+let deviceToken = null;
+try{ deviceToken = localStorage.getItem("cc-device"); }catch(e){}
+const DEV = !initData && /^(127\.0\.0\.1|localhost)$/.test(location.hostname);
+if (tg){ tg.ready(); tg.expand(); try{ tg.disableVerticalSwipes && tg.disableVerticalSwipes(); }catch(e){} }
+
+const $ = id => document.getElementById(id);
+const esc = t => String(t == null ? "" : t).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const haptic = k => { try{ tg && tg.HapticFeedback && (k === "ok" ? tg.HapticFeedback.notificationOccurred("success") : tg.HapticFeedback.impactOccurred("light")); }catch(e){} };
+let toastTimer;
+function toast(t, action, onAction){
+  const el = $("toast"); el.innerHTML = ""; const span = document.createElement("span"); span.textContent = t; el.appendChild(span);
+  if (action){ const b = document.createElement("button"); b.type = "button"; b.className = "ta"; b.textContent = action; b.onclick = () => { el.classList.add("off"); onAction && onAction(); }; el.appendChild(b); }
+  el.hidden = false; el.classList.add("off"); void el.offsetWidth; el.classList.remove("off");  // стиль «off» должен посчитаться, иначе переход из display:none не стартует
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.classList.add("off"); setTimeout(() => el.hidden = true, 220); }, action ? 4500 : 2600);
+}
+
+let appReloading = false;
+const readController = new AbortController(), backgroundRequests = new Set();
+function trackBackgroundRequest(request){
+  backgroundRequests.add(request);
+  request.then(() => backgroundRequests.delete(request), () => backgroundRequests.delete(request));
+  return request;
+}
+function api(path, body){
+  const h = {"Content-Type": "application/json"};
+  if (initData) h["X-Tg-Init-Data"] = initData;
+  else if (deviceToken) h["X-Device-Token"] = deviceToken;
+  if (DEV) h["X-Dev"] = "1";
+  const request = (async () => {
+    const r = await fetch("/api/" + path, {method: body ? "POST" : "GET", headers: h, body: body ? JSON.stringify(body) : undefined, cache: "no-store", signal: body ? undefined : readController.signal});
+    if (r.status === 401){ try{ localStorage.removeItem("cc-device"); }catch(e){} throw new Error("auth"); }  // протухший токен не должен пережить перезагрузку
+    const j = await r.json().catch(() => ({}));
+    if (j && j.lang && !appReloading) setLang(j.lang);
+    if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
+    return j;
+  })();
+  return body ? request : trackBackgroundRequest(request);
+}
+
+/* ---------- список ---------- */
+const GROUPS = [["wait","gWait"],["work","gWork"],["done","done"],["arch","gArch"]];
+const inGroup = (s, g) => g === "arch" ? (s.group === "old" || s.group === "archived") : s.group === g;
+let filter = "act", data = null, view = "list", current = null;
+try{ filter = localStorage.getItem("cc-filter") || "act"; }catch(e){}
+if (!["act","wait","work","done","arch"].includes(filter)) filter = filter === "old" ? "arch" : "act";
+
+const nameOf = s => String(s.name || "").replace(/^🗂\s*/, "");
+/* одинаковый ответ не пересоздаёт карточки и фильтры */
+const listMarkup = new WeakMap();
+function listHTML(el, html){
+  if (listMarkup.get(el) === html) return;
+  el.innerHTML = html; listMarkup.set(el, html);
+}
+// ждущая сессия — что именно ждёт: вопрос агента, команда на разрешение или строка терминала (решение владельца 19.10)
+const waitOf = s => { const q = s.wait_question && s.wait_question.question, b = s.perm && s.perm_body; return b ? (permTitleOf(s) ? permTitleOf(s) + " · " + b : b) : q || s.prompt_line || ""; };
+const detailOf = s => s.perm ? (permTitleOf(s) ? t("permWait") + " · " + permTitleOf(s) : t("permWait")) : s.detail === "stopped" ? t("stStopped") : (s.detail || "");
+const permTitleOf = s => String(s.perm_title || (s.perm && s.perm.title) || "");
+function dotCls(s){ return s.perm ? "ask" : s.failed ? "fail" : s.ask ? "ask" : ({wait: "wait", work: "work", done: "done"}[s.group] || ""); }
+function quotaLine(){
+  const q = (data && data.quota) || {}, el = $("s-quota");
+  if (q.h5 == null && q.d7 == null){ el.hidden = true; return; }
+  const part = (lbl, v, extra) => v == null ? "" : `${lbl} <b class="${v >= 85 ? "hot" : ""}">${Math.round(v)} %</b>${extra ? " " + esc(extra) : ""}`;
+  el.innerHTML = ["Claude", part(t("h5"), q.h5, q.h5_reset ? t("until", {t: q.h5_reset}) : ""), part(t("d7"), q.d7, "")].filter(Boolean).join(" · ") + (q.stale ? t("staleShort") : "");
+  el.hidden = false;
+}
+function renderList(){
+  if (!data) return;
+  const S = data.sessions, cnt = g => S.filter(s => s.group === g).length;
+  const q = data.quota || {};
+  const parts = [];
+  if (cnt("wait")) parts.push(`<span><b>${cnt("wait")}</b> ${t("sumWait")}</span>`);
+  if (cnt("work")) parts.push(`<span><b>${cnt("work")}</b> ${t("sumWork")}</span>`);
+  const bar = (label, v, extra) => v == null ? "" : `<span>${label}</span><span class="qbar" role="img" aria-label="${label}: ${Math.round(v)} %"><i class="${v >= 85 ? "hot" : ""}" style="width:${Math.max(2, Math.min(100, v))}%"></i></span><span class="qv">${Math.round(v)} %${extra ? ` <small>${esc(extra)}</small>` : ""}</span>`;
+  const qh = bar(t("h5"), q.h5, q.h5_reset ? t("until", {t: q.h5_reset}) : "") + bar(t("d7"), q.d7, "");
+  listHTML($("quota"), qh + (q.stale ? `<span></span><span style="grid-column:2/4">${t("staleQuota")}</span>` : ""));
+  $("quota").hidden = !qh;
+  listHTML($("sum"), parts.join("") || `<span>${t("noSessions")}</span>`);
+  if (document.querySelector(".cw.open")) return;  // квота обновляется и при открытом свайпе
+  const chips = [["act",t("gActive"), cnt("wait") + cnt("work")]].concat(GROUPS.map(([g,k]) => [g,t(k),S.filter(s => inGroup(s, g)).length]));
+  listHTML($("chips"), chips.map(([k,lbl,n]) => `<button class="chip" type="button" data-f="${k}" aria-pressed="${k === filter}">${lbl}<span class="n">${n}</span></button>`).join(""));
+  let rows = filter === "act" ? S.filter(s => s.group === "wait").concat(S.filter(s => s.group === "work")) : S.filter(s => inGroup(s, filter));
+  const bulk = filter === "done" && rows.length ? `<button class="btn" type="button" id="arch-all" style="width:100%">${t("archAll", {n: rows.length})}</button>` : "";
+  const card = s => {
+    const tags = [];
+    if (s.current) tags.push(`<span class="tag cur">${t("curVer")}</span>`);
+    if (s.group === "old" && s.into) tags.push(`<span class="tag">${esc(t("contIn", {name: String(s.into.name).replace(/^🗂\s*/, "")}))}</span>`);
+    if (s.group === "archived") tags.push(`<span class="tag">${t("stArchived")}</span>`);
+    if (s.watched) tags.push(`<span class="tag">${t("watchedTag")}</span>`);
+    const act = (s.group === "archived" || s.group === "old") ? t("unarchive") : t("toArchive");
+    const ds = (s.group === "wait" || s.perm) && waitOf(s) || detailOf(s);
+    return `<div class="cw" data-cw="${esc(s.id)}"><div class="ca"><button type="button" data-arch="${esc(s.id)}">${act}</button></div><button class="card${s.perm ? " perm" : ""}" type="button" data-id="${esc(s.id)}"><span class="sc" aria-hidden="true">${s.perm ? '<svg class="pi"><use href="#i-lock"/></svg>' : `<span class="dot ${dotCls(s)}"></span>`}</span><span class="nm">${esc(nameOf(s))}</span><span class="tm">${esc(s.ago)}</span>${ds ? `<span class="ds">${esc(ds)}</span>` : ""}${tags.length ? `<span class="tags">${tags.join("")}</span>` : ""}</button></div>`;
+  };
+  // «Активные» — два раздела: сначала то, что ждёт вас
+  let body;
+  // ждущие — обычными строками, группами наверху: сначала разрешения, затем остальное ожидание (решение владельца 19.10)
+  const pm = (filter === "act" || filter === "wait") ? rows.filter(s => s.perm) : [];
+  const permSec = pm.length ? `<div class="lsec">${t("secPerm", {n: pm.length})}</div>` + pm.map(card).join("") : "";
+  if (pm.length) rows = rows.filter(s => !s.perm);
+  if (filter === "act"){
+    const w = rows.filter(s => s.group === "wait"), k = rows.filter(s => s.group === "work");
+    body = permSec + (w.length ? `<div class="lsec">${t("secWait", {n: w.length})}</div>` + w.map(card).join("") : "") + (k.length ? `<div class="lsec">${t("secWork", {n: k.length})}</div>` + k.map(card).join("") : "");
+  } else body = permSec + rows.map(card).join("");
+  listHTML($("list"), bulk + (rows.length || pm.length ? body : `<div class="empty">${filter === "act" ? t("emptyAct") : t("emptyHere")}</div>`));
+  // активный фильтр — в видимой области, с отступом 12px (без прилипания первого к краю)
+  const cb = $("chips"), ac = cb.querySelector('[aria-pressed="true"]');
+  if (ac){ const l = ac.offsetLeft - 12, r = ac.offsetLeft + ac.offsetWidth + 12 - cb.clientWidth;
+    if (l < cb.scrollLeft) cb.scrollLeft = Math.max(0, l); else if (r > cb.scrollLeft) cb.scrollLeft = r;
+    cb.classList.toggle("scrolled", cb.scrollLeft > 4); }
+}
+$("chips").addEventListener("scroll", () => $("chips").classList.toggle("scrolled", $("chips").scrollLeft > 4), {passive: true});
+$("chips").addEventListener("click", e => { const b = e.target.closest(".chip"); if (!b) return; filter = b.dataset.f; try{ localStorage.setItem("cc-filter", filter); }catch(x){} haptic(); renderList(); });
+/* смахивание карточки влево — действие «В архив» */
+(function(){
+  let x0 = 0, y0 = 0, cw = null, card = null, dx = 0, horiz = null, base = 0, tr = null;
+  const anims = new WeakMap();
+  const cardX = c => parseFloat(((c.style.transform || "").match(/translate3d\(([-\d.]+)px/) || [0, 0])[1]) || 0;
+  const snap = (w, to, v) => { const c = w.querySelector(".card"); if (anims.get(c)) anims.get(c).stop();
+    w.classList.add("act");
+    anims.set(c, spring(cardX(c), to, {v: v || 0, response: 0.32, damping: Math.abs(v || 0) > 400 ? 0.82 : 1, onUpdate: x => { c.style.transform = x ? `translate3d(${x}px,0,0)` : ""; }, onDone: () => { if (to === 0) w.classList.remove("act"); }}));
+    w.classList.toggle("open", to !== 0); };
+  const closeAll = except => document.querySelectorAll(".cw.open").forEach(c => { if (c !== except) snap(c, 0, 0); });
+  $("chips").addEventListener("click", () => closeAll(), true);  // фильтр не должен упираться в раскрытую карточку
+  $("list").addEventListener("touchstart", e => {
+    cw = e.target.closest(".cw"); if (!cw || e.touches.length !== 1 || view !== "list" || navAnim) { cw = null; return; }  // жест «назад» над открывающимся списком — не смахивание строки
+    card = cw.querySelector(".card"); x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dx = 0; horiz = null;
+    if (anims.get(card)) anims.get(card).stop();
+    base = cardX(card); tr = tracker(); tr.add(base);
+  }, {passive: true});
+  $("list").addEventListener("touchmove", e => {
+    if (!cw) return;
+    const mx = e.touches[0].clientX - x0, my = e.touches[0].clientY - y0;
+    if (horiz === null && (Math.abs(mx) > 8 || Math.abs(my) > 8)) horiz = Math.abs(mx) > Math.abs(my);
+    if (!horiz) return;
+    const raw = base + mx;
+    dx = raw > 0 ? rubber(raw, 112) : raw < -112 ? -112 + rubber(raw + 112, 112) : raw;
+    tr.add(dx); card.style.transform = `translate3d(${dx}px,0,0)`; cw.classList.add("act");
+  }, {passive: true});
+  $("list").addEventListener("touchend", () => {
+    if (!cw || !horiz){ cw = null; return; }
+    const v = tr.v(), open = dx + project(v, 0.985) < -56;
+    snap(cw, open ? -112 : 0, v); if (open){ closeAll(cw); haptic(); }
+    const swiped = cw; swiped.dataset.swiped = "1"; setTimeout(() => { delete swiped.dataset.swiped; }, 350);
+    cw = null;
+  });
+  $("list").addEventListener("click", async e => {
+    const a = e.target.closest("[data-arch]");
+    if (a){
+      e.stopPropagation();
+      const sid = a.dataset.arch, s = data && data.sessions.find(x => x.id === sid); if (!s) return;
+      if (s.group === "archived" || s.group === "old"){ try{ await api(`session/${encodeURIComponent(sid)}/unarchive`, {}); haptic("ok"); toast(t("restored")); loadList(); }catch(x){ toast(t("failed")); } return; }
+      const go = async ok => { if (!ok){ closeAll(); return; } try{ const r = await api(`session/${encodeURIComponent(sid)}/archive`, {stop: true}); haptic("ok"); toast(r.stopped ? t("stoppedArch") : t("archived"), t("undo"), async () => { try{ await api(`session/${encodeURIComponent(sid)}/unarchive`, {}); loadList(); }catch(y){} }); loadList(); }catch(x){ toast(t("failed")); } };
+      const q = s.group === "work" ? t("confWork", {name: s.name}) : t("confArch", {name: s.name});
+      tg && tg.showConfirm ? tg.showConfirm(q, go) : go(window.confirm(q));
+      return;
+    }
+    const w = e.target.closest(".cw");
+    if (w && (w.dataset.swiped || w.classList.contains("open") || document.querySelector(".cw.open"))){ e.stopImmediatePropagation(); closeAll(); return; }
+  }, true);
+})();
+$("list").addEventListener("click", e => {
+  if (e.target.closest("#arch-all")){
+    const go = async ok => { if (!ok) return; try{ const r = await api("archive_done", {}); haptic("ok"); toast(t("archivedCount", {n: r.count || 0})); await loadList(); }catch(x){ toast(t("failed")); } };
+    tg && tg.showConfirm ? tg.showConfirm(t("confAll"), go) : go(window.confirm(t("confAllPlain")));
+    return;
+  }
+  const c = e.target.closest(".card"); if (c) openSession(c.dataset.id);
+});
+
+async function loadList(){
+  if (appReloading) return;
+  try{ const fresh = await api("sessions"); if (appReloading) return; data = fresh; document.documentElement.dataset.voice = fresh.voice ? "1" : ""; renderList(); quotaLine(); }  // voice.js читает способность распознавания отсюда
+  catch(e){
+    if (appReloading) return;
+    if (e.message === "auth"){
+      if (STANDALONE){ show("gate"); }
+      else { listHTML($("sum"), `<span>${t("openFromTg")}</span>`); listHTML($("list"), ""); }
+    } else if (data){ toast(t("listFail")); }
+    else { listHTML($("list"), `<div class="empty"><p>${t("listFail")}</p><button class="btn" type="button" data-retry-list>${t("retry")}</button></div>`); }
+  }
+}
+$("list").addEventListener("click", e => { if (e.target.closest("[data-retry-list]")) loadList(); });
+
+/* ---------- сессия ---------- */
+let sess = null, lastHist = "", followUntil = 0;  // после отправки 3 мин держим низ переписки
+const scroller = () => view === "session" ? $("s-body") : null;
+const toBottom = () => { const b = scroller(); if (b) b.scrollTo({top: b.scrollHeight, behavior: "smooth"}); else window.scrollTo({top: document.body.scrollHeight, behavior: "smooth"}); };
+/* ---------- движение: пружина (прерываемая, с передачей скорости) ---------- */
+const RM = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+function spring(from, to, o){
+  o = o || {};
+  const response = o.response || 0.38, damping = o.damping == null ? 1 : o.damping;
+  if (RM){ o.onUpdate && o.onUpdate(to); o.onDone && queueMicrotask(o.onDone); return {stop(){}, x: to, v: 0}; }  // onDone после присвоения navAnim
+  const w = 2 * Math.PI / response, k = w * w, c = 2 * damping * w;
+  const st = {x: from, v: o.v || 0, alive: true, raf: 0, stop(){ this.alive = false; cancelAnimationFrame(this.raf); }};
+  const span = Math.max(Math.abs(to - from), 1e-6);
+  const epsX = o.eps != null ? o.eps : (span > 4 ? 0.5 : span * 0.002), epsV = epsX * 12;  // для пикселей ~полпикселя, для долей 0..1 — 0.2 %
+  let last = performance.now();
+  const step = t => {
+    if (!st.alive) return;
+    const dt = Math.min(0.032, Math.max(0.001, (t - last) / 1000)); last = t;
+    for (let i = 0; i < 4; i++){ const h = dt / 4; st.v += (-k * (st.x - to) - c * st.v) * h; st.x += st.v * h; }
+    if (Math.abs(st.x - to) < epsX && Math.abs(st.v) < epsV){ st.x = to; o.onUpdate && o.onUpdate(to); st.alive = false; o.onDone && o.onDone(); return; }
+    o.onUpdate && o.onUpdate(st.x); st.raf = requestAnimationFrame(step);
+  };
+  st.raf = requestAnimationFrame(step);
+  return st;
+}
+const project = (v, d = 0.99) => (v / 1000) * d / (1 - d);  // куда долетит жест по инерции
+const rubber = (o, dim, c = 0.55) => (o * dim * c) / (dim + c * Math.abs(o));
+function tracker(){ const pts = []; return {
+  add(x){ const t = performance.now(); pts.push([t, x]); while (pts.length > 2 && t - pts[0][0] > 100) pts.shift(); },
+  v(){ if (pts.length < 2) return 0; const a = pts[0], b = pts[pts.length - 1]; const dt = (b[0] - a[0]) / 1000; return dt > 0 ? (b[1] - a[1]) / dt : 0; } }; }
+
+/* стек экранов: список внизу, сверху сессия, над ней сабтаск или новая сессия */
+const layerOf = v => v === "session" ? $("session-screen") : v === "sub" ? $("sub-screen") : v === "new" ? $("new-screen") : null;
+const belowOf = v => v === "sub" ? $("session-screen") : $("list-screen");
+const parentOf = v => v === "sub" ? "session" : "list";
+let navAnim = null, navX = 0;
+function navDim(){ let d = $("navdim"); if (!d){ d = document.createElement("div"); d.id = "navdim"; d.style.cssText = "position:fixed;inset:0;background:#000;opacity:0;pointer-events:none"; document.body.appendChild(d); } return d; }
+const Z = {"session-screen": 10, "sub-screen": 11, "new-screen": 11};
+function paintNav(v, x){
+  const top = layerOf(v), below = belowOf(v), W = window.innerWidth, p = Math.max(0, Math.min(1, x / W)), d = navDim();
+  navX = x;
+  if (x !== 0 && !below.style.willChange) below.style.willChange = "transform";
+  top.style.transform = x ? `translate3d(${x}px,0,0)` : "";
+  below.style.transform = p < 1 ? `translate3d(${(-0.28 * W * (1 - p)).toFixed(1)}px,0,0)` : "";
+  if (x === 0) below.style.transform = "";
+  d.style.zIndex = String((Z[top.id] || 10) - 1);
+  d.style.opacity = x === 0 ? "0" : String((0.16 * (1 - p)).toFixed(3));
+  top.classList.toggle("moving", x > 0);
+}
+function settleNav(v){ const top = layerOf(v), below = belowOf(v); if (top){ top.style.transform = ""; top.classList.remove("moving"); } if (below){ below.style.transform = ""; below.style.willChange = ""; } navDim().style.opacity = "0"; navX = 0; }
+const WIDE = matchMedia("(min-width:1000px)");
+const panel = v => WIDE.matches && v === "session";  // сессия — правая панель, а не слой поверх списка
+function push(v){
+  if (navAnim) navAnim.stop();
+  const W = window.innerWidth; show(v);
+  if (!layerOf(v) || panel(v) || v === "session") return;  // сессия: один переход — морф clio, без слайда и navdim
+  paintNav(v, W);
+  navAnim = spring(W, 0, {response: 0.34, eps: 1, onUpdate: x => paintNav(v, x), onDone: () => { navAnim = null; settleNav(v); }});
+}
+function pop(vel){
+  const v = view, to = parentOf(v);
+  if (!layerOf(v) || panel(v)){ show(to); if (panel(v)) loadList(); return; }
+  if (navAnim) navAnim.stop();
+  const W = window.innerWidth;
+  belowOf(v).hidden = false;
+  // кнопки нижнего экрана — сразу, вместе с уходом слоя, а не после пружины
+  if (tg) tg.MainButton.hide(); else $("fab").hidden = true;
+  if (to === "list"){ $("new-btn").hidden = $("lb-new").hidden = false; document.documentElement.classList.remove("locked"); }
+  if (v === "session"){
+    /* морф clio сворачивает экран в карточку и шлёт session:closed; запасной таймер — если морфа нет */
+    let tm = 0;
+    const done = () => { if (navAnim !== st) return; navAnim = null; settleNav(v); show(to); loadList(); };
+    const st = navAnim = {morph: true, stop(){ clearTimeout(tm); document.removeEventListener("session:closed", done); }};
+    document.addEventListener("session:closed", done, {once: true});
+    tm = setTimeout(done, (parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--m-expand-out-t")) || 355) + 200);
+    document.dispatchEvent(new Event("session:close"));
+    return;
+  }
+  navAnim = spring(navX, W, {v: vel || 0, response: 0.3, eps: 1, onUpdate: x => paintNav(v, x), onDone: () => {
+    navAnim = null; settleNav(v); show(to);
+    if (to === "session") loadSession(); else loadList();
+  }});
+}
+/* История браузера: глубина записей = глубине слоёв (список 0, сессия/новая 1, сабтаск 2); «Назад» закрывает верхний слой. Только вне Telegram. */
+const HD = {list: 0, gate: 0, session: 1, new: 1, sub: 2};
+/* iPhone с экрана «Домой»: свайп от края у PWA — «назад» по истории (снимок прошлой записи, потом popstate и сворачивание;
+   владелец 20.10 10:41). Кнопки «назад» у такого окна нет — записей не кладём, свайп достаётся нашему обработчику и морфу. */
+const IOS_PWA = (navigator.standalone === true || matchMedia("(display-mode: standalone)").matches) && (/iP(hone|ad|od)/.test(navigator.userAgent) || /Mac/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);  // iPadOS называет себя Mac
+let histDepth = 0, histSilent = false;
+function syncHist(v){
+  if (IOS_PWA) return;
+  const d = HD[v] || 0;
+  while (histDepth < d) history.pushState({d: ++histDepth}, "");
+  if (histDepth > d){ const n = histDepth - d; histDepth = d; histSilent = true; history.go(-n); }
+}
+function show(v){
+  view = v;
+  // список остаётся под открытыми слоями (для перехода и свайпа назад); сессия — под сабтаском
+  $("list-screen").hidden = v === "gate"; $("session-screen").hidden = !(v === "session" || v === "sub"); $("new-screen").hidden = v !== "new"; $("gate-screen").hidden = v !== "gate"; $("sub-screen").hidden = v !== "sub";
+  document.documentElement.classList.toggle("locked", v !== "list" && v !== "gate" && !panel(v));
+  document.documentElement.dataset.view = v;  // кнопка списка прячется только под сессией/сабтаском, не на экране новой сессии
+  document.querySelectorAll("[data-nav]").forEach(b => b.hidden = !OWN_BACK);
+  if (STANDALONE) document.querySelectorAll(".top").forEach(x => x.classList.add("sa-top"));
+  if (tg){ v === "list" || OWN_BACK ? tg.BackButton.hide() : tg.BackButton.show(); }
+  mainButton();
+  if (v === "list") stashDraft();
+  if (STANDALONE) syncHist(v);
+  if (v === "gate") window.scrollTo(0, 0);  // слои лежат поверх списка — его прокрутка сохраняется
+  listScrolled();
+  if (v === "sub") $("sub-screen").scrollTop = 0;
+  if (v === "new") $("new-screen").scrollTop = 0;
+}
+/* переписка по ключам: при опросе меняются только новые и изменившиеся записи */
+function renderHist(items){
+  const box = $("s-hist");
+  let ghosts = box.querySelectorAll(".pending").length;  // своё сообщение сменилось настоящим: въезд уже был у призрака
+  box.querySelectorAll(".pending").forEach(g => g.remove());
+  const empty = box.querySelector(":scope > .empty"); if (empty) empty.remove();
+  if (!items.length){ box.innerHTML = `<div class="empty">${t("emptyHist")}</div>`; return; }
+  const cur = Array.from(box.children).filter(c => c.dataset.k);
+  const curKeys = cur.map(c => c.dataset.k).filter(k => k !== "live");
+  const newKeys = items.map(i => i.k).filter(k => k !== "live");
+  const prefix = curKeys.length <= newKeys.length && curKeys.every((k, i) => k === newKeys[i]);
+  const mk = (it, animate) => { const d = document.createElement("div"); d.className = "it" + (animate ? " enter" : ""); d.dataset.k = it.k; d.innerHTML = it.html; d._h = it.html; return d; };
+  if (!prefix || !cur.length){ box.replaceChildren(...items.map(it => mk(it, false))); return; }
+  const byKey = new Map(cur.map(c => [c.dataset.k, c]));
+  const liveEl = byKey.get("live"); if (liveEl) liveEl.remove();
+  for (const it of items){
+    const el = byKey.get(it.k);
+    if (it.k === "live"){ const d = liveEl && liveEl._h === it.html ? liveEl : mk(it, !liveEl); box.appendChild(d); continue; }
+    if (!el){ const mine = ghosts > 0 && /class="me[ "]/.test(it.html); if (mine) ghosts--; box.appendChild(mk(it, !mine)); continue; }
+    if (el._h !== it.html){ el.innerHTML = it.html; el._h = it.html; }
+  }
+}
+const STATE_KEY = {working: "stWork", blocked: "stWait", done: "stDone", failed: "stFailed", stopped: "stStopped", archived: "stArchived"};
+function stateLine(s){
+  const gk = s.perm ? "stWait" : {wait:"stWait", work:"stWork", done:"stDone", old:"stOld", archived:"stArchived"}[s.group] || STATE_KEY[s.state];
+  const w = gk ? t(gk) : s.state;
+  return (s.failed ? t("stFailed") : w) + (s.ago ? " · " + s.ago : "");
+}
+function renderSession(){
+  const s = sess; if (!s) return;
+  $("s-name").textContent = nameOf(s);
+  const sc = s.subagents_count, sb = $("s-subs");
+  if (sc && sc.total){ sb.hidden = false; sb.innerHTML = '<svg class="ic" aria-hidden="true"><use href="#i-subs"/></svg>' + (sc.working ? t("subsRun", {w: sc.working, t: sc.total}) : t("subsAll", {t: sc.total})); } else sb.hidden = true;
+  $("s-state").textContent = stateLine(s);
+  $("s-dot").className = "dot " + dotCls(s);
+  const ch = $("s-chain");
+  if (s.group === "old" && s.into){ ch.hidden = false; ch.textContent = t("chainOld", {name: s.into.name}); ch.dataset.id = s.into.id; }
+  else if (s.prev){ ch.hidden = false; ch.textContent = t("chainPrev", {k: s.k, name: String(s.prev.name).replace(/^🗂\s*/, "")}); ch.dataset.id = s.prev.id; }
+  else ch.hidden = true;
+  $("s-links").hidden = sb.hidden && ch.hidden;
+  const showReason = s.detail && !s.question && !s.perm;
+  $("s-reason").hidden = !showReason; $("s-reason-t").textContent = s.detail || "";
+  renderQuestion();
+  $("a-watch").innerHTML = `${t("notifications")} <span class="aval">${t(s.watched ? "watchOn" : "watchOff")}</span>`;
+  $("a-arch").textContent = t((s.group === "archived" || s.group === "old") ? "unarchiveAct" : "archiveIt");
+  $("a-stop").hidden = s.group === "archived";
+  const h = (s.history || []).map((m, idx) => ({k: m.uuid || (m.role + ":" + idx), html: (m => {
+    if (m.role === "user" && /^(Файлы? от владельца|Files? from owner)/.test(m.text || "")){
+      const lines = (m.text || "").split("\n"), media = [], rest = [];
+      for (const ln of lines.slice(1).concat(/^(Файл от владельца|File from owner): /.test(lines[0]) ? [lines[0].replace(/^(Файл от владельца|File from owner): /, "")] : [])){
+        // папка сессии в tg-inbox носит её название: в пути пробелы и скобки — «(размер, тип)» берём последними
+        const mm = /^(?:• )?(\/.+) \(([^,()]+), ([\w.+-]+)\/[^)]*\)$/.exec(ln.trim());
+        if (mm) media.push(mm); else if (ln.trim()) rest.push(ln.trim());
+      }
+      const vis = media.filter(mm => mm[3] === "image" || mm[3] === "video"), docs = media.filter(mm => !vis.includes(mm));
+      const one = mm => mm[3] === "video" ? `<video class="pv" data-pv="${esc(mm[1])}" ${vis.length > 1 ? "muted playsinline preload=\"metadata\"" : "controls playsinline preload=\"metadata\""}></video>` : `<img class="pv" alt="" data-pv="${esc(mm[1])}">`;
+      // несколько фото — компактный альбом, как в Telegram; больше 9 — плитка «+N»
+      const grid = vis.length > 1 ? `<div class="album${vis.length === 3 ? " a3" : vis.length >= 5 ? " c3" : ""}">${vis.slice(0, 9).map(one).join("")}${vis.length > 9 ? `<div class="more">+${vis.length - 9}</div>` : ""}</div>` : vis.map(one).join("");
+      const dl = docs.map(mm => `<div class="me" style="margin-top:4px"><svg class="ic" aria-hidden="true"><use href="#i-clip"/></svg>${esc(mm[1].split("/").pop())} · ${esc(mm[2])}</div>`).join("");
+      return `<div class="pvwrap">${grid}${dl}${rest.length ? `<div class="me" style="margin-top:4px">${esc(rest.join("\n"))}</div>` : ""}</div>`;
+    }
+    if (m.role === "user") return m.queued ? `<div class="me q">${esc(m.text)}</div><div class="qlab">${t("queued")}</div>` : `<div class="me">${esc(m.text)}</div>`;
+    if (m.role === "command") return `<div class="cmd">${esc(m.text)}</div>`;
+    if (m.role === "output") return `<div class="out">${esc(m.text)}</div>`;
+    if (m.role === "note") return `<div class="note">${esc(m.text)}</div>`;
+      const media = (m.files || []).filter(f => f.kind === "image" || f.kind === "video").map(f => f.kind === "video"
+      ? `<video class="pv" data-pv="${esc(f.path)}" controls playsinline preload="metadata"></video>`
+      : `<img class="pv" alt="${esc(f.name)}" data-pv="${esc(f.path)}">`).join("");
+    const files = (m.files || []).map(f => `<div class="file"><svg class="fi" aria-hidden="true"><use href="#i-file"/></svg><span class="fn">${esc(f.name)} <span style="font-weight:400;color:var(--muted)">${fmtSize(f.size)}</span></span><span class="fa"><button type="button" data-dl="${esc(f.path)}" data-name="${esc(f.name)}">${t("download")}</button><button type="button" data-tg="${esc(f.path)}">${t("toTelegram")}</button></span></div>`).join("");
+    if (m.thinking) return `<article class="msg thinking"><div class="thk">${t("thinking")}</div>${m.html || esc(m.text || "")}</article>`;  // ответ не попал в лог — видна только сводка рассуждения
+    return `<article class="msg">${m.html || esc(m.text || "")}${media}${files ? `<div class="files">${files}</div>` : ""}</article>`;
+  })(m)}));
+  const live = (s.group === "work" && !s.question && !s.perm) ? `<div class="live" aria-live="polite"><span class="dots"><i></i><i></i><i></i></span><span>${esc(s.detail ? t("liveWorkD", {d: s.detail}) : t("liveWork"))}</span></div>` : "";
+  // отметка времени перед сообщением, если с прошлого прошло 10 минут и больше
+  const hh = []; let prevT = 0;
+  (s.history || []).forEach((m, idx) => {
+    const t = m.ts ? Date.parse(m.ts) : 0;
+    if (t && (!prevT || t - prevT >= 600000)){ const d = new Date(t); hh.push({k: "t:" + h[idx].k, html: `<div class="tsep">${d.toLocaleDateString(LOC(), {day: "numeric", month: "short"})}, ${d.toLocaleTimeString(LOC(), {hour: "2-digit", minute: "2-digit"})}</div>`}); }
+    if (t) prevT = t;
+    hh.push(h[idx]);
+  });
+  const items = live ? hh.concat([{k: "live", html: live}]) : hh;
+  const sig = items.map(i => i.k + "\u0001" + i.html).join("\u0002");
+  if (sig !== lastHist){
+    const sb = $("s-body"); const atEnd = sb.scrollTop + sb.clientHeight >= sb.scrollHeight - 120;
+    renderHist(items); lastHist = sig; setTimeout(hydrate, 0);
+    if (atEnd || Date.now() < followUntil) requestAnimationFrame(() => toBottom());
+  }
+  $("s-meta").textContent = [s.cwd, s.id].filter(Boolean).join(" · ");
+}
+let permPending = null, permVersion = 0;
+const ownAnswerRequests = new Map();
+let ownAnswerVersion = 0;
+function ownAnswerBusy(id){ return !!ownAnswerRequests.get(id)?.pending; }
+function ownQuestionKey(q){
+  return q ? JSON.stringify([q.step, q.n, q.review, q.question, q.multi, (q.options || []).map(o => [o.label, o.description])]) : "";
+}
+function permShort(label){
+  const first = label.split(" · ")[0], chars = Array.from(first);
+  return chars.length > 48 || first !== label ? chars.slice(0, 47).join("") + "…" : first;
+}
+function renderPermission(p, el){
+  const max = Math.max(...p.options.map(o => o.n));
+  const deny = o => /^(?:No\b|Нет(?:\s|$)|Отклонить|Deny\b|Reject\b)/i.test(o.label) && (p.kind === "tmux" || o.n === max);
+  const options = p.options.filter(o => !deny(o)).concat(p.options.filter(deny));
+  el.innerHTML = `<div class="perm-card" data-session="${esc(sess.id)}" data-perm="${esc(JSON.stringify(p))}" data-cap="${esc(t("permTitle"))}" data-pill="${esc(t("permPill", {title: p.title}))}">
+    <div class="q">${esc(p.title)}</div>${permDetails(p)}
+    <div class="opts">${options.map(o => `<button class="opt${deny(o) ? " perm-deny" : ""}${o.n === p.selected ? " perm-selected" : ""}" type="button" data-a="perm" data-i="${o.n}" data-label="${esc(o.label)}" title="${esc(o.label)}" aria-label="${esc(o.label)}"><span class="mk">${o.n}</span><span class="perm-label">${esc(p.kind === "tmux" ? permShort(o.label) : o.label)}</span></button>`).join("")}</div></div>`;
+}
+function permDetails(p){
+  return ["summary", "path", "body", "note", "question"].map(k => p[k] ? `<${k === "body" ? "pre" : "div"} class="lab-perm-${k}">${esc(p[k])}</${k === "body" ? "pre" : "div"}>` : "").join("");
+}
+function renderQuestion(){
+  const q = sess && sess.question, el = $("s-question");
+  if (permPending && sess && permPending.id === sess.id) return;
+  if (sess && sess.perm && typeof sess.perm === "object" && Array.isArray(sess.perm.options)){ el.hidden = false; renderPermission(sess.perm, el); return; }
+  const own = sess && ownAnswerRequests.get(sess.id);
+  el.dataset.ownBusy = String(!!own && own.pending);
+  el.dataset.ownState = JSON.stringify(own && own.key === ownQuestionKey(q) ? {pending: own.pending, text: own.text, error: own.error} : null);
+  if (!q){ el.hidden = true; el.innerHTML = ""; return; }
+  el.hidden = false;
+  el.dataset.session = sess.id; el.dataset.question = ownQuestionKey(q); el.dataset.multi = String(!!q.multi); el.dataset.more = String(!q.review && q.n > 1);
+  el.dataset.ownLabels = JSON.stringify({send: t("send"), cancel: t("cancel"), failed: t("failed"), network: t("netRetry"), auth: t("authMsg")});
+  if (q.review){
+    el.innerHTML = `<h3>${t("reviewAns")}</h3>${(q.answers || []).map(a => `<div class="reason">${esc((a.header || a.question || "") + ": " + (a.answer == null ? "—" : a.answer))}</div>`).join("")}<div class="row"><button class="btn pri" type="button" data-a="submit">${t("submitAns")}</button><button class="btn" type="button" data-a="cancel">${t("cancel")}</button></div>`;
+    return;
+  }
+  el.innerHTML = `<div class="qstep">${q.n > 1 ? t("qOf", {s: q.step + 1, n: q.n}) : ""}${t("qHint")}</div><div class="q">${esc(q.question)}</div>
+    <div class="opts">${q.options.map((o, i) => `<button class="opt" type="button" data-a="option" data-i="${i + 1}" aria-pressed="${!!o.marked}"><span class="mk">${q.multi ? (o.marked ? '<svg class="ic" aria-hidden="true"><use href="#i-check"/></svg>' : "") : (i + 1)}</span><span>${esc(o.label)}${o.description && o.description.toLowerCase() !== o.label.toLowerCase() ? `<small>${esc(o.description)}</small>` : ""}</span></button>`).join("")}</div>
+    <div class="row">${q.multi ? `<button class="btn pri" type="button" data-a="next">${t("next")}</button>` : ""}<button class="btn" type="button" data-a="own">${t("ownAns")}</button><button class="btn" type="button" data-a="cancel">${t("skip")}</button></div>`;
+}
+let answering = false;  // один ответ за раз: сервер берёт шаг из своего состояния, второй клик ответил бы на следующий
+$("s-question").addEventListener("click", async e => {
+  const b = e.target.closest("[data-a]"); if (!b || !sess) return;
+  const a = b.dataset.a; if (a === "perm") return answerPermission(b);
+  if (ownAnswerBusy(sess.id)) return;
+  let body = {action: a};
+  if (a === "option") body.index = +b.dataset.i;
+  if (a === "own") return $("s-question").dispatchEvent(new CustomEvent("question:own", {bubbles: true}));
+  if (answering) return;
+  answering = true; b.disabled = true; haptic();
+  const failed = () => $("s-question").dispatchEvent(new CustomEvent("question:fail", {bubbles: true})); /* Clio вернёт лист */
+  try{ const r = await api(`session/${encodeURIComponent(sess.id)}/answer`, body); if (!r.ok){ toast(r.error || t("failed")); failed(); } else haptic("ok"); await loadSession(); }
+  catch(x){ toast(t("netRetry")); failed(); }
+  finally{ answering = false; b.disabled = false; }
+});
+/* Keep the request and its draft bound to the originating session/question,
+   including when navigation destroys the sheet before the response arrives. */
+async function submitOwnAnswer(text, id, key){
+  if (ownAnswerBusy(id) || view !== "session" || !sess || current !== id || sess.id !== id || sess.perm || ownQuestionKey(sess.question) !== key) return {ok: false, stale: true};
+  const request = {id, key, session: {...sess}, text, pending: true, error: "", result: null}; ownAnswerVersion++;
+  ownAnswerRequests.set(id, request); renderQuestion();
+  try{
+    const r = await api(`session/${encodeURIComponent(id)}/answer`, {action: "own", text});
+    request.result = r;
+    if (r.ok) request.session.question = r.question || null;
+    else request.error = r.error || t("failed");
+    return r;
+  }catch(e){
+    request.error = t(e.message === "auth" ? "authMsg" : "netRetry");
+    return {ok: false, error: request.error};
+  }finally{
+    request.pending = false; ownAnswerVersion++;
+    if (ownAnswerRequests.get(id) === request && view === "session" && current === id && sess && sess.id === id && !sess.perm && ownQuestionKey(sess.question) === key){
+      if (request.result?.ok){
+        sess.question = request.session.question; haptic("ok");
+        if (!sess.question) toast(t("ansSent"));
+      }
+      renderQuestion();
+      if (request.result?.ok && !sess.question) loadSession();
+    }
+  }
+}
+/* A DOM event bridges the isolated product and Clio scripts. */
+$("s-question").addEventListener("question:answer", e => {
+  const d = e.detail;
+  d.result = submitOwnAnswer(d.text, d.id, d.key);
+});
+$("s-question").addEventListener("question:own-reset", e => {
+  const d = e.detail, request = ownAnswerRequests.get(d.id);
+  if (request && !request.pending && request.key === d.key){
+    ownAnswerRequests.delete(d.id);
+    if (current === d.id && sess && sess.id === d.id) renderQuestion();
+  }
+});
+$("s-question").addEventListener("question:own-draft", e => {
+  const d = e.detail, request = ownAnswerRequests.get(d.id);
+  if (request && !request.pending && request.key === d.key) request.text = d.text;
+});
+async function answerPermission(b){
+  if ((permPending && permPending.id === (sess && sess.id)) || !sess || !sess.perm) return;  // занята только эта сессия
+  const id = sess.id, p = sess.perm, el = $("s-question");
+  if (!b.closest(".perm-card") || b.closest(".perm-card").dataset.session !== id) return;
+  const option = p.options.find(o => o.n === +b.dataset.i); if (!option) return;
+  const body = p.kind === "sdk" ? {option: option.n, req: p.req} : {option: option.n, label: option.label};
+  const mine = permPending = {id}; const version = ++permVersion;
+  el.dataset.permBusy = "true";
+  el.querySelectorAll("button").forEach(x => x.disabled = true);
+  haptic();
+  try{
+    const r = await Promise.race([api(`session/${encodeURIComponent(id)}/perm`, body), new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 20000))]);
+    if (current !== id || version !== permVersion || !sess || sess.id !== id) return;
+    if (r.code === "stale" && r.perm) sess.perm = r.perm;
+    else if (r.code === "closed"){ sess.perm = null; toast(t("permClosed")); }
+    else if (r.ok && (r.already || r.perm === null)){ sess.perm = null; toast(t("permSent")); haptic("ok"); }
+    else if (r.ok && r.perm) sess.perm = r.perm;
+    else toast(r.error || t("failed"));
+  }catch(e){ if (current === id) toast(e.message === "auth" ? t("authMsg") : t("netRetry")); }
+  finally{
+    if (permPending && permPending !== mine) return;  // поздний ответ прежнего запроса не снимает блокировку нового
+    permPending = null; permVersion++; delete el.dataset.permBusy;
+    if (current){ renderQuestion(); await loadSession(); }
+  }
+}
+/* Полная метка доступна без отправки ответа. */
+$("s-question").addEventListener("perm:hint", e => toast(e.detail));
+let permHold = 0, permHeld = false;
+$("s-question").addEventListener("pointerdown", e => {
+  const b = e.target.closest('[data-a="perm"]'); if (!b || b.disabled) return;
+  permHeld = false; clearTimeout(permHold);
+  permHold = setTimeout(() => { permHeld = true; toast(b.dataset.label); }, 500);
+});
+["pointerup", "pointercancel", "pointermove", "pointerleave"].forEach(ev => $("s-question").addEventListener(ev, () => clearTimeout(permHold)));
+$("s-question").addEventListener("click", e => { if (permHeld){ permHeld = false; e.preventDefault(); e.stopImmediatePropagation(); } }, true);
+/* Поле ввода: сообщение или новое имя; ответы вводятся в листе вопроса. */
+const MODES = {send: "message", rename: "newName"};
+function setMode(m){ const el = $("s-text"); el.dataset.mode = m; el.placeholder = t(MODES[m]); if (m === "rename") el.value = sess ? (sess.base_name || sess.name) : ""; autosize(); el.focus(); }
+/* черновики по сессиям: уходя со страницы сессии, поле очищается (не блокирует автообновление) и возвращается при входе */
+const drafts = new Map();
+let draftOut = false;  // поле уже очищено при выходе на список
+function stashDraft(){
+  clearAtt();
+  const ta = $("s-text"); if (!current || draftOut) return; draftOut = true;
+  const v = ta.dataset.mode === "rename" ? "" : ta.value;
+  v.trim() ? drafts.set(current, v) : drafts.delete(current);
+  ta.value = ""; ta.dataset.mode = "send"; ta.placeholder = t(MODES.send); autosize();
+}
+async function openSession(id){
+  stashDraft();
+  permVersion++;
+  ownAnswerVersion++;
+  current = id; sess = (data && data.sessions.find(s => s.id === id)) || {id, name: "…", group: "work"}; lastHist = "";
+  const own = ownAnswerRequests.get(id);
+  if (own) sess = {...own.session};
+  draftOut = false; $("s-text").value = drafts.get(id) || ""; setMode("send"); $("s-text").blur();
+  push("session"); renderSession(); quotaLine(); haptic();
+  await loadSession();
+  setTimeout(() => { const b = $("s-body"); b.scrollTop = b.scrollHeight; }, 50);
+}
+async function loadSession(){
+  if (!current || appReloading) return;
+  const id = current, version = permVersion, ownVersion = ownAnswerVersion;
+  try{
+    const fresh = await api("session/" + encodeURIComponent(id));
+    if (appReloading || current !== id || version !== permVersion || ownVersion !== ownAnswerVersion || ownAnswerBusy(id) || (permPending && permPending.id === id)) return;
+    const own = ownAnswerRequests.get(id);
+    if (own && (own.result?.ok || fresh.perm || ownQuestionKey(fresh.question) !== own.key)) ownAnswerRequests.delete(id);
+    sess = fresh; renderSession();
+  }
+  catch(e){ if (!appReloading && e.message === "auth") toast(t("authMsg")); }
+}
+$("s-chain").addEventListener("click", () => { const id = $("s-chain").dataset.id; if (id) openSession(id); });
+
+/* поле ввода */
+/* вложения черновика: {file, url}; уходят одним /upload вместе с текстом */
+let atts = [];
+function autosize(){ const t = $("s-text"); t.style.height = "auto"; t.style.height = Math.min(160, t.scrollHeight) + "px"; $("s-send").disabled = !t.value.trim() && !(atts.length && (t.dataset.mode || "send") === "send"); }
+$("s-text").addEventListener("input", autosize);
+$("s-send").addEventListener("click", sendText);
+let sending = false;
+async function sendText(){
+  if (atts.length && ($("s-text").dataset.mode || "send") === "send") return sendDraft();
+  const ta = $("s-text"), text = ta.value.trim(); if (!text || !sess || sending) return;
+  sending = true;
+  const mode = ta.dataset.mode || "send";
+  let ghost = null;
+  if (mode === "send" && !text.startsWith("/")){
+    ghost = document.createElement("div"); ghost.className = "me pending enter"; ghost.textContent = text;
+    const empty = $("s-hist").querySelector(".empty"); if (empty) empty.remove();
+    $("s-hist").appendChild(ghost); followUntil = Date.now() + 180000; setTimeout(toBottom, 20);
+  }
+  $("s-send").disabled = true;
+  const sid0 = sess.id, quick = mode === "send";
+  if (quick){ ta.value = ""; ta.blur(); autosize(); }  // сервер отвечает после вставки в tmux (1–2 с): поле не ждёт его
+  const restore = () => { if (quick && current === sid0 && !ta.value.trim()){ ta.value = text; autosize(); } };
+  try{
+    const r = mode === "rename" ? await api(`session/${encodeURIComponent(sess.id)}/rename`, {name: text.slice(0, 28)})
+            : text.startsWith("/") ? await api(`session/${encodeURIComponent(sess.id)}/command`, {text})
+            : await api(`session/${encodeURIComponent(sess.id)}/send`, {text});
+    if (r.menu) openScreen(r.screen);
+    if (r.ok !== false){ if (ta.value.trim() === text){ ta.value = ""; setMode("send"); ta.blur(); } haptic("ok"); followUntil = Date.now() + 180000; setTimeout(toBottom, 50); if (mode === "rename"){ toast(t("nameSaved")); loadList(); } }
+    else { if (ghost) ghost.remove(); restore(); toast(r.code === "menu" ? t("menuWait") : (r.error || t("notSent"))); }
+    await loadSession();
+  }catch(e){ restore(); toast(e.message === "auth" ? t("authMsg") : t("netKeep")); }
+  finally{ sending = false; autosize(); }
+}
+
+/* просмотр картинки поверх переписки */
+let lbPath = null;
+let lbFrom = null, lbAnim = null;
+function lbPaint(p, dragY){
+  // p: 0 — на месте миниатюры, 1 — во весь экран; dragY — смахивание вниз
+  const img = $("lb-img"), lb = $("lb");
+  const t = img.getBoundingClientRect ? img._final : null;
+  let tf = "";
+  if (lbFrom && t){
+    const sx = lbFrom.width / t.width, sy = lbFrom.height / t.height, s = Math.max(sx, sy);
+    const dx = (lbFrom.left + lbFrom.width / 2) - (t.left + t.width / 2), dy = (lbFrom.top + lbFrom.height / 2) - (t.top + t.height / 2);
+    const k = 1 - p;
+    tf = `translate3d(${dx * k}px,${dy * k + (dragY || 0)}px,0) scale(${1 + (s - 1) * k})`;
+  } else tf = `translate3d(0,${(1 - p) * 40 + (dragY || 0)}px,0) scale(${0.96 + 0.04 * p})`;
+  img.style.transform = tf;
+  const fade = dragY ? Math.max(0, 1 - Math.abs(dragY) / 360) : 1;
+  lb.style.background = `rgba(0,0,0,${(0.94 * p * fade).toFixed(3)})`;
+  lb.querySelectorAll(".lbx,.lbd").forEach(b => b.style.opacity = String(p * fade));
+}
+function openLightbox(src, path, fromEl){
+  lbPath = path; const img = $("lb-img"), lb = $("lb");
+  lbFrom = fromEl ? fromEl.getBoundingClientRect() : null;
+  if (lbAnim) lbAnim.stop();
+  img.style.transform = ""; lb.style.background = "rgba(0,0,0,0)"; img.style.opacity = "0"; img.src = src; lb.hidden = false; haptic();
+  // меряем итоговое место и ставим картинку на место миниатюры в том же кадре — без вспышки во весь экран
+  const go = () => { img._final = img.getBoundingClientRect(); lbPaint(0); img.style.opacity = "";
+    lbAnim = spring(0, 1, {response: 0.38, damping: 0.9, onUpdate: p => lbPaint(p)}); };
+  if (img.complete && img.naturalWidth) go(); else img.onload = go;
+}
+function closeLightbox(v, fromY){
+  if (lbAnim) lbAnim.stop();
+  const lb = $("lb"), img = $("lb-img");
+  const done = () => { lb.hidden = true; img.removeAttribute("src"); img.style.transform = ""; lb.style.background = ""; lbFrom = null; };
+  if (fromY){ lbAnim = spring(fromY, fromY + (v > 0 ? 1 : -1) * window.innerHeight, {v: v || 0, response: 0.3, onUpdate: y => lbPaint(1, y), onDone: done}); return; }
+  img._final = img._final || img.getBoundingClientRect();
+  lbAnim = spring(1, 0, {response: 0.3, onUpdate: p => lbPaint(p), onDone: done});
+}
+(function(){
+  const lb = $("lb"); let y0 = 0, on = false, dy = 0, tr = null;
+  lb.addEventListener("touchstart", e => { if (e.touches.length !== 1) { on = false; return; } y0 = e.touches[0].clientY; on = true; dy = 0; tr = tracker(); tr.add(0); if (lbAnim) lbAnim.stop(); }, {passive: true});
+  lb.addEventListener("touchmove", e => { if (!on || e.touches.length !== 1) { on = false; return; } dy = e.touches[0].clientY - y0; tr.add(dy); lbPaint(1, dy); }, {passive: true});
+  lb.addEventListener("touchend", () => { if (!on) return; on = false; const v = tr.v(), landing = dy + project(v);
+    if (Math.abs(landing) > 140) closeLightbox(v, dy);
+    else if (Math.abs(dy) > 4) lbAnim = spring(dy, 0, {v, response: 0.32, damping: 0.85, onUpdate: y => lbPaint(1, y)}); });
+})();
+$("lb").addEventListener("click", e => { if (e.target.id === "lb" || e.target.id === "lb-img") closeLightbox(); });  // тап — свернуть обратно в миниатюру
+$("lb-x").addEventListener("click", () => closeLightbox());
+$("lb-dl").addEventListener("click", async e => {
+  e.stopPropagation();
+  try{ const r = await api("file?path=" + encodeURIComponent(lbPath)); const url = new URL(r.url, location.href).href;
+    const name = (lbPath || "").split("/").pop();
+    if (tg && tg.downloadFile) tg.downloadFile({url, file_name: name}); else window.open(url, "_blank"); }
+  catch(x){ toast(t("dlFail")); }
+});
+
+/* файлы */
+const pvCache = {};  // путь -> подписанная ссылка (живёт 10 мин на сервере, обновляем раз в 8 мин)
+async function hydrate(){
+  for (const el of document.querySelectorAll("[data-pv]")){
+    if (el.dataset.done || el.dataset.busy) continue;
+    el.dataset.busy = "1";
+    const p = el.dataset.pv, c = pvCache[p];
+    try{
+      let url = c && Date.now() - c.at < 8 * 60000 ? c.url : null;
+      if (!url){ url = new URL((await api("file?path=" + encodeURIComponent(p))).url, location.href).href; pvCache[p] = {url, at: Date.now()}; }
+      el.addEventListener("load", () => { if (Date.now() < followUntil) toBottom(); }, {once: true});
+      el.src = url; el.dataset.done = "1";
+      el.addEventListener("click", () => { if (el.tagName === "IMG") openLightbox(el.src, p, el); });
+    }catch(e){
+      delete el.dataset.busy;
+      // сбой сети: повторяем, а не убираем превью; после 4 попыток — убираем
+      if ((el.dataset.try = (+el.dataset.try || 0) + 1) > 4) el.remove();
+      else if (!hydrate.t) hydrate.t = setTimeout(() => { hydrate.t = 0; hydrate(); }, 2000);
+    }
+  }
+}
+function fmtSize(n){ if (!n && n !== 0) return ""; return n < 1024 ? n + " " + t("szB") : n < 1048576 ? Math.round(n / 1024) + " " + t("szK") : (n / 1048576).toFixed(1).replace(".", t("decSep")) + " " + t("szM"); }
+$("s-hist").addEventListener("click", async e => {
+  const d = e.target.closest("[data-dl]"), t = e.target.closest("[data-tg]");
+  if (!sess || (!d && !t)) return;
+  try{
+    if (d){
+      const r = await api("file?path=" + encodeURIComponent(d.dataset.dl));
+      const url = new URL(r.url, location.href).href;
+      if (tg && tg.downloadFile) tg.downloadFile({url, file_name: d.dataset.name}); else window.open(url, "_blank");
+    } else {
+      const r = await api(`session/${encodeURIComponent(sess.id)}/sendfile`, {path: t.dataset.tg});
+      toast(r.ok ? t("tgSent") : (r.error || t("fileNotSent"))); if (r.ok) haptic("ok");
+    }
+  }catch(x){ toast(x.message === "auth" ? t("openFromTgShort") : t("failedWith", {m: x.message})); }
+});
+// выбор файла закрывает клавиатуру iPhone, а фокус в поле оставил бы подвал в раскладке клавиатуры: без квоты, поле на полоске «Домой» (владелец 21.10)
+$("s-clip").addEventListener("click", () => { $("s-text").blur(); $("s-file").click(); });
+function renderAtt(){
+  const box = $("s-attach"); box.hidden = !atts.length; box.textContent = "";
+  atts.forEach(a => {
+    const el = document.createElement("div"); el.className = "att";
+    if (a.url){ const im = document.createElement("img"); im.src = a.url; im.alt = ""; el.appendChild(im); }
+    else { const n = document.createElement("div"); n.className = "an"; const b = document.createElement("b"); b.textContent = a.file.name; const sz = document.createElement("span"); sz.textContent = a.file.size >= 1048576 ? (a.file.size / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(a.file.size / 1024)) + " KB"; n.append(b, sz); el.appendChild(n); }
+    const x = document.createElement("button"); x.type = "button"; x.className = "att-x"; x.setAttribute("aria-label", t("removeAria"));
+    x.addEventListener("click", () => { if (a.url) URL.revokeObjectURL(a.url); atts = atts.filter(q => q !== a); renderAtt(); });
+    el.appendChild(x); box.appendChild(el);
+  });
+  try{ atts.length ? sessionStorage.setItem("cc-att", atts.length) : sessionStorage.removeItem("cc-att"); }catch(e){}  // перезагрузка сбросит черновик — скажем об этом
+  autosize(); $("s-text").dispatchEvent(new Event("input"));  // voice.js пересчитает микрофон/«Отправить»
+}
+function clearAtt(){ if (!atts.length) return; atts.forEach(a => a.url && URL.revokeObjectURL(a.url)); atts = []; renderAtt(); }
+/* миниатюра 112 px (56 × 2) уменьшенным кадром: фото с камеры iPhone (3213×5712) в <img> занимает ~70 МБ и роняет веб-вью —
+   черновик пропадал «просто ничего» (владелец 20.10 11:17). Не вышло — плашка с именем файла. */
+async function thumb(f){
+  if (!/^image\//.test(f.type) || !window.createImageBitmap) return "";
+  try{
+    const S = 112, bm = await createImageBitmap(f, {resizeWidth: S, resizeQuality: "medium"});
+    const c = document.createElement("canvas"); c.width = c.height = S;
+    const k = S / Math.min(bm.width, bm.height), w = bm.width * k, h = bm.height * k;
+    c.getContext("2d").drawImage(bm, (S - w) / 2, (S - h) / 2, w, h); bm.close();
+    const b = await new Promise(r => c.toBlob(r, "image/jpeg", .8));
+    return b ? URL.createObjectURL(b) : "";
+  }catch(e){ return ""; }
+}
+async function addFiles(list){
+  const fs = Array.from(list || []); if (!fs.length || !sess) return;
+  const all = atts.map(a => a.file).concat(fs);
+  if (all.length > 10) return toast(t("max10"));
+  if (fs.some(f => f.size > 50 * 1048576)) return toast(t("over50"));
+  if (all.reduce((n, f) => n + f.size, 0) > 100 * 1048576) return toast(t("over100"));
+  const sid0 = sess.id, add = [];
+  for (const f of fs) add.push({file: f, url: await thumb(f)});  // по одной: пик памяти — один кадр
+  if (!sess || sess.id !== sid0){ add.forEach(a => a.url && URL.revokeObjectURL(a.url)); return; }
+  atts.push(...add); renderAtt();
+}
+$("s-file").addEventListener("change", () => { addFiles($("s-file").files); $("s-file").value = ""; });
+$("s-text").addEventListener("paste", e => { const fs = Array.from(e.clipboardData?.files || []).filter(f => /^image\//.test(f.type)); if (fs.length){ e.preventDefault(); addFiles(fs); } });
+$("s-text").addEventListener("dragover", e => e.preventDefault());
+$("s-text").addEventListener("drop", e => { if (e.dataTransfer?.files?.length){ e.preventDefault(); addFiles(e.dataTransfer.files); } });
+async function sendDraft(){
+  if (!sess || sending) return;
+  sending = true; $("s-send").disabled = true;
+  const sid0 = sess.id, ta = $("s-text"), cap = ta.value.trim(), batch = atts.slice();
+  const fd = new FormData(); batch.forEach(a => fd.append("file", a.file, a.file.name)); if (cap) fd.append("caption", cap);
+  const h = {}; if (initData) h["X-Tg-Init-Data"] = initData; else if (deviceToken) h["X-Device-Token"] = deviceToken; if (DEV) h["X-Dev"] = "1";
+  toast(batch.length > 1 ? t("uploadingN", {n: batch.length}) : t("uploading1", {name: batch[0].file.name}));
+  try{
+    const r = await fetch(`/api/session/${encodeURIComponent(sid0)}/upload`, {method: "POST", headers: h, body: fd});
+    const j = await r.json().catch(() => ({}));
+    if (r.ok && j.ok){
+      haptic("ok"); followUntil = Date.now() + 180000;
+      toast(batch.length > 1 ? t("filesSent", {n: batch.length}) : t("fileSent"));
+      if (current === sid0){ if (ta.value.trim() === cap) ta.value = ""; atts = atts.filter(a => !batch.includes(a)); batch.forEach(a => a.url && URL.revokeObjectURL(a.url)); renderAtt(); }
+      setTimeout(loadSession, 800);
+    }
+    else toast(r.status === 401 ? t("authMsg") : j.error || (r.status === 413 ? t("tooBig") : t("uploadFail")));
+  }catch(x){ toast(t("netFile")); }
+  finally{ sending = false; autosize(); }
+}
+
+/* простая разметка для текста задачи: заголовки, `код`, **жирный** */
+function mdLite(t){
+  return esc(t).replace(/^#{1,6}\s+(.+)$/gm, "<h4>$1</h4>").replace(/`([^`\n]+)`/g, "<code>$1</code>").replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>").replace(/\n{3,}/g, "\n\n");
+}
+/* навигатор по сабтаскам */
+const SUBST = {working: "work", done: "done", failed: "fail"};
+const SUBW = {working: "stWork", done: "stDone", failed: "stFailed"};
+const ago2 = ts => { if (!ts) return ""; const d = Math.max(0, Date.now() / 1000 - ts); return d < 60 ? t("agoNow") : d < 3600 ? t("agoMin", {n: Math.floor(d / 60)}) : d < 86400 ? t("agoHr", {n: Math.floor(d / 3600)}) : t("agoDay", {n: Math.floor(d / 86400)}); };
+$("s-subs").addEventListener("click", async () => {
+  if (!sess) return;
+  $("sub-list").innerHTML = `<div class="state">${t("loading")}</div>`; sheet("sub-sheet", true); haptic();
+  try{
+    const r = await api(`session/${encodeURIComponent(sess.id)}/subagents`);
+    const L = r.subagents || [];
+    $("sub-list").innerHTML = L.length ? L.map(a => `<button class="subi" type="button" data-sub="${esc(a.id)}"><span class="dot ${SUBST[a.status] || ""}" aria-label="${SUBW[a.status] ? t(SUBW[a.status]) : ""}"></span><span class="sn">${esc(a.description || a.type || a.id)}</span><span class="tm">${ago2(a.updated)}</span><span class="sm">${esc([a.type, a.model, a.background ? t("bgTag") : "", a.runs > 1 ? t("runs", {n: a.runs}) : ""].filter(Boolean).join(" · "))}</span>${a.last ? `<span class="sl">${esc(a.last)}</span>` : ""}</button>`).join("") : `<div class="state">${t("noSubs")}</div>`;
+  }catch(e){ $("sub-list").innerHTML = `<div class="state">${e.message === "auth" ? t("authMsg") : t("loadFail")}</div>`; }
+});
+let curSub = null;
+$("sub-list").addEventListener("click", e => { const b = e.target.closest("[data-sub]"); if (b) openSub(b.dataset.sub); });
+async function openSub(aid){
+  closeSheets(); curSub = aid; push("sub"); $("sub-name").textContent = "…"; $("sub-hist").innerHTML = ""; await loadSub();
+}
+async function loadSub(){
+  if (!sess || !curSub || appReloading) return;
+  try{
+    const a = await api(`session/${encodeURIComponent(sess.id)}/subagent/${encodeURIComponent(curSub)}`);
+    if (appReloading) return;
+    $("sub-name").textContent = a.description || a.type || a.id;
+    $("sub-navname").textContent = a.description || a.type || "";
+    $("sub-state").textContent = [SUBW[a.status] ? t(SUBW[a.status]) : a.status, a.type, a.model].filter(Boolean).join(" · ");
+    $("sub-hist").innerHTML = (a.history || []).map(m => m.role === "task" ? `<div class="task" id="sub-task">${/^\s*#{1,6}\s/.test(m.text) ? "" : `<div class="tlab">${t("task")}</div>`}${mdLite(m.text.trim())}</div><button class="tmore" type="button" data-tmore>${t("showAll")}</button>`
+      : m.role === "user" ? `<div class="me">${esc(m.text)}</div>` : m.role === "note" ? `<div class="note">${esc(m.text)}</div>`
+      : `<article class="msg">${m.html || esc(m.text || "")}</article>`).join("") || `<div class="empty">${t("emptySub")}</div>`;
+  }catch(e){ if (!appReloading) toast(e.message === "auth" ? t("authMsg") : t("loadFail")); }
+}
+$("sub-hist").addEventListener("click", e => { const b = e.target.closest("[data-tmore]"); if (!b) return; const box = b.previousElementSibling; box.classList.toggle("open"); b.textContent = box.classList.contains("open") ? t("collapse") : t("showAll"); });
+$("sub-back").addEventListener("click", () => { curSub = null; pop(); });
+
+/* команды и экран */
+let cmds = null;
+const SHEETS = ["cmd-sheet", "scr-sheet", "sub-sheet", "act-sheet", "model-sheet", "bots-sheet"];
+const sheetAnim = {};
+function paintSheet(el, y){ const h = el.offsetHeight || 1; el.style.transform = y ? `translate3d(0,${y}px,0)` : ""; $("scrim").style.opacity = String((0.38 * Math.max(0, 1 - y / h)).toFixed(3)); }
+function sheet(id, open, v){
+  const el = $(id);
+  if (sheetAnim[id]) sheetAnim[id].stop();
+  if (open){
+    SHEETS.filter(x => x !== id && !$(x).hidden).forEach(x => sheet(x, false));
+    el.hidden = false; $("shade").hidden = false; $("scrim").classList.add("on");
+    const h = el.offsetHeight; paintSheet(el, h);
+    sheetAnim[id] = spring(h, 0, {response: 0.34, damping: 0.9, onUpdate: y => paintSheet(el, y), onDone: () => { el.style.transform = ""; }});
+  } else {
+    if (el.hidden) return;
+    const h = el.offsetHeight, cur = parseFloat((el.style.transform.match(/,([-\d.]+)px/) || [0, 0])[1]) || 0;
+    sheetAnim[id] = spring(cur, h, {v: v || 0, response: 0.3, onUpdate: y => paintSheet(el, y), onDone: () => {
+      el.hidden = true; el.style.transform = "";
+      if (SHEETS.every(x => $(x).hidden)){ $("shade").hidden = true; $("scrim").classList.remove("on"); $("scrim").style.opacity = "0"; }
+    }});
+  }
+}
+function closeSheets(){ SHEETS.forEach(id => sheet(id, false)); }
+
+/* лист «Модель» */
+let mdl = null, mdlPick = "";
+const mPreset = () => (mdl.presets.find(p => p.id === mdlPick) || {});
+function mErr(text){ $("m-err").textContent = text || ""; $("m-err").hidden = !text; }
+function mPaint(){
+  const p = mPreset(), codex = mdlPick === "codex", custom = mdlPick === "custom";
+  $("m-list").innerHTML = mdl.presets.map(x => `<button class="chip" type="button" role="radio" aria-checked="${x.id === mdlPick}" aria-pressed="${x.id === mdlPick}" data-p="${x.id}">${esc(x.title || t("modelCustom"))}</button>`).join("");
+  $("m-base").hidden = $("m-base-l").hidden = !custom;
+  ["m-model", "m-model-l", "m-key", "m-key-l"].forEach(id => { $(id).hidden = codex; });
+  $("m-model").value = mdlPick === mdl.provider && mdl.model ? mdl.model : (p.model || "");
+  $("m-key").value = ""; $("m-key").placeholder = p.stored ? t("modelKeyStored") : "";
+  const note = codex ? t("modelCodexNote") : mdlPick === "kimi" ? t("modelKimiNote") : "";
+  $("m-note").textContent = note; $("m-note").hidden = !note;
+  mErr("");
+}
+async function openModel(){
+  try{  // data first: the sheet's height is measured when it opens and must not jump after
+    mdl = await api("model"); mdlPick = mdl.provider; if (mdl.base) $("m-base").value = mdl.base;
+    mNow(); $("m-form").hidden = false; mPaint();
+  }catch(e){ $("m-now").textContent = t("modelLoadErr"); $("m-list").innerHTML = ""; $("m-form").hidden = true; }
+  sheet("model-sheet", true);
+}
+function mNow(){
+  const name = mdl.provider === "codex" ? "Codex" : mdl.model;
+  const lines = [name ? t("modelNow", {n: name}) : t("modelNoneYet")];
+  if (mdl.busy) lines.push(t("modelBusy", {n: mdl.busy}));
+  $("m-now").textContent = lines.join(". ").replace(/\.\./g, ".");
+}
+$("model-btn").addEventListener("click", openModel);
+$("m-list").addEventListener("click", e => { const b = e.target.closest("[data-p]"); if (b){ mdlPick = b.dataset.p; mPaint(); } });
+$("m-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const save = $("m-save"); if (save.disabled) return;
+  save.disabled = true; save.textContent = t("modelChecking"); mErr("");
+  try{
+    const r = await api("model", {provider: mdlPick, model: $("m-model").value.trim(), base: $("m-base").value.trim(), key: $("m-key").value.trim()});
+    if (!r.ok){ mErr(t("modelErr_" + r.error) || t("modelErr_net")); return; }
+    if (!r.restarted){ mErr(t("modelRestart")); }
+    mdl = await api("model"); mdlPick = mdl.provider; mPaint();
+    if (r.restarted) $("m-now").textContent = t("modelDone", {n: mdl.provider === "codex" ? "Codex" : mdl.model}); else mNow();
+  }catch(err){ mErr(t("modelErr_net")); }
+  finally{ save.disabled = false; save.textContent = t("modelSave"); }
+});
+/* лист «Боты» (README, «Несколько ботов», Console HTTP API) */
+let bots = null, bot = null, botPick = "", botChat = null, botPersonaDesc = "";
+const bPreset = () => (bots.presets.find(p => p.id === botPick) || {});
+function bErrText(code){ for (const k of ["botErr_", "modelErr_"]){ const key = k + code, v = (STR[LANG] && STR[LANG][key]) || STR.en[key]; if (v) return v; } return t("botErr_net"); }
+const BERR_ZONE = {token: "add", exists: "add", slug: "add", cwd: "ctx", site: "ctx", chat: "ctx", persona_codex: "persona", persona_fail: "persona", persona_nomodel: "persona", key: "model", model: "model", base: "model", provider: "model", balance: "model", codex: "model"};
+function bErr(zone, code){ const el = $("b-err-" + zone); el.textContent = code ? bErrText(code) : ""; el.hidden = !code; }
+function bErrClear(){ ["add", "persona", "ctx", "model", "save"].forEach(z => bErr(z)); $("b-ok").hidden = true; }
+function bShowErr(code, fallback){ const z = BERR_ZONE[code] || fallback || "save"; bErr(z, code); const el = $("b-err-" + z); if (el.scrollIntoView) el.scrollIntoView({block: "nearest"}); }
+function bView(v){ ["list", "add", "edit"].forEach(x => { $("b-v" + x).hidden = x !== v; }); }
+function bStatus(b){ return b.error ? ["bad", t("botsBad")] : b.active ? ["on", t("botsOn")] : ["", t("botsOff")]; }
+function bPaintList(){
+  const l = $("b-list");
+  if (!bots.bots.length){ l.innerHTML = `<div class="b-empty"><p>${esc(t("botsEmpty"))}</p></div>`; return; }
+  l.innerHTML = bots.bots.map((b, i) => { const [cls, w] = bStatus(b), nm = b.name || b.username;
+    return `<button class="brow" type="button" data-i="${i}"><span class="av" aria-hidden="true">${esc([...(nm || "?")][0])}</span><span><span class="bn">${esc(nm)} <span style="color:var(--muted);font-weight:400">@${esc(b.username)}</span></span><span class="bm">${esc((b.chat_title || t("botsNoGroup")) + " · " + (b.model || "—"))}</span></span><span class="bst ${cls}">${esc(w)}</span></button>`; }).join("");
+}
+async function bLoad(){
+  try{ bots = await api("bots"); $("b-load").textContent = ""; bPaintList(); $("b-add").hidden = false; return true; }
+  catch(e){ $("b-load").textContent = t("botsLoadErr"); $("b-list").innerHTML = ""; $("b-add").hidden = true; return false; }
+}
+async function openBots(){
+  bView("list"); $("b-load").textContent = t("loading"); $("b-list").innerHTML = ""; $("b-add").hidden = true;
+  sheet("bots-sheet", true);
+  await bLoad();
+}
+function bGroupsPaint(){
+  const g = bot.groups || [];
+  $("b-groups").innerHTML = [{id: null, title: t("botsGroupNone")}].concat(g).map(x => `<button class="chip" type="button" role="radio" aria-checked="${x.id === botChat}" aria-pressed="${x.id === botChat}" data-g="${x.id == null ? "" : esc(x.id)}">${esc(x.title)}</button>`).join("") + `<button class="chip" type="button" data-grefresh>${esc(t("botsRefresh"))}</button>`;
+}
+function bModelPaint(keepModel){
+  const p = bPreset(), codex = botPick === "codex", custom = botPick === "custom";
+  $("b-prov").innerHTML = bots.presets.map(x => `<button class="chip" type="button" role="radio" aria-checked="${x.id === botPick}" aria-pressed="${x.id === botPick}" data-p="${x.id}">${esc(x.title || t("modelCustom"))}</button>`).join("");
+  $("b-base").hidden = $("b-base-l").hidden = !custom;
+  ["b-model", "b-model-l", "b-key", "b-key-l"].forEach(id => { $(id).hidden = codex; });
+  if (!keepModel) $("b-model").value = botPick === bot.provider && bot.model ? bot.model : (p.model || "");
+  $("b-key").value = ""; $("b-key").placeholder = (bot.keys || []).includes(botPick) ? t("botsKeyStored") : "";
+  const note = codex ? t("modelCodexNote") : botPick === "kimi" ? t("modelKimiNote") : "";
+  $("b-note").textContent = note; $("b-note").hidden = !note;
+}
+function bEdit(b){
+  bot = b; botPick = b.provider; botChat = b.chat == null ? null : b.chat; botPersonaDesc = (b.persona && b.persona.description) || "";
+  bErrClear(); $("b-sure").hidden = true; $("b-del").hidden = false;
+  $("b-title").textContent = (b.name || b.username); $("b-sub").textContent = "@" + b.username + " · " + bStatus(b)[1] + (b.error ? ": " + b.error : "");
+  $("b-about").value = b.about || ""; $("b-brief").value = b.brief || "";
+  $("b-name").value = (b.persona && b.persona.name) || b.name || ""; $("b-short").value = (b.persona && b.persona.short) || "";
+  $("b-cwd").value = b.cwd || ""; $("b-site").value = b.site || ""; $("b-base").value = b.base || "";
+  bGroupsPaint(); bModelPaint(); bView("edit");
+}
+$("bots-btn").addEventListener("click", openBots);
+if (location.hash === "#bots") openBots();  // deep link for the design gate
+$("b-add").addEventListener("click", () => { $("b-token").value = ""; bErr("add"); bView("add"); $("b-token").focus(); });
+document.querySelectorAll("[data-b-back]").forEach(b => b.addEventListener("click", async () => { bView("list"); await bLoad(); }));
+$("b-list").addEventListener("click", e => { const b = e.target.closest("[data-i]"); if (b) bEdit(bots.bots[+b.dataset.i]); });
+$("b-vadd").addEventListener("submit", async e => {
+  e.preventDefault();
+  const go = $("b-add-go"); if (go.disabled) return;
+  const token = $("b-token").value.trim(); if (!token){ bErr("add", "token"); return; }
+  go.disabled = true; go.textContent = t("botsAdding"); bErr("add");
+  try{
+    const r = await api("bots/add", {token});
+    if (!r.ok){ bErr("add", r.error || "net"); return; }
+    await bLoad(); const b = bots.bots.find(x => x.slug === r.slug);
+    if (b) bEdit(b); else { bView("list"); }
+  }catch(err){ bErr("add", "net"); }
+  finally{ go.disabled = false; go.textContent = t("botsAddGo"); }
+});
+$("b-prov").addEventListener("click", e => { const b = e.target.closest("[data-p]"); if (b){ botPick = b.dataset.p; bModelPaint(); } });
+$("b-groups").addEventListener("click", async e => {
+  if (e.target.closest("[data-grefresh]")){ const ok = await bLoad(); const fresh = bots && bots.bots.find(x => x.slug === bot.slug); if (ok && fresh){ bot.groups = fresh.groups; bGroupsPaint(); } return; }
+  const b = e.target.closest("[data-g]"); if (!b) return;
+  botChat = b.dataset.g === "" ? null : Number(b.dataset.g); bGroupsPaint();
+});
+$("b-gen").addEventListener("click", async () => {
+  const g = $("b-gen"); if (g.disabled) return;
+  g.disabled = true; g.textContent = t("botsGenning"); bErr("persona");
+  try{
+    const r = await api("bots/persona", {slug: bot.slug, about: $("b-about").value.trim()});
+    if (!r.ok){ bErr("persona", r.error || "persona_fail"); return; }
+    const p = r.persona || {}; $("b-name").value = p.name || ""; $("b-short").value = p.short || ""; $("b-brief").value = r.brief || ""; botPersonaDesc = p.description || "";
+    $("b-ok").textContent = t("botsGenerated"); $("b-ok").hidden = false;
+  }catch(err){ bErr("persona", "net"); }
+  finally{ g.disabled = false; g.textContent = t("botsGen"); }
+});
+$("b-vedit").addEventListener("submit", async e => {
+  e.preventDefault();
+  const sv = $("b-save"); if (sv.disabled) return;
+  sv.disabled = true; sv.textContent = t("botsSaving"); bErrClear();
+  try{
+    const body = {slug: bot.slug, about: $("b-about").value.trim(), brief: $("b-brief").value, persona: {name: $("b-name").value.trim(), short: $("b-short").value.trim(), description: botPersonaDesc},
+      cwd: $("b-cwd").value.trim(), site: $("b-site").value.trim(), chat: botChat, provider: botPick};
+    if (botPick !== "codex"){ body.model = $("b-model").value.trim(); const k = $("b-key").value.trim(); if (k) body.key = k; }
+    if (botPick === "custom") body.base = $("b-base").value.trim();
+    const r = await api("bots/save", body);
+    if (!r.ok){ bShowErr(r.error || "net"); return; }
+    await bLoad(); const fresh = bots.bots.find(x => x.slug === bot.slug); if (fresh) bEdit(fresh);
+    $("b-ok").textContent = t("botsSaved"); $("b-ok").hidden = false;
+  }catch(err){ bShowErr("net"); }
+  finally{ sv.disabled = false; sv.textContent = t("botsSave"); }
+});
+$("b-del").addEventListener("click", () => { $("b-sure-t").textContent = t("botsDelAsk", {n: "@" + bot.username}); $("b-sure").hidden = false; $("b-del").hidden = true; $("b-del-no").focus(); });
+$("b-del-no").addEventListener("click", () => { $("b-sure").hidden = true; $("b-del").hidden = false; $("b-del").focus(); });
+$("b-del-yes").addEventListener("click", async () => {
+  const y = $("b-del-yes"); if (y.disabled) return; y.disabled = true;
+  try{
+    const r = await api("bots/remove", {slug: bot.slug});
+    if (!r.ok){ $("b-sure").hidden = true; $("b-del").hidden = false; bShowErr(r.error || "net"); return; }
+    bView("list"); await bLoad();
+  }catch(err){ $("b-sure").hidden = true; $("b-del").hidden = false; bShowErr("net"); }
+  finally{ y.disabled = false; }
+});
+document.querySelectorAll("[data-close-sheet]").forEach(b => b.addEventListener("click", () => closeSheets()));
+["a-watch", "a-rename", "a-arch", "a-stop"].forEach(id => $(id).addEventListener("click", () => sheet("act-sheet", false), true));
+SHEETS.forEach(id => {
+  const el = $(id); let y0 = 0, on = false, dy = 0, tr = null;
+  el.addEventListener("touchstart", e => { if (el.scrollTop > 0) return; y0 = e.touches[0].clientY; on = true; dy = 0; tr = tracker(); tr.add(0); if (sheetAnim[id]) sheetAnim[id].stop(); }, {passive: true});
+  el.addEventListener("touchmove", e => { if (!on) return; dy = e.touches[0].clientY - y0; if (dy < 0 && el.scrollTop > 0){ on = false; return; } const y = dy < 0 ? rubber(dy, el.offsetHeight) : dy; tr.add(y); paintSheet(el, y); }, {passive: true});
+  el.addEventListener("touchend", () => { if (!on) return; on = false; const v = tr.v(), h = el.offsetHeight, landing = Math.max(0, dy) + project(v);
+    if (landing > h * 0.4 && v > -100) sheet(id, false, v);
+    else sheetAnim[id] = spring(Math.max(0, dy), 0, {v, response: 0.32, damping: 0.9, onUpdate: y => paintSheet(el, y), onDone: () => { el.style.transform = ""; }}); });
+});
+$("shade").addEventListener("click", closeSheets);
+$("s-slash").addEventListener("click", async () => {
+  if (!cmds){ try{ cmds = (await api("commands")).commands || []; }catch(e){ toast(t("cmdsFail")); return; } }
+  $("cmd-list").innerHTML = cmds.map((c, i) => `<div class="cmdi${c.danger ? " dng" : ""}" data-i="${i}"><button type="button" data-run="${i}" style="text-align:left"><b>${esc(c.title)}</b><br><code>${esc(c.cmd)}</code>${c.hint ? `<br><small style="color:var(--muted)">${esc(c.hint)}</small>` : ""}</button>${(c.args || []).length ? "" : `<button class="btn${c.danger ? " dng" : ""}" type="button" data-run="${i}">${c.free_arg ? t("enter") : t("run")}</button>`}${(c.args || []).length ? `<div class="args">${c.args.map(a => `<button class="chip" type="button" data-run="${i}" data-arg="${esc(a)}">${esc(a)}</button>`).join("")}</div>` : ""}</div>`).join("");
+  sheet("cmd-sheet", true); haptic();
+});
+$("cmd-list").addEventListener("click", async e => {
+  const b = e.target.closest("[data-run]"); if (!b || !sess) return;
+  const c = cmds[+b.dataset.run], arg = b.dataset.arg;
+  if ((c.args || []).length && !arg) return;
+  if (c.free_arg && !arg){ /* ввод аргумента в поле */ closeSheets(); const t = $("s-text"); setMode("send"); t.value = c.cmd + " "; autosize(); t.focus(); return; }
+  const run = async ok => { if (!ok) return; closeSheets(); await runCommand(c.cmd + (arg ? " " + arg : "")); };
+  if (c.danger && tg && tg.showConfirm) tg.showConfirm(c.confirm || t("sure"), run); else run(c.danger ? window.confirm(c.confirm || t("sure")) : true);
+});
+async function runCommand(text){
+  try{ const r = await api(`session/${encodeURIComponent(sess.id)}/command`, {text}); if (r.ok === false){ toast(r.code === "menu" ? t("menuWait") : (r.error || t("notRun"))); return; }
+    haptic("ok"); toast(t("cmdSent", {c: text})); if (r.menu) openScreen(r.screen); setTimeout(loadSession, 1200); }
+  catch(e){ toast(e.message === "auth" ? t("authMsg") : t("cmdFail")); }
+}
+function openScreen(text){ $("scr-text").textContent = text || ""; sheet("scr-sheet", true); const el = $("scr-text"); el.scrollTop = el.scrollHeight; }
+$("scr-keys").addEventListener("click", async e => {
+  const b = e.target.closest("[data-k]"); if (!b || !sess) return; haptic();
+  try{ const r = await api(`session/${encodeURIComponent(sess.id)}/key`, {key: b.dataset.k}); if (r.menu) openScreen(r.screen); else { closeSheets(); toast(t("done")); setTimeout(loadSession, 800); } }
+  catch(e){ toast(t("keyFail")); }
+});
+$("scr-close").addEventListener("click", () => { closeSheets(); loadSession(); });
+
+/* действия */
+$("a-watch").addEventListener("click", async () => { if (!sess) return; const id0 = sess.id; try{ await api(`session/${encodeURIComponent(id0)}/watch`, {on: !sess.watched}); if (!sess || sess.id !== id0) return; sess.watched = !sess.watched; renderSession(); haptic("ok"); toast(t(sess.watched ? "watchOnToast" : "watchOffToast")); }catch(e){ toast(t("failed")); } });
+$("a-rename").addEventListener("click", () => { if (sess) setMode("rename"); });
+$("a-stop").addEventListener("click", () => {
+  if (!sess) return;
+  const go = async ok => { if (!ok) return; try{ await api(`session/${encodeURIComponent(sess.id)}/stop`, {}); toast(t("sessStopped")); await loadSession(); }catch(e){ toast(t("stopFail")); } };
+  if (tg && tg.showConfirm) tg.showConfirm(t("confStop", {name: sess.name}), go); else go(window.confirm(t("confStopPlain")));
+});
+
+$("a-arch").addEventListener("click", () => {
+  if (!sess) return;
+  if (sess.group === "archived" || sess.group === "old"){ api(`session/${encodeURIComponent(sess.id)}/unarchive`, {}).then(() => { haptic("ok"); toast(t("restored")); loadSession(); loadList(); }).catch(() => toast(t("failed"))); return; }
+  const go = async ok => { if (!ok) return; const sid0 = sess.id; try{ const r = await api(`session/${encodeURIComponent(sid0)}/archive`, {stop: true}); haptic("ok"); toast(r.stopped ? t("stoppedArch") : t("archived"), t("undo"), async () => { try{ await api(`session/${encodeURIComponent(sid0)}/unarchive`, {}); loadList(); }catch(y){} }); if (current === sid0) pop(); }catch(e){ toast(t("failed")); } };
+  const q = sess.group === "work" ? t("confWorkKeep", {name: sess.name}) : t("confArchKeep", {name: sess.name});
+  tg && tg.showConfirm ? tg.showConfirm(q, go) : go(window.confirm(q));
+});
+
+/* новая сессия */
+let dir = null;
+async function openNew(){
+  push("new"); $("n-text").value = ""; dir = null;
+  try{ const r = await api("dirs"); const ds = r.dirs || []; dir = ds[0] || null;
+    $("n-dirs").innerHTML = ds.map((d, i) => `<button class="chip" type="button" data-d="${esc(d)}" aria-pressed="${i === 0}">${d === "~" ? t("homeDir") : esc(d)}</button>`).join(""); }catch(e){}
+  mainButton();  // без автофокуса: клавиатура не выезжает посреди перехода
+}
+$("n-dirs").addEventListener("click", e => { const b = e.target.closest(".chip"); if (!b) return; dir = b.dataset.d; $("n-dirs").querySelectorAll(".chip").forEach(x => x.setAttribute("aria-pressed", x === b)); haptic(); });
+$("n-text").addEventListener("input", mainButton);
+let launching = false;
+async function launch(){
+  const text = $("n-text").value.trim(); if (!text || launching) return;
+  launching = true; $("fab").disabled = true; try{ tg && tg.MainButton.showProgress(); }catch(e){}
+  try{ const r = await api("new", {text, cwd: dir}); if (r.ok){ haptic("ok"); toast(t("launched")); await loadList(); if (r.id){ settleNav("new"); show("list"); openSession(r.id); } else pop(); } else toast(r.error || t("notStarted")); }
+  catch(e){ toast(t("launchFail")); }
+  finally{ launching = false; try{ tg && tg.MainButton.hideProgress(); }catch(e){} mainButton(); }
+}
+
+/* нативные кнопки Telegram */
+function mainButton(){
+  $("new-btn").hidden = $("lb-new").hidden = view !== "list" && !panel(view);
+  if (!tg){
+    const f = $("fab");
+    if (view === "list"){ f.hidden = true; }
+    else if (view === "new"){ f.hidden = false; f.textContent = t("start"); f.disabled = !$("n-text").value.trim(); }
+    else f.hidden = true;
+    return;
+  }
+  const mb = tg.MainButton; mb.offClick(onMain);
+  if (view === "new"){ const ok = !!$("n-text").value.trim(); mb.setParams({text: t("start"), is_visible: true, is_active: ok}); }
+  else mb.hide();
+  mb.onClick(onMain);
+}
+const listScrolled = () => document.documentElement.classList.toggle("list-scrolled", view !== "gate" && (view === "list" || WIDE.matches) && scrollY > 40);
+addEventListener("scroll", listScrolled, {passive: true});
+{
+  const scr = $("session-screen"), fit = () => {
+    if (scr.hidden) return;  // скрытый экран меряется нулём — держим прежние отступы
+    const b = $("s-body"), end = b.scrollHeight - b.scrollTop - b.clientHeight < 24;
+    scr.style.setProperty("--s-head", scr.querySelector(".session-header").offsetHeight + 8 + "px");
+    scr.style.setProperty("--s-foot", scr.querySelector(".sfoot").offsetHeight + 8 + "px");
+    if (end) b.scrollTop = b.scrollHeight;  // поле растёт поверх ленты: конец переписки не уходит под него
+  };
+  if (window.ResizeObserver){ const ro = new ResizeObserver(fit); ro.observe(scr.querySelector(".session-header")); ro.observe(scr.querySelector(".sfoot")); }
+}
+function onMain(){ if (view === "list") openNew(); else if (view === "new") launch(); }
+$("fab").addEventListener("click", onMain);
+$("new-btn").addEventListener("click", () => openNew());
+$("lb-new").addEventListener("click", () => openNew());
+const goBack = () => {
+  if (!document.dispatchEvent(new Event("session:back", {cancelable:true}))) return;
+  if (!$("lb").hidden){ closeLightbox(); return; }
+  if (!$("shade").hidden){ closeSheets(); return; }
+  if (view === "sub") curSub = null;
+  if (layerOf(view)){
+    if (view === "session"){ document.documentElement.classList.remove("locked"); document.dispatchEvent(new Event("session:close")); }  // капсула возвращается вместе с морфом, а не после пружины
+    pop();
+  }
+};
+document.querySelectorAll("[data-back]").forEach(b => b.addEventListener("click", goBack));
+window.addEventListener("scroll", () => { const y = window.scrollY > 70; document.querySelectorAll("[data-nav],[data-nav-sub]").forEach(n => n.classList.toggle("scrolled", y)); }, {passive: true});
+window.addEventListener("popstate", () => {
+  if (histSilent){ histSilent = false; return; }  // это наш history.go() после закрытия слоя
+  if (!STANDALONE || view === "list"){ document.dispatchEvent(new Event("session:back", {cancelable:true})); return; }
+  histDepth = Math.max(0, histDepth - 1);
+  const v0 = view; goBack();
+  // закрылось меню/лист/просмотр, а не экран: вернуть запись, слой остался
+  if (view === v0 && !navAnim && histDepth < (HD[view] || 0)) history.pushState({d: ++histDepth}, "");
+});
+/* уведомление при открытом приложении: переход только по #s=ID (sw.js) */
+function openFromHash(h){
+  const sid = new URLSearchParams(String(h || "").replace(/^[^#]*#?/, "")).get("s");
+  if (sid && view !== "gate" && sid !== current) openSession(sid);
+}
+window.addEventListener("hashchange", () => openFromHash(location.hash));
+if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", e => { if (e.data && e.data.type === "open") openFromHash(e.data.url); });
+if (tg){ tg.BackButton.onClick(() => goBack()); }
+// ссылки в ответах: внутри Telegram target=_blank в WebView может не открыться — через openLink
+document.addEventListener("click", e => {
+  const a = e.target.closest && e.target.closest(".msg a[href]"); if (!a || !tg || !/^https?:/i.test(a.href)) return;
+  e.preventDefault(); try{ tg.openLink(a.href); }catch(x){ window.open(a.href, "_blank", "noopener"); }
+});
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("lb").hidden){ closeLightbox(); return; } if (e.key === "Escape" && !$("shade").hidden){ closeSheets(); return; } if (e.key === "Escape" && view !== "list"){ show("list"); loadList(); } if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && view === "session") sendText(); });
+
+/* высота экрана = видимая область: на iPhone открытая клавиатура не уменьшает окно, только видимую часть */
+const vv = window.visualViewport;
+function setVV(){
+  const h = vv ? vv.height : window.innerHeight;
+  document.documentElement.style.setProperty("--vvh", Math.round(h) + "px");
+  document.documentElement.style.setProperty("--vvtop", Math.round(vv ? vv.offsetTop : 0) + "px");
+  // клавиатура открыта: в Telegram окно уменьшается вместе с видимой областью, поэтому смотрим и на фокус поля
+  const typing = /^(TEXTAREA|INPUT)$/.test((document.activeElement || {}).tagName || "");
+  document.documentElement.classList.toggle("kb", typing || (!!vv && window.innerHeight - h > 120));
+}
+if (vv){ vv.addEventListener("resize", setVV); vv.addEventListener("scroll", setVV); }
+window.addEventListener("resize", setVV); setVV();
+$("s-text").addEventListener("focus", () => { setTimeout(() => { setVV(); window.scrollTo(0, 0); toBottom(); }, 60); setTimeout(() => { setVV(); toBottom(); }, 350); });
+$("s-text").addEventListener("blur", () => setTimeout(setVV, 300));
+// кнопки поля не забирают фокус (как тап на iPhone): иначе на нажатии строка квоты возвращается и кнопка уезжает из-под указателя
+document.querySelector("#session-screen .compose").addEventListener("mousedown", e => { if (e.target.closest("button") && document.activeElement === $("s-text")) e.preventDefault(); });
+document.addEventListener("focusin", setVV); document.addEventListener("focusout", () => setTimeout(setVV, 50));
+
+/* выход свайпом от левого края: 1:1 за пальцем, решение по инерции, пружина с передачей скорости, можно перехватить */
+(function(){
+  let x0 = 0, y0 = 0, base = 0, on = false, dir = null, tr = null;
+  document.addEventListener("touchstart", e => {
+    if (!layerOf(view) || !$("lb").hidden || !$("shade").hidden || e.touches.length !== 1) return;
+    const t = e.touches[0];
+    if (t.clientX > 24 && !navAnim) return;  // от края; во время анимации — перехват с любого места
+    if (navAnim && navAnim.morph) return;  // свёртку сессии морфом не перехватываем
+    if (navAnim){ navAnim.stop(); navAnim = null; }
+    x0 = t.clientX; y0 = t.clientY; base = navX; on = true; dir = null; tr = tracker(); tr.add(base);
+    belowOf(view).hidden = false;
+  }, {passive: true});
+  document.addEventListener("touchmove", e => {
+    if (!on) return;
+    const t = e.touches[0], mx = t.clientX - x0, my = t.clientY - y0;
+    if (dir === null && (Math.abs(mx) > 6 || Math.abs(my) > 6)) dir = Math.abs(mx) > Math.abs(my) ? "x" : "y";
+    if (dir === "y" && base === 0){ on = false; return; }
+    if (dir !== "x") return;
+    let x = base + mx; if (x < 0) x = rubber(x, window.innerWidth);
+    tr.add(x);
+    if (view === "session" && !panel(view)){ navX = Math.max(0, x); document.dispatchEvent(new CustomEvent("nav:drag", {detail: navX})); }  // морф clio ведёт экран за пальцем
+    else paintNav(view, Math.max(-20, x));
+  }, {passive: true});
+  const end = () => {
+    if (!on) return; on = false;
+    const W = window.innerWidth, v = tr.v(), landing = navX + project(v);
+    if (landing > W * 0.5 && v > -200){ haptic(); pop(v); }
+    else if (view === "session" && !panel(view)){ navX = 0; document.dispatchEvent(new Event("nav:cancel")); }
+    else { const vw = view; navAnim = spring(navX, 0, {v, response: 0.34, onUpdate: x => paintNav(vw, x), onDone: () => { navAnim = null; settleNav(vw); }}); }
+  };
+  document.addEventListener("touchend", end); document.addEventListener("touchcancel", end);
+})();
+
+/* опрос */
+let tick = 0, busyPoll = false, pollTimer;
+async function poll(){
+  if (appReloading) return;
+  try{
+    if (!document.hidden){
+      tick++;
+      if (view === "sub"){ if (tick % 2 === 0) await loadSub(); }
+      else if (view === "session"){ if (!busyPoll){ busyPoll = true; try{ await loadSession(); }finally{ busyPoll = false; } } if (tick % 12 === 0) await loadList(); }
+      else if (view === "list" && tick % 3 === 0) await loadList();
+    }
+  }catch(e){ /* Запросы могут прерваться при уходе со страницы. */ }
+  finally{
+    const fast = view === "session" && (Date.now() < followUntil || (sess && sess.group === "work"));
+    if (!appReloading) pollTimer = setTimeout(() => { poll().catch(() => {}); }, fast ? 1500 : 3000);
+  }
+}
+pollTimer = setTimeout(() => { poll().catch(() => {}); }, 1500);
+document.addEventListener("visibilitychange", () => { if (!document.hidden && !appReloading){ if (view === "session") loadSession().catch(() => {}); else if (view === "list") loadList().catch(() => {}); } });
+
+/* Версия оболочки: сервер должен поддерживать HEAD с Content-Length для всех файлов.
+   Не принимаем частичную версию и не перезагружаем страницу с черновиком или открытым листом. */
+const APP_FILES = ["index.html", "clio.js", "clio.css", "menu.js", "menu.css", "voice.js"];
+let appVersion = null, appCheckRunning = false, appCheckController = null;
+function stopBackgroundRequests(){
+  appReloading = true;
+  clearTimeout(pollTimer); clearInterval(appCheckInterval);
+  readController.abort();
+  if (appCheckController) appCheckController.abort();
+}
+async function reloadApp(){
+  if (appReloading) return;
+  stopBackgroundRequests();
+  // Дождаться обработчиков отказа до уничтожения контекста WebKit.
+  await Promise.allSettled(Array.from(backgroundRequests));
+  location.reload();
+}
+window.addEventListener("pagehide", e => { if (!e.persisted) stopBackgroundRequests(); });
+function updateBlocked(){
+  const inputs = document.querySelectorAll("textarea, input:not([type=file])");
+  if (Array.from(inputs).some(el => el.value.length || el === document.activeElement)) return true;
+  if (atts.length) return true;
+  // #s-mic (voice.js): нажат — идёт запись, disabled — запись распознаётся; перезагрузка её потеряет
+  return !!document.querySelector('.lab-ask-root[data-state="open"], .lab-ask-root.busy, .mn-root:not([hidden]), .sheet:not([hidden]), #lb:not([hidden]), #s-mic[aria-pressed="true"], #s-mic:disabled');
+}
+async function checkAppVersion(initial = false){
+  if (appReloading || appCheckRunning || (!initial && document.hidden)) return;
+  appCheckRunning = true;
+  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 10000);
+  appCheckController = controller;
+  try{
+    const lengths = await Promise.all(APP_FILES.map(file => trackBackgroundRequest((async () => {
+      try{
+        // сервер бота отвечает только на GET (HEAD → 501), поэтому версия — длина тела по GET
+        const response = await fetch("/app/" + file, {cache:"no-store", signal:controller.signal});
+        if (!response.ok) return null;
+        return (await response.arrayBuffer()).byteLength;
+      }catch(e){ return null; }
+    })())));
+    if (appReloading || lengths.some(length => length === null)) return;
+    const version = lengths.reduce((sum, length) => sum + length, 0);
+    if (appVersion === null){ appVersion = version; return; }
+    if (version === appVersion || document.hidden) return;
+    if (!updateBlocked()){ await reloadApp(); return; }
+    toast(t("updateAvailable"), t("updateNow"), () => { reloadApp().catch(() => {}); });
+    clearTimeout(toastTimer); // действие обновления остаётся доступным, пока пользователь занят
+  }catch(e){ /* офлайн и неполная выкатка — повторить в следующий раз */ }
+  finally{ clearTimeout(timer); appCheckRunning = false; appCheckController = null; }
+}
+document.addEventListener("DOMContentLoaded", () => { checkAppVersion(true).catch(() => {}); }, {once:true});
+document.addEventListener("visibilitychange", () => { if (!document.hidden) checkAppVersion().catch(() => {}); });
+const appCheckInterval = setInterval(() => { if (!document.hidden) checkAppVersion().catch(() => {}); }, 120000);
+async function doLogin(raw){
+  const code = String(raw || "").trim().replace(/^.*#login=/, "");
+  if (!code){ $("gate-msg").textContent = t("pasteCode"); return false; }
+  try{
+    const r = await fetch("/api/login", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({token: code})});
+    const j = await r.json().catch(() => ({}));
+    if (r.ok && j.device_token){ deviceToken = j.device_token; try{ localStorage.setItem("cc-device", deviceToken); }catch(e){} toast(t("loggedIn")); return true; }
+    show("gate"); $("gate-msg").textContent = r.status === 429 ? t("tooMany") : t("codeExpired");
+  }catch(e){ show("gate"); $("gate-msg").textContent = t("noNet"); }
+  return false;
+}
+$("gate-form").addEventListener("submit", async e => { e.preventDefault(); if (await doLogin($("gate-code").value)){ $("gate-code").value = ""; show("list"); await loadList(); if ("serviceWorker" in navigator){ try{ await navigator.serviceWorker.register("/app/sw.js", {scope: "/app/"}); }catch(x){} } pushState(); } });
+async function boot(){
+  const hash = new URLSearchParams(location.hash.slice(1));
+  const login = hash.get("login");
+  if (STANDALONE && login){
+    history.replaceState(null, "", location.pathname);
+    if (!(await doLogin(login))) return;
+  }
+  if (STANDALONE && !deviceToken && !DEV){ show("gate"); return; }
+  try{ if (sessionStorage.getItem("cc-att")){ sessionStorage.removeItem("cc-att"); toast(t("attLost")); } }catch(e){}
+  show("list"); await loadList();
+  const sid = hash.get("s"); if (sid) openSession(sid);
+  if (STANDALONE && "serviceWorker" in navigator){ try{ await navigator.serviceWorker.register("/app/sw.js", {scope: "/app/"}); }catch(e){} }
+  pushState();
+}
+/* уведомления на этом устройстве (только вне Telegram: «PWA вместо Telegram») */
+const b64u = s => { const p = "=".repeat((4 - s.length % 4) % 4); const b = atob((s + p).replace(/-/g, "+").replace(/_/g, "/")); return Uint8Array.from(b, c => c.charCodeAt(0)); };
+async function pushState(){
+  const btn = $("push-btn");
+  if (!STANDALONE || !("serviceWorker" in navigator) || !("PushManager" in window) || !deviceToken){ btn.hidden = true; return; }
+  btn.hidden = false;
+  try{ const reg = await navigator.serviceWorker.ready; const sub = await reg.pushManager.getSubscription(); btn.innerHTML = `<svg width="22" height="22" aria-hidden="true"><use href="#i-${sub ? "bell" : "bell-off"}"/></svg>`; btn.dataset.on = sub ? "1" : ""; }catch(e){}
+}
+$("push-btn").addEventListener("click", async () => {
+  try{
+    const reg = await navigator.serviceWorker.ready;
+    const cur = await reg.pushManager.getSubscription();
+    if (cur){ await api("push/unsubscribe", {endpoint: cur.endpoint}); await cur.unsubscribe(); toast(t("pushOff")); pushState(); return; }
+    const perm = await Notification.requestPermission();
+    if (perm !== "granted"){ toast(t("pushDenied")); return; }
+    const key = (await api("push/key")).key;
+    const sub = await reg.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: b64u(key)});
+    await api("push/subscribe", sub.toJSON());
+    haptic("ok"); toast(t("pushOn")); pushState();
+  }catch(e){ toast(e.message === "auth" ? t("authMsg") : t("pushFail", {m: e.message})); }
+});
+applyI18n();
+boot();
+})();
+</script>
+<script src="/app/clio.js" defer></script>
+<script src="/app/menu.js" defer></script>
+<script src="/app/voice.js" defer></script>
+</body>
+</html>

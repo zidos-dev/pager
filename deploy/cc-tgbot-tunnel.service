@@ -1,0 +1,14 @@
+[Unit]
+Description=cc-tgbot: named Cloudflare tunnel for the mini-app / PWA
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Needs ~/.cloudflared/cc-tgbot.yml (see deploy/cc-tgbot.yml.example); %h is your home directory.
+ExecStart=/usr/bin/env cloudflared tunnel --no-autoupdate --config %h/.cloudflared/cc-tgbot.yml run
+Restart=always
+RestartSec=10
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,20 @@
+[Unit]
+Description=cc-tgbot: SDK runner for headless Claude Code sessions
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Adjust the paths to where you cloned the repository and created the virtualenv
+# (python -m venv .venv-sdk && .venv-sdk/bin/pip install claude-agent-sdk); %h is your home directory.
+# The runner reads only its own environment, loaded from sdk.env (not from the bot's env file: that one holds
+# the Telegram token, and everything in the runner's environment reaches the agent's tools). See env.example.
+EnvironmentFile=-%h/.config/cc-tgbot/sdk.env
+ExecStart=%h/cc-tgbot/.venv-sdk/bin/python -u %h/cc-tgbot/sdk_runner.py serve
+Restart=on-failure
+RestartSec=5
+# Kill the bundled CLI children together with the runner.
+KillMode=control-group
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=default.target

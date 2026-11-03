@@ -1,0 +1,315 @@
+/* clio.css — слои Clio для мини-аппа (перенос 1:1 со страницы выбора 15.10.2026; filter=Б open=Б ask=Б quota=Б). */
+/* clio.css — общие токены движения и стекла (слои Clio: filter, open, ask, quota).
+   Движение: вариант A «Apple-база HIG 2026». *-t — длительность, без суффикса — кривая linear() (пружина).
+   Обратный путь быстрее (~60%): --m-*-out. Цвет/прозрачность без отскока: --m-fade. */
+:root{
+  --m-press-t:213ms;
+  --m-press:linear(0, 0.015, 0.053, 0.106, 0.167, 0.234, 0.301, 0.367, 0.431, 0.491, 0.547, 0.598, 0.645, 0.688, 0.726, 0.76, 0.791, 0.818, 0.841, 0.862, 0.881, 0.897, 0.911, 0.923, 0.934, 0.943, 0.951, 0.958, 0.964, 0.969, 0.973, 0.977, 0.981, 0.983, 0.986, 0.988, 1);
+  --m-state-t:302ms;
+  --m-state:linear(0, 0.021, 0.073, 0.145, 0.228, 0.316, 0.403, 0.487, 0.565, 0.635, 0.699, 0.754, 0.802, 0.843, 0.878, 0.906, 0.93, 0.949, 0.964, 0.976, 0.985, 0.992, 0.997, 1.001, 1.003, 1.005, 1.006, 1.006, 1.006, 1.006, 1.006, 1.005, 1.005, 1.004, 1.004, 1.003, 1);
+  --m-sheet-t:482ms;  /* вкус владельца (designkit-owner): лист 236–482 мс по роли, без перелёта */
+  --m-sheet:linear(0, 0.018, 0.062, 0.124, 0.196, 0.273, 0.35, 0.425, 0.496, 0.562, 0.622, 0.676, 0.725, 0.767, 0.805, 0.837, 0.865, 0.888, 0.909, 0.926, 0.94, 0.952, 0.961, 0.97, 0.976, 0.982, 0.986, 0.989, 0.992, 0.994, 0.996, 0.997, 0.998, 0.999, 1, 1, 1);
+  --m-expand-t:592ms;
+  --m-expand:linear(0, 0.015, 0.053, 0.106, 0.167, 0.234, 0.301, 0.367, 0.431, 0.491, 0.547, 0.598, 0.645, 0.688, 0.726, 0.76, 0.791, 0.818, 0.841, 0.862, 0.881, 0.897, 0.911, 0.923, 0.934, 0.943, 0.951, 0.958, 0.964, 0.969, 0.973, 0.977, 0.981, 0.983, 0.986, 0.988, 1);
+  --m-travel-t:539ms;
+  --m-travel:linear(0, 0.021, 0.073, 0.145, 0.228, 0.316, 0.403, 0.487, 0.565, 0.635, 0.699, 0.754, 0.802, 0.843, 0.878, 0.906, 0.93, 0.949, 0.964, 0.976, 0.985, 0.992, 0.997, 1.001, 1.003, 1.005, 1.006, 1.006, 1.006, 1.006, 1.006, 1.005, 1.005, 1.004, 1.004, 1.003, 1);
+  --m-reveal-t:284ms;
+  --m-reveal:linear(0, 0.015, 0.053, 0.106, 0.167, 0.234, 0.301, 0.367, 0.431, 0.491, 0.547, 0.598, 0.645, 0.688, 0.726, 0.76, 0.791, 0.818, 0.841, 0.862, 0.881, 0.897, 0.911, 0.923, 0.934, 0.943, 0.951, 0.958, 0.964, 0.969, 0.973, 0.977, 0.981, 0.983, 0.986, 0.988, 1);
+  --m-numbers-t:769ms;
+  --m-numbers:linear(0, 0.019, 0.068, 0.136, 0.214, 0.296, 0.379, 0.459, 0.534, 0.603, 0.665, 0.72, 0.768, 0.81, 0.846, 0.876, 0.902, 0.923, 0.941, 0.955, 0.967, 0.976, 0.983, 0.989, 0.993, 0.996, 0.999, 1, 1.002, 1.002, 1.003, 1.003, 1.003, 1.003, 1.003, 1.003, 1);
+  --m-sheet-out-t:355ms;
+  --m-expand-out-t:355ms;
+  --m-travel-out-t:323ms;
+  --m-exit-t:261ms;
+  --m-exit:cubic-bezier(.4,0,.2,1);
+  --m-fade:cubic-bezier(.25,.1,.25,1);
+  --m-stagger:24ms;
+  --lab-lime:#d2fb4a;
+  --lab-lime-ink:#193006;
+  --glass-blur:blur(20px) saturate(180%);
+  --glass-bg:rgba(255,255,255,.62);
+  --sheet-bg:var(--panel,#fff);  /* W1: модальный лист непрозрачный — при любой альфе переписка проступала сквозь него (Chromium и WebKit, с blur и без) */
+  --glass-edge:inset 0 0 0 1px rgba(255,255,255,.35);
+  --glass-shadow:0 8px 32px rgba(20,22,30,.10),0 1px 3px rgba(20,22,30,.06);
+  --glass-ink:#111214;
+}
+/* Тема слоёв: clio.js ставит html[data-lab-theme] по факту (Telegram colorScheme или prefers-color-scheme).
+   Переменные самого продукта (--canvas, --panel, --ink …) не трогаем — тема продукта остаётся как есть. */
+html[data-lab-theme="dark"]{--glass-bg:rgba(44,44,48,.58);--glass-edge:inset 0 0 0 1px rgba(255,255,255,.08);--glass-shadow:0 8px 32px rgba(0,0,0,.5),0 1px 3px rgba(0,0,0,.4);--glass-ink:#f2f2f5}
+@media (prefers-reduced-motion:reduce){
+  :root{--m-press-t:120ms;--m-state-t:120ms;--m-sheet-t:120ms;--m-expand-t:120ms;--m-travel-t:120ms;--m-reveal-t:120ms;--m-numbers-t:120ms;--m-sheet-out-t:120ms;--m-expand-out-t:120ms;--m-travel-out-t:120ms;--m-exit-t:120ms;--m-stagger:0ms;
+    --m-press:linear;--m-state:linear;--m-sheet:linear;--m-expand:linear;--m-travel:linear;--m-reveal:linear;--m-numbers:linear}
+}
+
+/* lab-filter.css — Фильтры списка: Б — стеклянная капсула внизу с переезжающей лаймовой подложкой.
+   Токены: lab.css. */
+#lab-fcap{display:none}
+html #lab-fcap{display:flex}
+
+/* родные чипсы: скрываются JS-ом (класс lf-gone) после сворачивания высоты */
+html .chipbar.lf-gone{display:none}
+.chipbar.lf-anim{box-sizing:border-box;overflow:hidden}
+
+/* список не уходит под капсулу */
+html{--lf-height:60px;--lf-bottom:28px}
+html #list-screen{padding-bottom:calc(var(--lf-height) + var(--lf-bottom) + 16px + env(safe-area-inset-bottom,0px))}
+
+html #lab-fcap{
+  --lf-bg:var(--glass-bg);
+  --lf-press:rgba(20,22,30,.08);
+  --lf-ink:var(--glass-ink);
+  --lf-mute:rgba(17,18,20,.62);
+  position:fixed;left:16px;right:16px;bottom:calc(env(safe-area-inset-bottom,0px) + var(--lf-bottom));
+  max-width:720px;margin:0 auto;height:var(--lf-height);box-sizing:border-box;padding:4px;
+  container:lf-capsule / inline-size;
+  z-index:8;align-items:stretch;gap:0;border-radius:999px;
+  background:var(--lf-bg);-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);
+  box-shadow:var(--glass-edge),var(--glass-shadow);
+  color:var(--lf-ink);touch-action:none;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;
+  transform:translateY(0);opacity:1;visibility:visible;
+  transition:transform var(--m-sheet-t) var(--m-sheet),opacity var(--m-reveal-t) var(--m-fade),visibility 0s;
+}
+html[data-lab-theme="light"] #lab-fcap{--lf-bg:rgba(226,229,236,.84);--glass-edge:inset 0 0 0 1px rgba(255,255,255,.55)}
+html[data-lab-theme="dark"] #lab-fcap{--lf-bg:rgba(44,44,48,.84);--lf-press:rgba(255,255,255,.10);--lf-mute:rgba(242,242,245,.66)}
+html #lab-fcap.lf-away{
+  transform:translateY(calc(100% + 40px));opacity:0;visibility:hidden;pointer-events:none;
+  transition:transform var(--m-exit-t) var(--m-exit),opacity var(--m-exit-t) var(--m-fade),visibility 0s var(--m-exit-t);
+}
+html #lab-fcap.lf-empty{opacity:0;pointer-events:none}
+
+#lab-fcap .lf-ind{
+  position:absolute;left:0;top:4px;bottom:4px;width:0;border-radius:999px;
+  background:var(--lab-lime);pointer-events:none;will-change:translate,width;
+  transition:background-color 120ms var(--m-fade),opacity 120ms var(--m-fade);
+}
+#lab-fcap.lf-hold .lf-ind{background:color-mix(in srgb,var(--lab-lime) 85%,var(--lab-lime-ink))}
+#lab-fcap .lf-item{
+  position:relative;z-index:1;flex:1 1 auto;min-width:44px;padding:0 10px;border-radius:999px;
+  display:flex;align-items:center;justify-content:center;white-space:nowrap;
+  font-size:12px;font-weight:500;letter-spacing:-.005em;color:var(--lf-mute);
+  background:transparent;transition:color 140ms var(--m-fade),background-color var(--m-press-t) var(--m-fade);
+  touch-action:none;
+}
+#lab-fcap .lf-item>span.l{display:flex;flex-direction:column;align-items:center;gap:2px;flex:none;width:max-content;scale:1;transition:scale var(--m-press-t) var(--m-press)}
+#lab-fcap .lf-item .n{font-size:20px;line-height:24px;font-variant-numeric:tabular-nums;font-weight:650}
+#lab-fcap .lf-item .t{max-width:100%;font-size:12px;line-height:16px;font-weight:500;white-space:nowrap}
+#lab-fcap .lf-item.lf-on{color:var(--lab-lime-ink)}
+#lab-fcap .lf-item.lf-press:not([aria-pressed="true"]){background:var(--lf-press)}
+#lab-fcap .lf-item:focus-visible{outline:2px solid var(--link);outline-offset:-2px}
+#lab-fcap.lf-drag .lf-item{transition:none}
+
+/* Container queries measure content width: 332px + 2 × 4px padding = 340px. */
+@container lf-capsule (width < 332px){#lab-fcap .lf-item .t{font-size:11px}}
+
+@media (prefers-reduced-motion:reduce){
+  html #lab-fcap,html #lab-fcap.lf-away{transform:none}
+  #lab-fcap .lf-ind,#lab-fcap .lf-item>span.l{transition:opacity 120ms linear}
+}
+
+/* lab-open.css — Открытие сессии: Б — раскрытие карточки на месте поверх размытого списка.
+   Работает при классе html.lo-on (его ставит lab-open.js на время жизни экрана сессии).
+   --lo-p: 0 = экран свёрнут в карточку, 1 = раскрыт. Анимируется через WAAPI (зарегистрированное свойство). */
+@property --lo-p{syntax:"<number>";inherits:true;initial-value:1}
+/* --lo-rr: 1 — скругление экрана включено (всё движение); 1→0 только после полного раскрытия, 0→1 в начале свёртки */
+@property --lo-rr{syntax:"<number>";inherits:true;initial-value:1}
+
+html #lo-dim{position:fixed;inset:0;z-index:9;background:#000;pointer-events:none;opacity:0}
+html.lo-on #lo-dim{opacity:calc(var(--lo-p) * .28)}
+html.lo-on.lo-rest #lo-dim{opacity:0}
+
+/* слайд продукта (inline transform на экране и списке, затемнение navdim) гасим: переход ведём сами */
+html.lo-on #session-screen{transform:none!important;box-shadow:none!important}
+html.lo-on #navdim{display:none!important}
+html.lo-on.lo-rest #list-screen{transform:none!important;filter:none!important}
+
+/* список уходит назад: масштаб, затемнение и размытие, без сдвига вбок */
+html.lo-on:not(.lo-rest) #list-screen{
+  transform:scale(calc(1 - .06 * var(--lo-p)));
+  transform-origin:50% var(--lo-oy,50vh);
+  /* без blur: размытие всего списка каждый кадр роняет кадры в WKWebView Telegram */
+}
+html.lo-on:not(.lo-rest) #list-screen{transform:scale(calc(1 - .06 * var(--lo-p)))!important}
+
+/* экран сессии «вырастает» из прямоугольника карточки */
+html.lo-on #session-screen:not([hidden]){
+  clip-path:inset(
+    calc(var(--lo-t,0px) * (1 - var(--lo-p)))
+    calc(var(--lo-r,0px) * (1 - var(--lo-p)))
+    calc(var(--lo-b,0px) * (1 - var(--lo-p)))
+    calc(var(--lo-l,0px) * (1 - var(--lo-p)))
+    round calc((var(--lo-rad,14px) + (28px - var(--lo-rad,14px)) * var(--lo-p)) * var(--lo-rr)));
+  background:color-mix(in srgb,var(--panel) calc((1 - var(--lo-p)) * 100%),var(--canvas));
+  will-change:clip-path;
+}
+html.lo-on.lo-rest.lo-flat #session-screen:not([hidden]){clip-path:none;will-change:auto}
+html.lo-on #session-screen:not([hidden])>*{
+  opacity:calc((var(--lo-p) - .14) * 2.2);
+  transform:translate3d(0,calc(var(--lo-t,0px) * (1 - var(--lo-p))),0);
+}
+html.lo-on.lo-rest #session-screen:not([hidden])>*{opacity:1;transform:none}
+
+/* заголовок карточки: слой-призрак карточки в общей рамке, гаснет, пока проявляется экран */
+html .lo-ghost{position:fixed;z-index:13;margin:0;pointer-events:none;overflow:hidden;
+  border-radius:calc(var(--lo-rad,14px) * (1 - var(--lo-p)));opacity:calc(1 - var(--lo-p) * 6)}
+html .lo-ghost>*{margin:0;width:100%;height:100%;transform:none;pointer-events:none}
+html .lo-ghost.none{display:none}
+
+@media (prefers-reduced-motion:reduce){
+  html.lo-on #session-screen:not([hidden]){clip-path:none;background:var(--canvas);opacity:var(--lo-p)}
+  html.lo-on #session-screen:not([hidden])>*{opacity:1;transform:none}
+  html.lo-on:not(.lo-rest) #list-screen{transform:none;filter:none}
+  html .lo-ghost{display:none}
+  html.lo-on #lo-dim{opacity:0}
+}
+
+/* lab-ask.css — Вопрос агента, вариант Б: стеклянный лист.
+   Родной блок скрыт, пока лист на экране. Разделение тоном, без линий и цветных полосок. */
+html.lab-ask-has #s-question{display:none!important}
+/* Лист — поверх всей видимой области, независимо от высоты шапки сессии. */
+.lab-ask-root{position:fixed;inset:var(--vvtop,0px) 0 auto;height:min(var(--vvh,100dvh),100dvh);z-index:20;pointer-events:none;font-family:var(--font,system-ui,sans-serif);color:var(--glass-ink,#111214)}
+.lab-ask-root.leaving{opacity:0;transition:opacity 260ms var(--m-fade,ease)}
+.lab-ask-scrim{position:absolute;inset:0;opacity:0;background:rgba(18,20,26,.14);pointer-events:none}
+.lab-ask-root[data-state="open"] .lab-ask-scrim,.lab-ask-root[data-state="open"] .lab-ask-sheet{pointer-events:auto}
+html[data-lab-theme="dark"] .lab-ask-scrim{background:rgba(0,0,0,.3)}
+@media (prefers-color-scheme:dark){html:not([data-lab-theme="light"]):not(.in-tg) .lab-ask-scrim{background:rgba(0,0,0,.3)}}
+.lab-ask-sheet{position:absolute;left:0;right:0;bottom:0;margin:0 auto;max-width:720px;max-height:min(84dvh,calc(100% - env(safe-area-inset-top,0px) - 24px));display:flex;flex-direction:column;
+  border-radius:28px 28px 0 0;background:var(--sheet-bg);
+  box-shadow:var(--glass-edge),var(--glass-shadow);pointer-events:none;will-change:transform;touch-action:none;
+  padding-bottom:calc(env(safe-area-inset-bottom,0px) + 14px)}
+.lab-ask-head{padding:0 var(--gut,16px) 10px;touch-action:none;cursor:grab;flex:none}
+.lab-ask-grip{width:36px;height:5px;border-radius:3px;background:var(--glass-ink);opacity:.22;margin:9px auto 14px}
+.lab-ask-cap{font-size:12.5px;font-weight:600;letter-spacing:.2px;opacity:.55;margin-bottom:6px}
+.lab-ask-q{font-size:21px;line-height:1.28;font-weight:650;letter-spacing:-.3px;overflow-wrap:anywhere;text-wrap:balance}
+.lab-ask-list{display:grid;grid-auto-rows:max-content;gap:8px;padding:6px var(--gut,16px) 4px;overflow-y:auto;overscroll-behavior:contain;min-height:0;touch-action:none}
+.lab-ask-root.scrolls .lab-ask-list{touch-action:pan-y}
+.lab-ask-opt{display:flex;align-items:center;gap:14px;width:100%;min-height:56px;padding:9px 16px;border-radius:18px;text-align:left;
+  background:color-mix(in srgb,var(--glass-ink) 7%,transparent);color:inherit;font:inherit;
+  transform:scale(1);transition:transform var(--m-state-t,302ms) var(--m-state),background-color var(--m-fade-t,180ms) var(--m-fade),color 180ms var(--m-fade);
+  animation:lab-ask-in var(--m-reveal-t,284ms) var(--m-reveal) both;animation-delay:180ms}  /* варианты вместе: без ступенчатости (designkit-owner) */
+/* смена шага на месте: лист не въезжает, варианты не выезжают заново — содержимое проявляется целиком (clio.js build/stepFrom) */
+.lab-ask-root.step .lab-ask-opt{animation:none}
+@keyframes lab-ask-in{from{opacity:0;transform:translate3d(0,10px,0)}to{opacity:1;transform:none}}
+.lab-ask-opt.pressed{background:color-mix(in srgb,var(--glass-ink) 14%,transparent);transition-duration:120ms}
+.lab-ask-mk{flex:none;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-size:14px;font-weight:650;font-variant-numeric:tabular-nums;
+  background:color-mix(in srgb,var(--glass-ink) 9%,transparent);transition:background-color 160ms var(--m-fade),color 160ms var(--m-fade)}
+.lab-ask-tx{min-width:0;display:flex;flex-direction:column;gap:1px}
+.lab-ask-t{font-size:17px;font-weight:600;line-height:1.25;overflow-wrap:anywhere}
+.lab-ask-d{font-size:14px;line-height:1.3;opacity:.58;overflow-wrap:anywhere}
+.lab-ask-ans{padding:10px 16px;border-radius:18px;background:color-mix(in srgb,var(--glass-ink) 7%,transparent);font-size:15px;line-height:1.35;overflow-wrap:anywhere}
+.lab-ask-opt.picked{background:var(--lab-lime);color:var(--lab-lime-ink)}
+.lab-ask-opt.picked .lab-ask-mk{background:rgba(25,48,6,.14)}
+.lab-ask-opt.picked .lab-ask-d{opacity:.75}
+.lab-ask-root.multi .lab-ask-mk svg{opacity:0;transition:opacity 140ms var(--m-fade)}
+.lab-ask-root.multi .lab-ask-opt[aria-pressed="true"]{background:color-mix(in srgb,var(--lab-lime) 55%,transparent)}
+.lab-ask-root.multi .lab-ask-opt[aria-pressed="true"] .lab-ask-mk{background:var(--lab-lime);color:var(--lab-lime-ink)}
+.lab-ask-root.multi .lab-ask-opt[aria-pressed="true"] .lab-ask-mk svg{opacity:1}
+.lab-ask-actions{display:flex;flex-wrap:wrap;gap:8px;padding:10px var(--gut,16px) 0;flex:none}
+.lab-ask-btn{flex:1 1 0;min-width:120px;min-height:48px;border-radius:16px;padding:10px 14px;font:inherit;font-size:15.5px;font-weight:550;color:inherit;
+  background:color-mix(in srgb,var(--glass-ink) 7%,transparent);transition:opacity 120ms var(--m-fade)}
+.lab-ask-btn:active{opacity:.6}
+.lab-ask-btn.pri{flex-basis:100%;background:var(--lab-lime);color:var(--lab-lime-ink);font-weight:650}
+.lab-ask-btn.picked{background:var(--lab-lime);color:var(--lab-lime-ink)}
+.lab-ask-root.busy .lab-ask-sheet{pointer-events:none}
+.lab-ask-pill{position:absolute;left:50%;bottom:90px;margin-left:0;translate:-50% 0;display:flex;align-items:center;gap:10px;max-width:calc(100% - 32px);min-height:46px;padding:0 16px 0 14px;border-radius:23px;
+  background:var(--glass-bg);-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);box-shadow:var(--glass-edge),var(--glass-shadow);
+  color:var(--glass-ink);font:inherit;font-size:15px;font-weight:600;opacity:0;pointer-events:none;touch-action:none;white-space:nowrap}
+.lab-ask-root[data-state="pill"] .lab-ask-pill{pointer-events:auto}
+.lab-ask-pdot{flex:none;width:9px;height:9px;border-radius:50%;background:var(--lab-lime);box-shadow:0 0 0 3px color-mix(in srgb,var(--lab-lime) 35%,transparent)}
+.lab-ask-ptx{overflow:hidden;text-overflow:ellipsis}
+.me.lab-ask-bubble.pending{opacity:1}
+@media (prefers-reduced-motion:reduce){.lab-ask-opt{animation:none}}
+html[data-lab-theme="dark"] .lab-ask-root.multi .lab-ask-opt[aria-pressed="true"]{background:color-mix(in srgb,var(--lab-lime) 24%,transparent)}
+
+/* Ответ остаётся в листе; нижние действия помещаются над клавиатурой. */
+.lab-ask-root:not(.permission){top:var(--vvtop,0px);bottom:auto;height:var(--vvh,100dvh)}
+.lab-ask-root:not(.permission) .lab-ask-sheet{max-height:calc(var(--vvh,100dvh) - env(safe-area-inset-top,0px) - 24px);overflow:hidden}
+.lab-ask-actions[hidden],.lab-ask-own[hidden]{display:none}
+.lab-ask-own{flex:none;display:flex;flex-direction:column;gap:10px;padding:10px var(--gut,16px) 0;touch-action:pan-y;animation:lab-ask-in var(--m-state-t,302ms) var(--m-reveal) both}
+.lab-ask-own label{font-size:14px;font-weight:550;opacity:.65;padding:0 4px}
+.lab-ask-own-text{display:block;width:100%;min-height:64px;max-height:136px;box-sizing:border-box;resize:none;border:0;border-radius:16px;padding:12px;
+  background:color-mix(in srgb,var(--glass-ink) 7%,transparent);color:inherit;font:inherit;font-size:16px;line-height:1.4;overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y}
+.lab-ask-own-text:focus-visible{outline:2px solid var(--lab-lime);outline-offset:-2px}
+.lab-ask-own-actions{display:flex;gap:8px}
+.lab-ask-own-actions .lab-ask-btn.pri{flex-basis:0}
+.lab-ask-own-error{font-size:14px;line-height:1.35;color:color-mix(in srgb,var(--danger) 80%,var(--glass-ink));overflow-wrap:anywhere;max-height:3.5em;overflow-y:auto}
+.lab-ask-own .lab-ask-btn:disabled{opacity:.5}
+.lab-ask-root.own-open .lab-ask-sheet{touch-action:pan-y}
+.lab-ask-root.own-open .lab-ask-head{flex:none;max-height:calc(var(--vvh,100dvh) * .24);overflow-y:auto}
+.lab-ask-root.own-open .lab-ask-list{touch-action:pan-y}
+@media (prefers-reduced-motion:reduce){.lab-ask-own{animation:none}}
+
+/* Разрешение остаётся в общем листе; длинная команда прокручивается отдельно. */
+html[data-lab-theme="dark"]{--perm-danger:#ff6b61}
+.lab-ask-root.permission .lab-ask-sheet{max-height:calc(100% - env(safe-area-inset-top,0px) - 24px);overflow:hidden;touch-action:pan-y}
+.lab-perm-content{display:flex;flex-direction:column;min-height:0;overflow:hidden;touch-action:pan-y;padding:0 14px}
+.lab-perm-content>:not(.lab-perm-body){flex:none}
+.lab-perm-content>.lab-perm-summary,.lab-perm-content>.lab-perm-path,.lab-perm-content>.lab-perm-note,.lab-perm-content>.lab-perm-question{margin-left:8px;margin-right:8px}
+.lab-perm-content .lab-perm-body{flex:0 1 auto;min-height:0;background:color-mix(in srgb,var(--glass-ink) 7%,transparent)}
+.lab-ask-root.permission .lab-ask-list{overflow:visible;touch-action:pan-y;padding:6px 0 4px}
+.lab-ask-root.permission .perm-deny{margin-top:10px;background:var(--panel);color:var(--perm-danger)}
+.lab-ask-root.permission .perm-selected{background:color-mix(in srgb,var(--glass-ink) 12%,transparent)}
+.lab-ask-root.permission .lab-ask-opt:disabled{opacity:.6}
+
+/* lab-quota.css — Квота: Б — перекатывающиеся цифры и тонкие капсулы. */
+.lq,.lab-sq{display:none}
+html #quota,html #s-quota{display:none!important}
+html .lq:not([hidden]){display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+html .lab-sq:not([hidden]){display:block}
+.lq{--lq-warn:#b06f0a;--lq-ok:#8ec21f;--lq-ok-t:#587f0b;--lq-track:color-mix(in srgb,var(--ink) 10%,var(--panel))}
+html[data-lab-theme="dark"] .lq,html[data-lab-theme="dark"] .lab-sq{--lq-warn:#f0b44c;--lq-ok:#d2fb4a;--lq-ok-t:#d2fb4a}
+@media (prefers-color-scheme:dark){html:not([data-lab-theme="light"]) .lq,html:not([data-lab-theme="light"]) .lab-sq{--lq-warn:#f0b44c;--lq-ok:#d2fb4a;--lq-ok-t:#d2fb4a}}
+.lab-sq{--lq-warn:#b06f0a;--lq-ok:#8ec21f;--lq-ok-t:#587f0b}
+.lqt{position:relative;min-width:0;background:var(--panel);border-radius:var(--r);padding:13px 16px;display:flex;flex-direction:column;gap:2px}
+.lql{font-size:13px;color:var(--muted)}
+.lqv{display:flex;align-items:baseline;gap:2px;margin-top:1px}
+.lqt .lqn{font-size:32px;font-weight:600;letter-spacing:-1px;color:var(--ink)}
+.lqp{font-size:15px;font-weight:500;color:var(--muted);margin-left:1px}
+.lqb{position:absolute;top:10px;right:12px;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--muted);background:var(--soft);padding:2px 8px;border-radius:999px;opacity:0;transform:translateY(4px);pointer-events:none;transition:opacity var(--m-reveal-t) var(--m-fade),transform var(--m-reveal-t) var(--m-fade)}
+.lqb.on{opacity:1;transform:none}
+.lqb{color:var(--lq-ok-t)}
+.lqb.warn{color:var(--lq-warn)}
+.lqb.hot{color:var(--danger)}
+.lqc{display:block;height:6px;border-radius:3px;background:var(--lq-track);overflow:hidden;margin-top:8px}
+.lqc i{display:block;height:100%;border-radius:3px;background:var(--lq-ok);opacity:1;transition:background-color var(--m-state-t) var(--m-fade),opacity var(--m-state-t) var(--m-fade)}
+.lqt.warn .lqc i{background:var(--lq-warn)}
+.lqt.hot .lqc i{background:var(--danger)}
+.lqt.hot .lqn{color:var(--danger)}
+.lqr{font-size:12px;color:var(--muted);margin-top:5px}
+.lqstale{grid-column:1/-1;font-size:12px;color:var(--muted);padding:0 2px}
+/* одометр */
+.lqn{display:inline-flex;font-variant-numeric:tabular-nums;line-height:1.1;height:1.1em;overflow:hidden;align-items:flex-start}
+.lqd{display:block;width:1ch;height:1.1em;overflow:hidden;flex:none;transition:width var(--m-reveal-t) var(--m-fade)}
+/* M3: на перекате край разряда растворяется, а не режет цифру */
+.lqd{-webkit-mask-image:linear-gradient(transparent,#000 10%,#000 90%,transparent);mask-image:linear-gradient(transparent,#000 10%,#000 90%,transparent)}
+.lqd.z{width:0}
+.lqs{display:block;will-change:transform}
+.lqs>b{display:block;height:1.1em;font-weight:inherit}
+/* строка в сессии */
+.lab-sq .lqn{vertical-align:-.24em;font-weight:600;color:var(--ink)}
+.lab-sq .lqx{font-weight:600;color:var(--ink)}
+.lab-sq .lqx.warn{color:var(--lq-warn)}
+.lab-sq .lqx.hot{color:var(--danger)}
+.lab-sq .lqn{color:inherit}
+@media (prefers-reduced-motion:reduce){.lqd,.lqb,.lqc i{transition-duration:1ms}}
+
+/* Шапка — отдельный flex-ряд экрана, за пределами прокрутки #s-body.
+   Остаётся внутри #session-screen: существующий Clio clip-path раскрывает её вместе с экраном. */
+.session-header{position:absolute;left:0;right:0;top:0;z-index:8;padding:4px 12px 8px;background:var(--glass-bar);-webkit-backdrop-filter:var(--glass-fx);backdrop-filter:var(--glass-fx)}
+.session-header>*{max-width:696px;margin-left:auto;margin-right:auto}
+:root:not(.in-tg) .session-header{padding-top:calc(env(safe-area-inset-top,0px) + 4px)}
+.session-header-row{display:flex;align-items:center;gap:8px;min-height:48px}
+.session-back{flex:none}
+.session-heading{flex:1;min-width:0}
+.session-heading h2{margin:0;font-size:17px;line-height:22px;font-weight:600;letter-spacing:-.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.session-status{display:flex;align-items:center;gap:6px;min-width:0;color:var(--muted);font-size:13px;line-height:18px}
+.session-status .dot{flex:none;width:7px;height:7px;margin:0}
+.session-status #s-state{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.session-header .more{flex:none;width:44px;height:44px;padding:0;background:transparent;color:var(--link)}
+.session-links{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:4px;padding:0 calc(var(--gut,16px) - 12px)}  /* the header pads 12 for its icon buttons; pills sit on the screen edge */
+.session-links>#s-chain{height:auto;white-space:normal;text-align:left;padding:12px 14px;border-radius:22px}
+.session-links>button{flex:none;max-width:100%;min-width:44px;height:44px;min-height:44px;margin:0;padding:0 12px;border-radius:999px;background:var(--panel);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13.5px;line-height:20px}
+/* ≥1000 (редизайн В): список — колонка слева, сессия — панель справа; капсула фильтров в колонке, лист вопроса над панелью */
+@media (min-width:1000px){
+  html #lab-fcap{left:calc(12px + var(--gut,16px));right:auto;width:calc(380px - 2 * var(--gut,16px));margin:0}  /* the list column (12 + 380) minus its edge */
+  .lab-ask-root{left:404px;right:12px}
+}

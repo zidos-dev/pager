@@ -1,0 +1,14 @@
+[Unit]
+Description=cc-tgbot: Telegram bot for Claude Code sessions
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Adjust the path to where you cloned the repository (%h is your home directory).
+ExecStart=/usr/bin/python3 -u %h/cc-tgbot/cc_tgbot.py
+Restart=always
+RestartSec=5
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=default.target

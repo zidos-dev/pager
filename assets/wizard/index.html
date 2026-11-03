@@ -1,0 +1,547 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>cc-tgbot — установка</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --canvas:#f2f3f7; --surface:#ffffff; --soft:#e9ebf1; --ink:#11131c; --muted:#5b6070;
+  --accent:#d2fb4a; --accent-ink:#11131c; --ok:#1d7a46; --bad:#c42b2b; --focus:#3b5bdb;
+  --r:20px; --r-in:12px; --gap:16px; --fast:180ms; --ease:cubic-bezier(.32,.72,0,1);
+  --font:"Onest",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root{
+  --canvas:#0d0f15; --surface:#181b24; --soft:#232733; --ink:#eef0f6; --muted:#a3a9b8;
+  --ok:#5fd394; --bad:#ff7b72; --focus:#8aa2ff;
+}}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--canvas);color:var(--ink);font:400 16px/1.5 var(--font);-webkit-font-smoothing:antialiased}
+main{max-width:620px;margin:0 auto;padding:40px 16px 80px}
+h1{font-size:34px;line-height:1.1;font-weight:500;letter-spacing:-.04em;margin:0 0 8px}
+.lead{color:var(--muted);margin:0 0 28px;max-width:52ch}
+.step{background:var(--surface);border-radius:var(--r);padding:20px;margin:0 0 12px}
+.step[data-state="todo"]{background:transparent;padding:14px 20px}
+.step[data-state="todo"] .body,.step[data-state="done"] .body{display:none}
+.shead{display:flex;align-items:center;gap:12px;min-height:28px}
+.num{flex:none;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-size:14px;font-weight:500;background:var(--soft);color:var(--muted);font-variant-numeric:tabular-nums}
+.step[data-state="active"] .num{background:var(--ink);color:var(--surface)}
+.step[data-state="done"] .num{background:var(--accent);color:var(--accent-ink)}
+.stitle{font-size:18px;font-weight:500;flex:1;min-width:0}
+.step[data-state="todo"] .stitle{color:var(--muted)}
+.ssum{color:var(--muted);font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:46%}
+.edit{display:none;min-height:44px;padding:0 12px;border:0;background:none;color:var(--ink);font:500 14.5px var(--font);cursor:pointer;border-radius:var(--r-in)}
+.step[data-state="done"] .edit{display:block}
+.edit:hover{background:var(--soft)}
+.body{margin-top:16px;display:grid;grid-template-columns:minmax(0,1fr);gap:12px}
+.body>*{min-width:0}
+.hint{color:var(--muted);font-size:14.5px;margin:0}
+.hint b{color:var(--ink);font-weight:500}
+label{font-size:14.5px;color:var(--muted)}
+.field{width:100%;min-height:48px;border:0;border-radius:var(--r-in);background:var(--soft);color:var(--ink);font:inherit;padding:12px 14px}
+textarea.field{min-height:96px;resize:vertical}
+.row{display:grid;grid-template-columns:1fr 110px;gap:8px}
+.f{display:grid;gap:6px}
+.seg{display:inline-grid;grid-auto-flow:column;gap:4px;background:var(--soft);border-radius:999px;padding:4px;justify-self:start}
+.seg button{min-height:44px;padding:0 16px;border:0;border-radius:999px;background:transparent;color:var(--muted);font:500 15px var(--font);cursor:pointer;transition:background var(--fast) var(--ease),color var(--fast) var(--ease)}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink)}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{min-height:44px;padding:0 16px;border:0;border-radius:999px;background:var(--soft);color:var(--ink);font:500 15px var(--font);cursor:pointer;transition:background var(--fast) var(--ease)}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--surface)}
+.btn{min-height:48px;padding:0 22px;border:0;border-radius:999px;background:var(--accent);color:var(--accent-ink);font:500 16px var(--font);cursor:pointer;justify-self:start;transition:background var(--fast) var(--ease)}
+.btn:hover{background:color-mix(in srgb,var(--accent) 82%,var(--ink))}
+.btn:active{background:color-mix(in srgb,var(--accent) 50%,var(--ink))}
+.btn[disabled]{opacity:.55;cursor:default}
+.btn.sec{background:var(--soft);color:var(--ink)}
+.btn.sec:hover{background:color-mix(in srgb,var(--soft) 80%,var(--ink))}
+.btn.sec:active{background:color-mix(in srgb,var(--soft) 50%,var(--ink))}
+.acts{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.msg{margin:0;font-size:14.5px}
+.msg.bad{color:var(--bad)} .msg.ok{color:var(--ok)}
+.checks{list-style:none;margin:0;padding:0;display:grid;gap:6px;font-size:15px}
+.checks li{display:flex;gap:10px;align-items:baseline}
+.checks .y{color:var(--ok)} .checks .n{color:var(--bad)}
+.cmd{min-width:0;display:flex;gap:8px;align-items:center;background:var(--soft);border-radius:var(--r-in);padding:6px 6px 6px 14px}
+.cmd code{flex:1;min-width:0;font:14px var(--mono);overflow-x:auto;white-space:nowrap}
+.copy{min-height:40px;min-width:44px;padding:0 12px;border:0;border-radius:10px;background:var(--surface);color:var(--ink);font:500 14px var(--font);cursor:pointer}
+.wait{display:flex;gap:10px;align-items:center;color:var(--muted);font-size:15px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.groups{display:grid;gap:8px}
+.group{display:flex;align-items:center;gap:12px;min-height:52px;padding:0 14px;border:0;border-radius:var(--r-in);background:var(--soft);color:var(--ink);font:inherit;text-align:left;cursor:pointer}
+.group[aria-pressed="true"]{background:var(--ink);color:var(--surface)}
+.group small{color:inherit;opacity:.7;margin-left:auto;font-variant-numeric:tabular-nums}
+.log{background:var(--soft);border-radius:var(--r-in);padding:12px 14px;font:13.5px/1.55 var(--mono);max-height:300px;overflow:auto;white-space:pre-wrap;word-break:break-word;margin:0}
+.bots{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.bot{display:flex;align-items:center;gap:12px;min-height:52px;padding:6px 6px 6px 14px;border-radius:var(--r-in);background:var(--soft)}
+.bot .bi{flex:1;min-width:0;display:grid}
+.bot b{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bot small{color:var(--muted);font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bot small.bad{color:var(--bad)}
+.del{flex:none;min-height:44px;padding:0 16px;border:0;border-radius:999px;background:var(--surface);color:var(--ink);font:500 14.5px var(--font);cursor:pointer;transition:background var(--fast) var(--ease)}
+.del:hover{background:color-mix(in srgb,var(--surface) 80%,var(--ink))}
+#s-more[data-state="done"] .body{display:grid}
+#s-more[data-state="done"] :is(#more-acts,#wiz-bot){display:none}
+#s-more[data-state="todo"] .body{display:none}
+.sub{margin:0}
+.done{font-size:18px;font-weight:500;margin:0}
+a{color:inherit;text-underline-offset:3px}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+[hidden]{display:none!important}
+@media (max-width:420px){h1{font-size:28px}.row{grid-template-columns:minmax(0,1fr) 90px}.shead{flex-wrap:wrap}.ssum{order:3;flex-basis:100%;max-width:none;padding-left:40px;margin-top:-6px}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<main>
+  <h1 data-t="title">Свой бот в Telegram</h1>
+  <p class="lead" data-t="lead">Семь шагов, последний необязательный. Настройка идёт здесь, на этом компьютере; бот будет работать там, куда вы его поставите.</p>
+
+  <section class="step" id="s-target" data-state="active" aria-labelledby="t1">
+    <div class="shead"><span class="num">1</span><h2 class="stitle" id="t1" data-t="s1">Куда поставить</h2><span class="ssum" id="sum-target"></span><button class="edit" type="button" data-edit="target" data-t="edit">Изменить</button></div>
+    <div class="body">
+      <div class="seg" role="group" aria-label="Куда поставить" data-ta="s1">
+        <button type="button" id="m-local" aria-pressed="true" data-t="local">Этот компьютер</button>
+        <button type="button" id="m-ssh" aria-pressed="false" data-t="ssh">Сервер по SSH</button>
+      </div>
+      <p class="hint" id="local-hint" data-t="localHint">Подходит, если этот компьютер на Linux и всегда включён.</p>
+      <form id="f-target" class="body" style="margin:0" novalidate>
+        <div id="ssh-fields" class="body" style="margin:0" hidden>
+          <div class="row">
+            <div class="f"><label for="host" data-t="host">Адрес сервера</label><input class="field" id="host" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="203.0.113.10"></div>
+            <div class="f"><label for="port" data-t="port">Порт</label><input class="field" id="port" inputmode="numeric" value="22"></div>
+          </div>
+          <div class="f"><label for="user" data-t="user">Пользователь</label><input class="field" id="user" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="ubuntu"></div>
+          <p class="hint" data-t="sshHint">Если сервер спросит пароль, введите его в окне терминала, где запущен setup.py.</p>
+        </div>
+        <p class="msg" id="msg-target" role="alert" hidden></p>
+        <ul class="checks" id="checks" hidden></ul>
+        <div class="cmd" id="fix" hidden><code id="fix-code"></code><button class="copy" type="button" data-copy="fix-code" data-t="copy">Копировать</button></div>
+        <div class="acts"><button class="btn" id="b-target" type="submit" data-t="connect">Подключиться</button></div>
+      </form>
+    </div>
+  </section>
+
+  <section class="step" id="s-bot" data-state="todo" aria-labelledby="t2">
+    <div class="shead"><span class="num">2</span><h2 class="stitle" id="t2" data-t="s2">Бот</h2><span class="ssum" id="sum-bot"></span><button class="edit" type="button" data-edit="bot" data-t="edit">Изменить</button></div>
+    <form class="body" id="f-bot" novalidate>
+      <p class="hint" data-th="botHint">Откройте <b>@BotFather</b> в Telegram, отправьте <b>/newbot</b>, придумайте имя и вставьте сюда токен, который он пришлёт.</p>
+      <div class="f"><label for="token" data-t="token">Токен бота</label><input class="field" id="token" type="password" autocomplete="off" spellcheck="false" placeholder="123456789:AA…"></div>
+      <p class="msg" id="msg-bot" role="alert" hidden></p>
+      <div class="acts"><button class="btn" id="b-bot" type="submit" data-t="check">Проверить</button></div>
+    </form>
+  </section>
+
+  <section class="step" id="s-owner" data-state="todo" aria-labelledby="t3">
+    <div class="shead"><span class="num">3</span><h2 class="stitle" id="t3" data-t="s3">Вы</h2><span class="ssum" id="sum-owner"></span><button class="edit" type="button" data-edit="owner" data-t="edit">Изменить</button></div>
+    <div class="body">
+      <p class="hint" data-th="ownerHint">Чтобы бот слушался только вас, напишите ему <b>/start</b> в Telegram.</p>
+      <div class="acts"><a class="btn" id="open-bot" href="#" target="_blank" rel="noopener" style="display:inline-grid;place-items:center;text-decoration:none" data-t="openBot">Открыть бота</a></div>
+      <div class="wait" id="owner-wait"><span class="dot" aria-hidden="true"></span><span data-t="waiting">Жду сообщение…</span></div>
+      <p class="msg" id="msg-owner" role="alert" hidden></p>
+    </div>
+  </section>
+
+  <section class="step" id="s-model" data-state="todo" aria-labelledby="t4">
+    <div class="shead"><span class="num">4</span><h2 class="stitle" id="t4" data-t="s4">Модель</h2><span class="ssum" id="sum-model"></span><button class="edit" type="button" data-edit="model" data-t="edit">Изменить</button></div>
+    <form class="body" id="f-model" novalidate>
+      <div class="chips" id="presets" role="radiogroup" aria-label="Провайдер" data-ta="provider"></div>
+      <div class="f" id="base-f" hidden><label for="base" data-t="base">Адрес API</label><input class="field" id="base" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://"></div>
+      <div class="f" id="model-f"><label for="mname" data-t="mname">Название модели</label><input class="field" id="mname" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+      <div class="f" id="key-f"><label for="key" data-t="key">Ключ API</label><input class="field" id="key" type="password" autocomplete="off" spellcheck="false"></div>
+      <p class="hint" id="model-note" hidden></p>
+      <p class="msg" id="msg-model" role="alert" hidden></p>
+      <div class="acts"><button class="btn" id="b-model" type="submit" data-t="checkKey">Проверить ключ</button></div>
+    </form>
+  </section>
+
+  <section class="step" id="s-group" data-state="todo" aria-labelledby="t5">
+    <div class="shead"><span class="num">5</span><h2 class="stitle" id="t5" data-t="s5">Группа и знания</h2><span class="ssum" id="sum-group"></span><button class="edit" type="button" data-edit="group" data-t="edit">Изменить</button></div>
+    <form class="body" id="f-group" novalidate>
+      <p class="hint" data-t="groupHint">Необязательно. Добавьте бота в группу и напишите там что-нибудь, группа появится ниже. Бот будет отвечать в ней на упоминания.</p>
+      <div class="groups" id="groups"></div>
+      <div class="wait" id="group-wait"><span class="dot" aria-hidden="true"></span><span data-t="groupWaiting">Слежу за новыми группами…</span></div>
+      <div class="f"><label for="folder" data-t="folder">Папка с материалами на этом компьютере</label><input class="field" id="folder" autocomplete="off" spellcheck="false" placeholder="~/Documents/project"></div>
+      <div class="f"><label for="bname" data-t="bname">Как бот себя называет</label><input class="field" id="bname" autocomplete="off"></div>
+      <div class="f"><label for="brief" data-t="brief">Роль и правила для бота</label><textarea class="field" id="brief" maxlength="20000" data-tp="briefPh" placeholder="Ты помощник команды. Отвечай коротко, по материалам из папки."></textarea></div>
+      <div class="acts"><button class="btn" id="b-group" type="submit" data-t="next">Дальше</button><button class="btn sec" type="button" id="b-skip" data-t="skip">Пропустить</button></div>
+    </form>
+  </section>
+
+  <section class="step" id="s-install" data-state="todo" aria-labelledby="t6">
+    <div class="shead"><span class="num">6</span><h2 class="stitle" id="t6" data-t="s6">Установка</h2><span class="ssum" id="sum-install"></span></div>
+    <div class="body">
+      <p class="hint" id="install-sum"></p>
+      <pre class="log" id="log" hidden aria-live="polite"></pre>
+      <p class="done" id="done" hidden></p>
+      <a class="btn" id="open-bot-2" href="#" target="_blank" rel="noopener" hidden style="display:inline-grid;place-items:center;text-decoration:none" data-t="openTg">Открыть бота в Telegram</a>
+      <p class="msg" id="msg-install" role="alert" hidden></p>
+      <div class="acts"><button class="btn" id="b-install" type="button" data-t="install">Установить</button></div>
+    </div>
+  </section>
+  <section class="step" id="s-more" data-state="todo" aria-labelledby="t7">
+    <div class="shead"><span class="num">7</span><h2 class="stitle" id="t7" data-t="s7">Ещё боты</h2><span class="ssum" id="sum-more"></span><button class="edit" type="button" data-edit="more" data-t="addMore">Добавить ещё</button></div>
+    <div class="body">
+      <p class="hint" id="more-hint" data-t="moreHint">Необязательно. Каждый бот живёт сам по себе: свой токен, своя личность, свои материалы и модель.</p>
+      <ul class="bots" id="bots-list" data-ta="s7"></ul>
+      <p class="msg" id="msg-more" role="status" hidden></p>
+      <div class="acts" id="more-acts"><button class="btn" id="b-add" type="button" data-t="addBot">Добавить бота</button><button class="btn sec" id="b-done" type="button" data-t="done">Готово</button></div>
+      <div class="body" id="wiz-bot" style="margin:0" hidden>
+        <p class="hint" id="sub-count"></p>
+        <form class="body sub" data-sub="1" novalidate>
+          <p class="hint" data-th="botHint">Откройте <b>@BotFather</b> в Telegram, отправьте <b>/newbot</b>, придумайте имя и вставьте сюда токен, который он пришлёт.</p>
+          <div class="f"><label for="m-token" data-t="token">Токен бота</label><input class="field" id="m-token" type="password" autocomplete="off" spellcheck="false" placeholder="123456789:AA…"></div>
+          <p class="msg" id="msg-m1" role="alert" hidden></p>
+          <div class="acts"><button class="btn" id="b-m1" type="submit" data-t="check">Проверить</button><button class="btn sec" type="button" data-cancel data-t="cancel">Отмена</button></div>
+        </form>
+        <form class="body sub" data-sub="2" novalidate hidden>
+          <div class="chips" id="mpresets" role="radiogroup" aria-label="Провайдер" data-ta="provider"></div>
+          <div class="f" id="m-base-f" hidden><label for="m-base" data-t="base">Адрес API</label><input class="field" id="m-base" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://"></div>
+          <div class="f" id="m-model-f"><label for="m-mname" data-t="mname">Название модели</label><input class="field" id="m-mname" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+          <div class="f" id="m-key-f"><label for="m-key" data-t="key">Ключ API</label><input class="field" id="m-key" type="password" autocomplete="off" spellcheck="false"></div>
+          <p class="hint" id="m-note" hidden></p>
+          <p class="msg" id="msg-m2" role="alert" hidden></p>
+          <div class="acts"><button class="btn" id="b-m2" type="submit" data-t="checkKey">Проверить ключ</button><button class="btn sec" type="button" data-cancel data-t="cancel">Отмена</button></div>
+        </form>
+        <form class="body sub" data-sub="3" novalidate hidden>
+          <div class="f"><label for="m-about" data-t="about">О чём проект</label><textarea class="field" id="m-about" maxlength="8000" data-tp="aboutPh" placeholder="Школа танцев в Белграде: расписание, цены, как записаться."></textarea></div>
+          <div class="acts"><button class="btn sec" id="b-gen" type="button" data-t="gen">Сгенерировать личность</button></div>
+          <div id="persona-f" class="body" style="margin:0" hidden>
+            <p class="hint" data-t="personaHint">Всё можно поправить руками: это увидят в Telegram и так бот будет отвечать.</p>
+            <div class="f"><label for="m-pname" data-t="bname">Как бот себя называет</label><input class="field" id="m-pname" autocomplete="off" maxlength="64"></div>
+            <div class="f"><label for="m-pshort" data-t="short">Короткое описание</label><input class="field" id="m-pshort" autocomplete="off" maxlength="120"></div>
+            <div class="f"><label for="m-pdesc" data-t="desc">Описание в профиле</label><textarea class="field" id="m-pdesc" maxlength="512"></textarea></div>
+            <div class="f"><label for="m-brief" data-t="brief">Роль и правила для бота</label><textarea class="field" id="m-brief" maxlength="20000"></textarea></div>
+          </div>
+          <p class="msg" id="msg-m3" role="alert" hidden></p>
+          <div class="acts"><button class="btn" id="b-m3" type="submit" data-t="next">Дальше</button><button class="btn sec" type="button" data-cancel data-t="cancel">Отмена</button></div>
+        </form>
+        <form class="body sub" data-sub="4" novalidate hidden>
+          <div class="f"><label for="m-cwd" data-t="mfolder">Папка с материалами на сервере</label><input class="field" id="m-cwd" autocomplete="off" spellcheck="false" placeholder="~/projects/site"></div>
+          <div class="f"><label for="m-site" data-t="site">Сайт проекта</label><input class="field" id="m-site" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://example.com"></div>
+          <p class="hint" data-t="folderHint">Необязательно. Бот читает файлы из папки и сверяется с сайтом.</p>
+          <p class="msg" id="msg-m4" role="alert" hidden></p>
+          <div class="acts"><button class="btn" type="submit" data-t="next">Дальше</button><button class="btn sec" type="button" data-cancel data-t="cancel">Отмена</button></div>
+        </form>
+        <form class="body sub" data-sub="5" novalidate hidden>
+          <p class="hint" data-t="mgroupHint">Необязательно. Добавьте этого бота в группу и напишите там что-нибудь: группа появится ниже.</p>
+          <div class="groups" id="m-groups"></div>
+          <div class="wait" id="m-gwait"><span class="dot" aria-hidden="true"></span><span data-t="groupWaiting">Слежу за новыми группами…</span></div>
+          <p class="msg" id="msg-m5" role="alert" hidden></p>
+          <div class="acts"><button class="btn" type="submit" data-t="next">Дальше</button><button class="btn sec" type="button" id="b-mskip" data-t="skip">Пропустить</button><button class="btn sec" type="button" data-cancel data-t="cancel">Отмена</button></div>
+        </form>
+        <form class="body sub" data-sub="6" novalidate hidden>
+          <p class="hint" id="m-sum"></p>
+          <p class="msg" id="msg-m6" role="alert" hidden></p>
+          <div class="acts"><button class="btn" id="b-m6" type="submit" data-t="save">Сохранить</button><button class="btn sec" type="button" data-cancel data-t="cancel">Отмена</button></div>
+        </form>
+      </div>
+    </div>
+  </section>
+</main>
+<script>
+"use strict";
+const T = {
+ ru:{title:"Свой бот в Telegram",lead:"Семь шагов, последний необязательный. Настройка идёт здесь, на этом компьютере; бот будет работать там, куда вы его поставите.",
+  s7:"Ещё боты",addMore:"Добавить ещё",moreHint:"Необязательно. Каждый бот живёт сам по себе: свой токен, своя личность, свои материалы и модель.",
+  addBot:"Добавить бота",done:"Готово",cancel:"Отмена",del:"Удалить",delAsk:"Удалить бота @{b}?",sub:"Шаг {n} из 6",
+  about:"О чём проект",aboutPh:"Школа танцев в Белграде: расписание, цены, как записаться.",gen:"Сгенерировать личность",generating:"Генерирую…",
+  personaHint:"Всё можно поправить руками: это увидят в Telegram и так бот будет отвечать.",short:"Короткое описание",desc:"Описание в профиле",
+  mfolder:"Папка с материалами на сервере",site:"Сайт проекта",folderHint:"Необязательно. Бот читает файлы из папки и сверяется с сайтом.",
+  mgroupHint:"Необязательно. Добавьте этого бота в группу и напишите там что-нибудь: группа появится ниже.",save:"Сохранить",saving:"Сохраняю…",
+  mSum:"@{b}: {model}, {group}.",saved:"Бот @{b} сохранён и уже работает.",noBots:"Пока ни одного дополнительного бота.",nBots:"добавлено: {n}",
+  eb_cwd:"Такой папки нет на сервере.",eb_site:"Адрес сайта должен начинаться с https://",eb_chat:"Бот не состоит в этой группе.",
+  eb_persona_codex:"Для Codex личность не генерируется: напишите роль руками ниже.",eb_persona_fail:"Не вышло сгенерировать. Попробуйте ещё раз или напишите руками.",eb_persona_nomodel:"Сначала выберите модель и ключ на шаге 2.",
+  eb_exists:"Такой бот уже добавлен.",eb_missing:"Бот не найден.",eb_cli:"Сервер не ответил. Обновите установку и повторите.",eb_notinstalled:"Сначала завершите установку.",eb_slug:"Не подходит имя бота.",
+  s1:"Куда поставить",s2:"Бот",s3:"Вы",s4:"Модель",s5:"Группа и знания",s6:"Установка",edit:"Изменить",
+  ssh:"Сервер по SSH",local:"Этот компьютер",localHint:"Бот будет работать на этом компьютере, пока он включён и не спит.",openTg:"Открыть бота в Telegram",
+  host:"Адрес сервера",port:"Порт",user:"Пользователь",sshHint:"Если сервер спросит пароль, введите его в окне терминала, где запущен setup.py.",
+  copy:"Копировать",copied:"Скопировано",connect:"Подключиться",connecting:"Подключаюсь…",
+  botHint:"Откройте <b>@BotFather</b> в Telegram, отправьте <b>/newbot</b>, придумайте имя и вставьте сюда токен, который он пришлёт.",
+  token:"Токен бота",check:"Проверить",checking:"Проверяю…",
+  ownerHint:"Чтобы бот слушался только вас, напишите ему <b>/start</b> в Telegram.",openBot:"Открыть бота",waiting:"Жду сообщение…",
+  provider:"Провайдер",base:"Адрес API",mname:"Название модели",key:"Ключ API",checkKey:"Проверить ключ",other:"Другой",
+  codexNote:"Codex входит под вашим аккаунтом на сервере: после установки выполните там codex login. Отвечает в группе и только читает файлы. Только для группы своих.",
+  kimiNote:"Нужна подписка Kimi Code.",
+  groupHint:"Необязательно. Добавьте бота в группу и напишите там что-нибудь, группа появится ниже. Бот будет отвечать в ней на упоминания.",
+  groupWaiting:"Слежу за новыми группами…",folder:"Папка с материалами на этом компьютере",bname:"Как бот себя называет",brief:"Роль и правила для бота",
+  briefPh:"Ты помощник команды. Отвечай коротко, по материалам из папки.",next:"Дальше",skip:"Пропустить",
+  install:"Установить",installing:"Устанавливаю…",retry:"Повторить",
+  ok:"есть",miss:"нет",linux:"Linux",python:"Python 3.10+",bwrap:"bubblewrap",socat:"socat",systemd:"systemd для пользователя",existing:"Бот уже стоит здесь: настройки будут обновлены.",
+  noGroup:"без группы",withGroup:"группа «{g}»",sumInstall:"Бот @{bot} на {model}, {where}, {group}.",
+  doneText:"Готово. Бот прислал вам сообщение в Telegram.",installedSum:"установлен, бот написал вам",
+  e_auth:"Сервер ждёт пароль: введите его в терминале, где запущен setup.py, и нажмите ещё раз.",e_net:"Нет связи. Проверьте адрес и сеть.",
+  e_token:"Telegram не принял этот токен.",e_busy:"Этот бот уже запущен где-то ещё. Остановите тот экземпляр и попробуйте снова.",
+  e_key:"Провайдер не принял ключ.",e_balance:"У провайдера закончились деньги.",e_limit:"Провайдер ограничил запросы: лимит исчерпан или запросов слишком много. Попробуйте позже.",e_model:"Провайдер не знает такую модель.",e_base:"Адрес должен начинаться с https://",
+  e_os:"Бот работает только на Linux.",e_missing:"Не хватает программ. Выполните на сервере команду ниже и подключитесь снова.",e_install:"Установка остановилась. Причина в журнале выше.",e_folder:"Такой папки нет.",e_generic:"Что-то пошло не так: {e}"},
+ en:{title:"Your own Telegram bot",lead:"Seven steps, the last one optional. You set it up here, on this computer; the bot runs wherever you install it.",
+  s7:"More bots",addMore:"Add more",moreHint:"Optional. Each bot lives on its own: its own token, personality, materials and model.",
+  addBot:"Add a bot",done:"Done",cancel:"Cancel",del:"Remove",delAsk:"Remove the bot @{b}?",sub:"Step {n} of 6",
+  about:"What the project is about",aboutPh:"A dance school in Belgrade: schedule, prices, how to sign up.",gen:"Generate a personality",generating:"Generating…",
+  personaHint:"You can edit everything by hand: Telegram shows it and the bot answers this way.",short:"Short description",desc:"Profile description",
+  mfolder:"Folder with materials on the server",site:"Project website",folderHint:"Optional. The bot reads files from the folder and checks the site.",
+  mgroupHint:"Optional. Add this bot to a group and write anything there: the group appears below.",save:"Save",saving:"Saving…",
+  mSum:"@{b}: {model}, {group}.",saved:"Bot @{b} is saved and already running.",noBots:"No extra bots yet.",nBots:"added: {n}",
+  eb_cwd:"There is no such folder on the server.",eb_site:"The website address must start with https://",eb_chat:"The bot is not a member of this group.",
+  eb_persona_codex:"A personality cannot be generated for Codex: write the role by hand below.",eb_persona_fail:"Generation failed. Try again or write it by hand.",eb_persona_nomodel:"Choose a model and a key in step 2 first.",
+  eb_exists:"This bot is already added.",eb_missing:"Bot not found.",eb_cli:"The server did not answer. Update the install and try again.",eb_notinstalled:"Finish the installation first.",eb_slug:"This bot name is not allowed.",
+  s1:"Where to install",s2:"Bot",s3:"You",s4:"Model",s5:"Group and knowledge",s6:"Install",edit:"Change",
+  ssh:"Server over SSH",local:"This computer",localHint:"The bot runs on this computer while it is on and awake.",openTg:"Open the bot in Telegram",
+  host:"Server address",port:"Port",user:"User",sshHint:"If the server asks for a password, type it in the terminal where setup.py is running.",
+  copy:"Copy",copied:"Copied",connect:"Connect",connecting:"Connecting…",
+  botHint:"Open <b>@BotFather</b> in Telegram, send <b>/newbot</b>, pick a name and paste the token it sends.",
+  token:"Bot token",check:"Check",checking:"Checking…",
+  ownerHint:"So that the bot obeys only you, send it <b>/start</b> in Telegram.",openBot:"Open the bot",waiting:"Waiting for your message…",
+  provider:"Provider",base:"API address",mname:"Model name",key:"API key",checkKey:"Check the key",other:"Other",
+  codexNote:"Codex signs in with your account on the server: run codex login there after installing. It answers in the group and only reads files. Only for a group of people you trust.",
+  kimiNote:"Needs a Kimi Code subscription.",
+  groupHint:"Optional. Add the bot to a group and write anything there; the group appears below. The bot answers mentions in it.",
+  groupWaiting:"Watching for new groups…",folder:"Folder with materials on this computer",bname:"What the bot calls itself",brief:"Role and rules for the bot",
+  briefPh:"You help the team. Answer briefly, from the materials in the folder.",next:"Next",skip:"Skip",
+  install:"Install",installing:"Installing…",retry:"Try again",
+  ok:"yes",miss:"missing",linux:"Linux",python:"Python 3.10+",bwrap:"bubblewrap",socat:"socat",systemd:"systemd user session",existing:"The bot is already installed here: its settings will be updated.",
+  noGroup:"no group",withGroup:"group «{g}»",sumInstall:"Bot @{bot} on {model}, {where}, {group}.",
+  doneText:"Done. The bot has sent you a message in Telegram.",installedSum:"installed, the bot wrote to you",
+  e_auth:"The server waits for a password: type it in the terminal where setup.py runs, then press again.",e_net:"No connection. Check the address and the network.",
+  e_token:"Telegram did not accept this token.",e_busy:"This bot is already running somewhere else. Stop that copy and try again.",
+  e_key:"The provider did not accept the key.",e_balance:"No money left at the provider.",e_limit:"The provider is limiting requests: the limit is used up or there are too many requests. Try again later.",e_model:"The provider does not know this model.",e_base:"The address must start with https://",
+  e_os:"The bot runs only on Linux.",e_missing:"Some programs are missing. Run the command below on the server and connect again.",e_install:"Installation stopped. The reason is in the log above.",e_folder:"There is no such folder.",e_generic:"Something went wrong: {e}"}
+};
+let L = "ru";
+const t = (k, v) => { let s = (T[L] && T[L][k]) || T.en[k] || k; return v ? s.replace(/\{(\w+)\}/g, (m, x) => x in v ? v[x] : m) : s; };
+const $ = id => document.getElementById(id);
+const TOKEN = new URLSearchParams(location.search).get("t") || "";
+const S = {mode: "local", provider: "", presets: [], bot: null, owner: null, group: null, groups: [], target: null};
+
+async function api(path, body){
+  const r = await fetch("/api/" + path, {method: body ? "POST" : "GET", headers: {"Content-Type": "application/json", "X-Wizard-Token": TOKEN}, body: body ? JSON.stringify(body) : undefined, cache: "no-store"});
+  if (r.status === 403) throw new Error("forbidden");
+  return r.json();
+}
+function applyT(){
+  document.documentElement.lang = L;
+  document.querySelectorAll("[data-t]").forEach(e => { e.textContent = t(e.dataset.t); });
+  document.querySelectorAll("[data-th]").forEach(e => { e.innerHTML = t(e.dataset.th); });
+  document.querySelectorAll("[data-ta]").forEach(e => { e.setAttribute("aria-label", t(e.dataset.ta)); });
+  document.querySelectorAll("[data-tp]").forEach(e => { e.placeholder = t(e.dataset.tp); });
+  document.title = t("title");
+}
+function msg(id, text, kind){ const e = $(id); e.textContent = text || ""; e.className = "msg" + (kind ? " " + kind : " bad"); e.hidden = !text; }
+function err(code, raw){ return T[L]["e_" + code] || T.en["e_" + code] ? t("e_" + code) : t("e_generic", {e: raw || code}); }
+const ORDER = ["target", "bot", "owner", "model", "group", "install", "more"];
+const berr = (c, raw) => (T[L]["eb_" + c] || T.en["eb_" + c]) ? t("eb_" + c) : err(c, raw);
+function go(name){
+  ORDER.forEach(n => { const s = $("s-" + n); if (s.dataset.state === "active") s.dataset.state = s.dataset.done ? "done" : "todo"; });
+  const s = $("s-" + name); s.dataset.state = "active";
+  const f = s.querySelector("input:not([type=hidden]),button.btn"); if (f && name !== "owner") setTimeout(() => f.focus({preventScroll: true}), 0);
+  s.scrollIntoView({block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"});
+  if (name === "owner") pollOwner();
+  if (name === "group") pollGroups();
+  if (name === "install") paintInstall();
+  if (name === "more") loadBots();
+}
+function finish(name, summary){ const s = $("s-" + name); s.dataset.done = "1"; $("sum-" + name).textContent = summary; s.dataset.state = "done"; go(ORDER[ORDER.indexOf(name) + 1]); }
+document.querySelectorAll("[data-edit]").forEach(b => b.addEventListener("click", () => go(b.dataset.edit)));
+async function busy(btn, label, fn){ if (btn.disabled) return; const old = btn.textContent; btn.disabled = true; btn.textContent = t(label); try{ await fn(); } catch(e){ return e; } finally{ btn.disabled = false; btn.textContent = old; } }
+document.querySelectorAll("[data-copy]").forEach(b => b.addEventListener("click", async () => { try{ await navigator.clipboard.writeText($(b.dataset.copy).textContent); b.textContent = t("copied"); setTimeout(() => { b.textContent = t("copy"); }, 1500); }catch(e){} }));
+
+/* 1 target */
+function setMode(m){ S.mode = m; $("m-ssh").setAttribute("aria-pressed", m === "ssh"); $("m-local").setAttribute("aria-pressed", m === "local"); $("ssh-fields").hidden = m !== "ssh"; $("local-hint").hidden = m !== "local"; }
+$("m-ssh").addEventListener("click", () => setMode("ssh")); $("m-local").addEventListener("click", () => setMode("local"));
+$("f-target").addEventListener("submit", e => { e.preventDefault(); busy($("b-target"), "connecting", async () => {
+  msg("msg-target", ""); $("checks").hidden = true; $("fix").hidden = true;
+  const body = {mode: S.mode, host: $("host").value.trim(), user: $("user").value.trim(), port: parseInt($("port").value, 10) || 22};
+  const r = await api("target", body);
+  if (r.os !== undefined || r.missing){
+    const miss = new Set(r.missing || []);
+    const rows = [["linux", r.os === "Linux"], ["python", !miss.has("python3>=3.10") && !miss.has("python3")], ["bwrap", !miss.has("bwrap")], ["socat", !miss.has("socat")], ["systemd", r.systemd !== false]];
+    $("checks").innerHTML = rows.map(([k, y]) => `<li><span class="${y ? "y" : "n"}" aria-hidden="true">${y ? "✓" : "✕"}</span><span>${t(k)}</span><span class="sr">${y ? t("ok") : t("miss")}</span></li>`).join("");
+    $("checks").hidden = false;
+  }
+  if (r.fix){ $("fix-code").textContent = r.fix; $("fix").hidden = false; }
+  if (!r.ok){ msg("msg-target", err(r.error || (r.fix ? "missing" : "net"), r.error)); return; }
+  S.target = r; if (r.existing) msg("msg-target", t("existing"), "ok");
+  finish("target", S.mode === "ssh" ? (body.user ? body.user + "@" : "") + body.host : t("local"));
+}).then(x => x && msg("msg-target", err("net"))); });
+
+/* 2 bot */
+$("f-bot").addEventListener("submit", e => { e.preventDefault(); busy($("b-bot"), "checking", async () => {
+  msg("msg-bot", "");
+  const r = await api("bot", {token: $("token").value.trim()});
+  if (!r.ok){ msg("msg-bot", err(r.error, r.error)); return; }
+  S.bot = r; $("token").value = ""; $("open-bot").href = $("open-bot-2").href = "https://t.me/" + encodeURIComponent(r.username);
+  finish("bot", "@" + r.username);
+}).then(x => x && msg("msg-bot", err("net"))); });
+
+/* 3 owner */
+let ownerLoop = false;
+async function pollOwner(){
+  if (ownerLoop) return; ownerLoop = true;
+  while ($("s-owner").dataset.state === "active"){
+    try{ const r = await api("owner", {}); if (r.ok && r.owner){ S.owner = r.owner; msg("msg-owner", ""); finish("owner", r.owner.name || String(r.owner.id)); break; }
+         if (r.error){ msg("msg-owner", err(r.error, r.error)); await new Promise(z => setTimeout(z, 3000)); } }
+    catch(e){ msg("msg-owner", err("net")); await new Promise(z => setTimeout(z, 3000)); }
+  }
+  ownerLoop = false;
+}
+
+/* 4 model */
+function paintPresets(){
+  $("presets").innerHTML = S.presets.filter(p => p.available !== false).map(p => `<button class="chip" type="button" role="radio" aria-checked="${p.id === S.provider}" aria-pressed="${p.id === S.provider}" data-p="${p.id}">${p.title || t("other")}</button>`).join("");
+  const p = S.presets.find(x => x.id === S.provider) || {};
+  const codex = S.provider === "codex";
+  $("base-f").hidden = S.provider !== "custom"; $("model-f").hidden = codex; $("key-f").hidden = codex;
+  $("mname").value = p.model || "";
+  const note = codex ? t("codexNote") : S.provider === "kimi" ? t("kimiNote") : "";
+  $("model-note").textContent = note; $("model-note").hidden = !note; msg("msg-model", "");
+}
+$("presets").addEventListener("click", e => { const b = e.target.closest("[data-p]"); if (b){ S.provider = b.dataset.p; paintPresets(); } });
+$("f-model").addEventListener("submit", e => { e.preventDefault(); busy($("b-model"), "checking", async () => {
+  msg("msg-model", "");
+  const r = await api("model", {provider: S.provider, model: $("mname").value.trim(), base: $("base").value.trim(), key: $("key").value.trim()});
+  if (!r.ok){ msg("msg-model", err(r.error, r.error)); return; }
+  $("key").value = ""; S.model = S.provider === "codex" ? "Codex" : $("mname").value.trim();
+  if (!$("bname").value && S.bot) $("bname").value = S.bot.name || "";
+  finish("model", S.model);
+}).then(x => x && msg("msg-model", err("net"))); });
+
+/* 5 group */
+let groupLoop = false;
+function paintGroups(){
+  $("groups").innerHTML = S.groups.map(g => `<button class="group" type="button" aria-pressed="${S.group && S.group.id === g.id}" data-g="${g.id}"><span>${g.title.replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}</span></button>`).join("");
+}
+$("groups").addEventListener("click", e => { const b = e.target.closest("[data-g]"); if (!b) return; const g = S.groups.find(x => String(x.id) === b.dataset.g); S.group = S.group && S.group.id === g.id ? null : g; paintGroups(); });
+async function pollGroups(){
+  if (groupLoop) return; groupLoop = true;
+  while ($("s-group").dataset.state === "active"){
+    try{ const r = await api("groups", {}); if (r.groups){ const known = new Set(S.groups.map(g => g.id)); r.groups.forEach(g => { if (!known.has(g.id)) S.groups.push(g); }); paintGroups(); } }
+    catch(e){ await new Promise(z => setTimeout(z, 3000)); }
+  }
+  groupLoop = false;
+}
+$("f-group").addEventListener("submit", e => { e.preventDefault(); finish("group", S.group ? S.group.title : t("noGroup")); });
+$("b-skip").addEventListener("click", () => { S.group = null; paintGroups(); finish("group", t("noGroup")); });
+
+/* 6 install */
+function paintInstall(){
+  const where = $("sum-target").textContent;
+  $("install-sum").textContent = t("sumInstall", {bot: S.bot ? S.bot.username : "?", model: S.model || "?", where, group: S.group ? t("withGroup", {g: S.group.title}) : t("noGroup")});
+}
+$("b-install").addEventListener("click", () => busy($("b-install"), "installing", async () => {
+  msg("msg-install", ""); $("done").hidden = true; $("log").hidden = false; $("log").textContent = "";
+  const r = await api("install", {group_id: S.group ? S.group.id : null, folder: $("folder").value.trim(), name: $("bname").value.trim(), brief: $("brief").value.trim(), lang: L});
+  if (!r.ok){ msg("msg-install", err(r.error, r.error)); return; }
+  let from = 0;
+  for (;;){
+    await new Promise(z => setTimeout(z, 800));
+    const g = await api("install/log?from=" + from);
+    if (g.lines && g.lines.length){ $("log").textContent += g.lines.join("\n") + "\n"; from += g.lines.length; $("log").scrollTop = $("log").scrollHeight; }
+    if (g.done){
+      if (g.ok){ $("done").textContent = t("doneText"); $("done").hidden = false; $("b-install").hidden = true; $("open-bot-2").hidden = false; finish("install", t("installedSum")); }
+      else { msg("msg-install", g.error ? err(g.error, g.error) : t("e_install")); $("b-install").dataset.t = "retry"; }
+      return;
+    }
+  }
+}).then(x => { if (x) msg("msg-install", err("net")); if ($("b-install").dataset.t === "retry") $("b-install").textContent = t("retry"); }));
+
+/* 7 more bots: every call is one CLI call on the target (cc_tgbot.py bots ...); the registry is not ours */
+const M = {slug: "", username: "", provider: "", model: "", sub: 0, group: null, groups: [], bots: [], loop: 0};
+const esc = x => String(x).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const mFill = (id, v) => { $(id).value = v || ""; };
+async function loadBots(){
+  try{ const r = await api("bots"); if (r.bots) M.bots = r.bots; else if (r.error) return msg("msg-more", berr(r.error, r.error)); }catch(e){ return msg("msg-more", err("net")); }
+  $("bots-list").innerHTML = M.bots.length ? M.bots.map(b => `<li class="bot"><div class="bi"><b>@${esc(b.username)}</b><small${b.error ? ' class="bad"' : ""}>${esc(b.error || [b.model || (b.engine === "codex" ? "Codex" : ""), b.chat_title || t("noGroup")].filter(Boolean).join(" · "))}</small></div><button class="del" type="button" data-del="${esc(b.slug)}" data-u="${esc(b.username)}">${t("del")}</button></li>`).join("") : "";
+  $("sum-more").textContent = M.bots.length ? t("nBots", {n: M.bots.length}) : "";
+}
+$("bots-list").addEventListener("click", async e => {
+  const b = e.target.closest("[data-del]"); if (!b || !confirm(t("delAsk", {b: b.dataset.u}))) return;
+  const r = await api("bots/remove", {slug: b.dataset.del}).catch(() => ({error: "net"}));
+  msg("msg-more", r.ok ? "" : berr(r.error, r.error)); loadBots();
+});
+function subShow(n){
+  M.sub = n; document.querySelectorAll("#wiz-bot [data-sub]").forEach(f => { f.hidden = +f.dataset.sub !== n; });
+  $("sub-count").textContent = t("sub", {n});
+  const f = document.querySelector(`#wiz-bot [data-sub="${n}"]`).querySelector("input:not([type=hidden]),textarea,button.btn"); if (f) setTimeout(() => f.focus({preventScroll: true}), 0);
+  if (n === 5) pollMGroups();
+  if (n === 6) $("m-sum").textContent = t("mSum", {b: M.username, model: M.model || "?", group: M.group ? t("withGroup", {g: M.group.title}) : t("noGroup")});
+}
+function mOpen(open){ $("wiz-bot").hidden = !open; $("more-acts").hidden = open; $("more-hint").hidden = open; if (open) subShow(1); }
+$("b-add").addEventListener("click", () => { Object.assign(M, {slug: "", username: "", provider: (S.presets.find(p => p.available !== false) || {}).id || "", model: "", group: null, groups: []});
+  ["m-token", "m-key", "m-base", "m-about", "m-pname", "m-pshort", "m-pdesc", "m-brief", "m-cwd", "m-site"].forEach(i => mFill(i, ""));
+  $("persona-f").hidden = true; document.querySelectorAll("#wiz-bot .msg").forEach(m => { m.hidden = true; }); msg("msg-more", ""); mPaint(); mOpen(true); });
+$("b-done").addEventListener("click", () => { $("s-more").dataset.done = "1"; $("s-more").dataset.state = "done"; });
+document.querySelectorAll("[data-cancel]").forEach(b => b.addEventListener("click", async () => {
+  if (M.slug) await api("bots/remove", {slug: M.slug}).catch(() => 0);  // a half-made bot is not left running
+  M.slug = ""; M.loop++; mOpen(false); loadBots();
+}));
+document.querySelectorAll("#wiz-bot form").forEach(f => f.addEventListener("submit", e => e.preventDefault()));
+const sub = n => document.querySelector(`#wiz-bot [data-sub="${n}"]`);
+sub(1).addEventListener("submit", () => busy($("b-m1"), "checking", async () => {
+  msg("msg-m1", ""); const r = await api("bots/add", {token: $("m-token").value.trim()});
+  if (!r.ok){ msg("msg-m1", berr(r.error, r.error)); return; }
+  mFill("m-token", ""); M.slug = r.slug; M.username = r.username || r.slug; mFill("m-pname", r.name); subShow(2);
+}).then(x => x && msg("msg-m1", err("net"))));
+function mPaint(){
+  $("mpresets").innerHTML = S.presets.filter(p => p.available !== false).map(p => `<button class="chip" type="button" role="radio" aria-checked="${p.id === M.provider}" aria-pressed="${p.id === M.provider}" data-p="${p.id}">${esc(p.title || t("other"))}</button>`).join("");
+  const p = S.presets.find(x => x.id === M.provider) || {}, codex = M.provider === "codex";
+  $("m-base-f").hidden = M.provider !== "custom"; $("m-model-f").hidden = codex; $("m-key-f").hidden = codex;
+  mFill("m-mname", p.model); const note = codex ? t("codexNote") : M.provider === "kimi" ? t("kimiNote") : "";
+  $("m-note").textContent = note; $("m-note").hidden = !note; msg("msg-m2", "");
+}
+$("mpresets").addEventListener("click", e => { const b = e.target.closest("[data-p]"); if (b){ M.provider = b.dataset.p; mPaint(); } });
+sub(2).addEventListener("submit", () => busy($("b-m2"), "checking", async () => {
+  msg("msg-m2", ""); const codex = M.provider === "codex";
+  const r = await api("bots/save", codex ? {slug: M.slug, provider: "codex"} : {slug: M.slug, provider: M.provider, model: $("m-mname").value.trim(), base: $("m-base").value.trim(), key: $("m-key").value.trim()});
+  if (!r.ok){ msg("msg-m2", berr(r.error, r.error)); return; }
+  mFill("m-key", ""); M.model = codex ? "Codex" : $("m-mname").value.trim(); subShow(3);
+}).then(x => x && msg("msg-m2", err("net"))));
+$("b-gen").addEventListener("click", () => busy($("b-gen"), "generating", async () => {
+  msg("msg-m3", ""); const r = await api("bots/persona", {slug: M.slug, about: $("m-about").value.trim()});
+  $("persona-f").hidden = false;  // on failure the fields stay for writing by hand
+  if (!r.ok){ msg("msg-m3", berr(r.error, r.error)); return; }
+  const p = r.persona || {}; mFill("m-pname", p.name); mFill("m-pshort", p.short); mFill("m-pdesc", p.description); mFill("m-brief", r.brief);
+}).then(x => x && msg("msg-m3", err("net"))));
+sub(3).addEventListener("submit", () => subShow(4));
+sub(4).addEventListener("submit", () => subShow(5));
+sub(5).addEventListener("submit", () => subShow(6));
+$("b-mskip").addEventListener("click", () => { M.group = null; paintMGroups(); subShow(6); });
+function paintMGroups(){
+  $("m-groups").innerHTML = M.groups.map(g => `<button class="group" type="button" aria-pressed="${!!M.group && M.group.id === g.id}" data-g="${g.id}"><span>${esc(g.title)}</span></button>`).join("");
+}
+$("m-groups").addEventListener("click", e => { const b = e.target.closest("[data-g]"); if (!b) return; const g = M.groups.find(x => String(x.id) === b.dataset.g); M.group = M.group && M.group.id === g.id ? null : g; paintMGroups(); });
+async function pollMGroups(){
+  const me = ++M.loop;
+  while (M.sub === 5 && M.loop === me){
+    try{ const r = await api("bots"); const b = (r.bots || []).find(x => x.slug === M.slug); if (b && M.loop === me){ M.groups = b.groups || []; paintMGroups(); } }catch(e){}
+    await new Promise(z => setTimeout(z, 4000));
+  }
+}
+sub(6).addEventListener("submit", () => busy($("b-m6"), "saving", async () => {
+  msg("msg-m6", ""); M.loop++;
+  const b = {slug: M.slug, about: $("m-about").value.trim(), brief: $("m-brief").value.trim(), cwd: $("m-cwd").value.trim(), site: $("m-site").value.trim()};
+  const persona = {name: $("m-pname").value.trim(), short: $("m-pshort").value.trim(), description: $("m-pdesc").value.trim()};
+  if (persona.name || persona.short || persona.description) b.persona = persona;
+  if (M.group) b.chat = M.group.id;
+  Object.keys(b).forEach(k => { if (b[k] === "") delete b[k]; });
+  const r = await api("bots/save", b);
+  if (!r.ok){ const back = {cwd: 4, site: 4, chat: 5}[r.error]; if (back) subShow(back); msg("msg-m" + (back || 6), berr(r.error, r.error)); return; }
+  M.slug = ""; mOpen(false); await loadBots(); msg("msg-more", t("saved", {b: M.username}), "ok");
+}).then(x => x && msg("msg-m6", err("net"))));
+
+(async () => {
+  try{
+    const s = await api("state");
+    L = /^ru\b/i.test(navigator.language || "") ? "ru" : (s.lang === "ru" ? "ru" : "en"); applyT();
+    S.presets = s.presets || []; S.provider = (S.presets.find(p => p.available !== false) || {}).id || ""; paintPresets();
+    if (s.target && s.target.mode) setMode(s.target.mode);
+  }catch(e){ applyT(); msg("msg-target", err(e.message === "forbidden" ? "net" : "net")); }
+})();
+</script>
+</body>
+</html>
