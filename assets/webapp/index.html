@@ -1142,9 +1142,15 @@ const $ = id => document.getElementById(id);
 const esc = t => String(t == null ? "" : t).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const haptic = k => { try{ tg && tg.HapticFeedback && (k === "ok" ? tg.HapticFeedback.notificationOccurred("success") : tg.HapticFeedback.impactOccurred("light")); }catch(e){} };
 let toastTimer;
+function liftToast(){  // a tall composer: the toast stays above it
+  const el = $("toast"), foot = !$("session-screen").hidden && $("session-screen").querySelector(".sfoot");
+  el.style.bottom = foot ? Math.max(96, innerHeight - foot.getBoundingClientRect().top + 8) + "px" : "";
+}
+new ResizeObserver(() => { if (!$("toast").hidden) liftToast(); }).observe($("session-screen").querySelector(".sfoot"));  // a restored draft grows it later
 function toast(t, action, onAction){
   const el = $("toast"); el.innerHTML = ""; const span = document.createElement("span"); span.textContent = t; el.appendChild(span);
   if (action){ const b = document.createElement("button"); b.type = "button"; b.className = "ta"; b.textContent = action; b.onclick = () => { el.classList.add("off"); onAction && onAction(); }; el.appendChild(b); }
+  liftToast();
   el.hidden = false; el.classList.add("off"); void el.offsetWidth; el.classList.remove("off");  // стиль «off» должен посчитаться, иначе переход из display:none не стартует
   clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.classList.add("off"); setTimeout(() => el.hidden = true, 220); }, action ? 4500 : 2600);
 }

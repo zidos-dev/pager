@@ -3348,6 +3348,16 @@ class WebApiTests(unittest.TestCase):
         st, obj, _ = self.w.req("POST", "/api/session/s1/answer", {"action": "option", "index": 1})
         self.assertFalse(obj["ok"])
 
+    def test_answer_option_with_preview_presses_digit_then_enter(self):
+        # with previews the TUI lays options out side by side: a digit only moves the cursor, Enter selects
+        e = self.e
+        q_prev = dict(Q_SIZE, options=[dict(o, preview="[%s]" % o["label"]) for o in Q_SIZE["options"]])
+        self.question_setup([q_prev])
+        self.fs.on_key = lambda ks, f: setattr(f, "screen", EMPTY_PROMPT) if ks == ["Enter"] else None
+        st, obj, _ = self.w.req("POST", "/api/session/s1/answer", {"action": "option", "index": 1})
+        self.assertEqual((st, obj["ok"], obj["question"]), (200, True, None))
+        self.assertEqual(self.fs.flat_keys, ["1", "Enter"])
+
     def test_answer_multi_question_sequence(self):
         e = self.e
         self.question_setup([Q_SIZE, Q_TOP])

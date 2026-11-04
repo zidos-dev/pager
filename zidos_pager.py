@@ -1034,7 +1034,9 @@ def normalize_questions(inp):
                 for o in (q.get("options") or []) if isinstance(o, dict)]
         if opts:
             qs.append({"question": str(q.get("question", "")), "header": str(q.get("header") or ""),
-                       "multi": bool(q.get("multiSelect")), "options": opts})
+                       "multi": bool(q.get("multiSelect")), "options": opts,
+                       # options with previews: the TUI puts them side by side, a digit only moves the cursor
+                       "preview": any(isinstance(o, dict) and o.get("preview") for o in q.get("options") or [])})
     return qs
 
 
@@ -8048,6 +8050,8 @@ class Bot:
                 k = int(rest.split(":")[1])
                 cur = qs[step]
                 self.tmux.keys(sid, str(k))
+                if cur.get("preview") and not cur["multi"]:
+                    self.tmux.keys(sid, "Enter")
                 label = cur["options"][k - 1]["label"]
                 if cur["multi"]:
                     marks = set(q["marks"].get(str(step), []))
