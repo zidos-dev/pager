@@ -9,7 +9,7 @@
   --mn-dim:rgba(0,0,0,.14);
 }
 html[data-lab-theme="dark"]{--mn-dim:rgba(0,0,0,.28);--mn-bg:rgba(32,32,36,.95)}
-.mn-root{position:fixed;inset:0;z-index:60;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Roboto,"Segoe UI",system-ui,sans-serif}
+.mn-root{position:fixed;inset:0;z-index:60;font-family:var(--font,-apple-system,BlinkMacSystemFont,"SF Pro Text",Roboto,"Segoe UI",system-ui,sans-serif)}
 .mn-root[hidden]{display:none}
 .mn-catch{position:absolute;inset:0;background:transparent;touch-action:none}
 .mn-back{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity var(--m-exit-t) var(--m-exit)}
