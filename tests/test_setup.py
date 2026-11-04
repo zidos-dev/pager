@@ -81,7 +81,8 @@ if name == "python3":
     os.execv(os.environ["SETUP_TEST_PYTHON"], [os.environ["SETUP_TEST_PYTHON"]] + args)
 if name in ("python", "pip", "pip3"):
     if name.startswith("pip") or args[:2] == ["-m", "pip"]:
-        sys.exit(1 if os.environ.get("SETUP_TEST_PIP_FAIL") and "install" in args else 0)
+        fail = os.environ.get("SETUP_TEST_PIP_FAIL")  # "1" = every install, or one package name
+        sys.exit(1 if fail and "install" in args and (fail == "1" or fail in args) else 0)
     os.execv(os.environ["SETUP_TEST_PYTHON"], [os.environ["SETUP_TEST_PYTHON"]] + args)
 if name == "loginctl":
     print(os.environ.get("SETUP_TEST_LINGER", "yes"))
@@ -919,6 +920,22 @@ await_ts interrupted_probe
         del self.env["SETUP_TEST_PIP_FAIL"]
         self.assert_success(self.install("none", "--with-sdk", "--sdk-key-file", self.sdk_key()))
         self.assert_private(self.config / "env")
+
+    def test_second_venv_failing_removes_the_first_too(self):
+        self.env["SETUP_TEST_PIP_FAIL"] = "faster-whisper"
+        result = self.install("none", "--with-sdk", "--with-stt", "--sdk-key-file", self.sdk_key())
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertFalse((self.repo / ".venv-sdk").exists())
+        self.assertFalse((self.repo / ".venv-stt").exists())
+        del self.env["SETUP_TEST_PIP_FAIL"]
+        self.assert_success(self.install("none", "--with-sdk", "--with-stt", "--sdk-key-file", self.sdk_key()))
+
+    def test_update_adding_a_runner_checks_the_venv_module(self):
+        self.assert_success(self.install("none"))
+        self.env["SETUP_TEST_NO_ENSUREPIP"] = "1"
+        result = self.install("none", "--update", "--with-sdk", "--sdk-key-file", self.sdk_key())
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("python3-venv", result.stdout)
 
     def test_optional_runners_use_private_key_paths(self):
         sdk_key = self.base / "sdk-key.env"

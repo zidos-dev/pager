@@ -257,6 +257,7 @@ _RU = {
         "Пульт — в топике «%s». Пишите в топик нужной сессии.",
     "The question is already closed, the answer was not sent.": "Вопрос уже закрыт, ответ не отправлен.",
     "The question is already closed.": "Вопрос уже закрыт.",
+    "The question did not close. Open 📺 Screen.": "Вопрос не закрылся. Откройте 📺 Экран.",
     "The question is already on another step.": "Вопрос уже на другом шаге.",
     "The session is not responding: no input line appeared within %d s. Open 📺 "
     "Screen.":
@@ -8143,8 +8144,23 @@ class Bot:
                 q["closed"] = True
                 self.store.save()
                 return False, _t("The question is already closed."), "closed"
-            self.tmux.keys(sid, str(len(qs[step]["options"]) + 1))
-            self.sleep(0.8)
+            chat = qs[step].get("preview") and not qs[step]["multi"]
+            if chat:
+                # previews: no "Type something" row, digits and pasted text are ignored; «Chat about this» (last row,
+                # the cursor neither wraps nor passes it) ends the question and frees the prompt for the text
+                self.tmux.keys(sid, *["Down"] * (len(qs[step]["options"]) + 1))
+                self.sleep(0.5)
+                self.tmux.keys(sid, "Enter")
+                for _ in range(20):
+                    if not menu_active(self.tmux.capture(sid, ansi=True)):
+                        break
+                    self.sleep(0.25)
+                else:
+                    return False, _t("The question did not close. Open 📺 Screen."), "unconfirmed"
+                q["closed"] = True
+            else:
+                self.tmux.keys(sid, str(len(qs[step]["options"]) + 1))
+                self.sleep(0.8)
             ok, err = self.tmux.paste_text(sid, text)
             if not ok:
                 return False, err, "paste"

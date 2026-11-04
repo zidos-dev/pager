@@ -3392,6 +3392,19 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual((st, obj["ok"], obj["question"]), (200, True, None))
         self.assertEqual(self.fs.flat_keys, ["1", "Enter"])
 
+    def test_own_answer_with_preview_goes_through_chat_about_this(self):
+        # with previews there is no "Type something" row and a digit is ignored: «Chat about this» ends the question
+        # and frees the prompt, the text then goes as a message (on the real TUI a pasted text was dropped)
+        q_prev = dict(Q_SIZE, options=[dict(o, preview="[%s]" % o["label"]) for o in Q_SIZE["options"]])
+        self.question_setup([q_prev])
+        text = "ровно 42"
+        self.fs.on_key = lambda ks, f: setattr(f, "screen", EMPTY_PROMPT) if ks == ["Enter"] and "Enter to select" in f.screen else None
+        self.fs.on_paste = lambda f: setattr(f, "screen", EMPTY_PROMPT.replace("❯\xa0", "❯\xa0" + text))
+        st, obj, _ = self.w.req("POST", "/api/session/s1/answer", {"action": "own", "text": text})
+        self.assertTrue(obj["ok"], obj)
+        self.assertEqual(self.fs.flat_keys, ["Down"] * 4 + ["Enter", "Enter"])
+        self.assertIsNone(obj["question"])
+
     def test_answer_multi_question_sequence(self):
         e = self.e
         self.question_setup([Q_SIZE, Q_TOP])

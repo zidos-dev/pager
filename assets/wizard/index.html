@@ -64,6 +64,8 @@ textarea.field{min-height:96px;resize:vertical}
 .acts{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .msg{margin:0;font-size:14.5px}
 .msg.bad{color:var(--bad)} .msg.ok{color:var(--ok)}
+@keyframes rise{from{opacity:0;transform:translateY(4px)}}
+.msg:not([hidden]),.checks:not([hidden]),.cmd:not([hidden]){animation:rise var(--fast) var(--ease) both}
 .checks{list-style:none;margin:0;padding:0;display:grid;gap:6px;font-size:15px}
 .checks li{display:flex;gap:10px;align-items:baseline}
 .checks .y{color:var(--ok)} .checks .n{color:var(--bad)}
@@ -280,7 +282,7 @@ const T = {
   e_auth:"Сервер ждёт пароль: введите его в терминале, где запущен setup.py, и нажмите ещё раз.",e_net:"Нет связи. Проверьте адрес и сеть.",
   e_token:"Telegram не принял этот токен.",e_busy:"Этот бот уже запущен где-то ещё. Остановите тот экземпляр и попробуйте снова.",
   e_key:"Провайдер не принял ключ.",e_balance:"У провайдера закончились деньги.",e_limit:"Провайдер ограничил запросы: лимит исчерпан или запросов слишком много. Попробуйте позже.",e_model:"Провайдер не знает такую модель.",e_base:"Адрес должен начинаться с https://",
-  e_os:"Бот работает только на Linux.",e_missing:"Не хватает программ. Выполните на сервере команду ниже и подключитесь снова.",e_install:"Установка остановилась. Причина в журнале выше.",e_folder:"Такой папки нет.",e_generic:"Что-то пошло не так: {e}"},
+  e_os:"Бот работает только на Linux.",e_missing:"Не хватает программ. Выполните команду ниже на компьютере, куда ставите бота, и подключитесь снова.",e_install:"Установка остановилась. Причина в журнале выше.",e_folder:"Такой папки нет.",e_generic:"Что-то пошло не так: {e}"},
  en:{title:"Your own Telegram bot",lead:"Seven steps, the last one optional. You set it up here, on this computer; the bot runs wherever you install it.",
   s7:"More bots",addMore:"Add more",moreHint:"Optional. Each bot lives on its own: its own token, personality, materials and model.",
   addBot:"Add a bot",done:"Done",cancel:"Cancel",del:"Remove",delAsk:"Remove the bot @{b}?",sub:"Step {n} of 6",
@@ -313,7 +315,7 @@ const T = {
   e_auth:"The server waits for a password: type it in the terminal where setup.py runs, then press again.",e_net:"No connection. Check the address and the network.",
   e_token:"Telegram did not accept this token.",e_busy:"This bot is already running somewhere else. Stop that copy and try again.",
   e_key:"The provider did not accept the key.",e_balance:"No money left at the provider.",e_limit:"The provider is limiting requests: the limit is used up or there are too many requests. Try again later.",e_model:"The provider does not know this model.",e_base:"The address must start with https://",
-  e_os:"The bot runs only on Linux.",e_missing:"Some programs are missing. Run the command below on the server and connect again.",e_install:"Installation stopped. The reason is in the log above.",e_folder:"There is no such folder.",e_generic:"Something went wrong: {e}"}
+  e_os:"The bot runs only on Linux.",e_missing:"Some programs are missing. Run the command below on the computer you install the bot on, then connect again.",e_install:"Installation stopped. The reason is in the log above.",e_folder:"There is no such folder.",e_generic:"Something went wrong: {e}"}
 };
 let L = "ru";
 const t = (k, v) => { let s = (T[L] && T[L][k]) || T.en[k] || k; return v ? s.replace(/\{(\w+)\}/g, (m, x) => x in v ? v[x] : m) : s; };

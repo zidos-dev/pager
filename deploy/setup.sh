@@ -136,7 +136,7 @@ check_platform() {
         command -v bwrap >/dev/null && command -v socat >/dev/null || fail 'Install bubblewrap and socat before --with-sdk (e.g. apt install bubblewrap socat).'
     fi
     # Debian/Ubuntu ship python3 without ensurepip: venv creation would fail half way through the install
-    if (( (with_sdk || with_stt) && ! reconfigure && ! update && ! dry_run )); then
+    if (( ! reconfigure && ! dry_run )) && { { (( with_sdk )) && [[ ! -d $repo/.venv-sdk ]]; } || { (( with_stt )) && [[ ! -d $repo/.venv-stt ]]; }; }; then
         python3 -c 'import ensurepip' 2>/dev/null || fail 'Python cannot create virtual environments: install python3-venv (sudo apt-get install -y python3-venv) and run the installer again.'
     fi
     # Only publish is allowed on reconfiguration: never prompt for or change linger.
@@ -660,12 +660,14 @@ os.chmod(path, 0o644)
 PY
 }
 
-# A venv that failed half way is removed: otherwise the next install refuses to overwrite it
+# Venvs made by this run are all removed if one fails: otherwise the next install refuses to overwrite them
+new_venvs=()
 make_venv() {
     local dir=$repo/.venv-$1 pkg=$2
     if (( update )) && [[ -d $dir ]]; then run "$dir/bin/pip" install -U "$pkg"; return; fi
+    new_venvs+=("$dir")
     run python3 -m venv "$dir" && run "$dir/bin/pip" install "$pkg" && return
-    rm -rf -- "$dir"
+    rm -rf -- "${new_venvs[@]}"
     fail "Could not install $pkg into $dir (see above). Nothing was kept; run the installer again."
 }
 
