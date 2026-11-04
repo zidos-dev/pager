@@ -14,7 +14,7 @@ from unittest import mock
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-import cc_tgbot as cc  # noqa: E402
+import zidos_pager as cc  # noqa: E402
 
 cc.set_lang("ru")  # the suite checks the original (Russian) texts; language switching has its own tests
 
@@ -87,7 +87,7 @@ class Env:
         os.makedirs(self.jobs)
         envf = os.path.join(t, "env")
         with open(envf, "w") as f:
-            f.write("TG_BOT_TOKEN=T\nTG_ALLOWED_USERS=1\nCC_VAPID_SUB=mailto:admin@example.com\nCC_JOBS_DIR=%s\nCC_TGBOT_STATE=%s\nCC_DEFAULT_CWD=%s\nCC_RATE_FILE=%s\n"
+            f.write("TG_BOT_TOKEN=T\nTG_ALLOWED_USERS=1\nCC_VAPID_SUB=mailto:admin@example.com\nCC_JOBS_DIR=%s\nZIDOS_PAGER_STATE=%s\nCC_DEFAULT_CWD=%s\nCC_RATE_FILE=%s\n"
                     % (self.jobs, os.path.join(t, "st", "state.json"), t, os.path.join(t, "rate.json")))
         self.cfg = cc.Config(env_path=envf, environ={"HOME": t})
         self.agents = []
@@ -651,7 +651,7 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(cfg.default_cwd, d)
             self.assertEqual(cfg.claude_bin, os.path.join(d, ".local/bin/claude"))
             self.assertEqual(cfg.jobs_dir, os.path.join(d, ".claude/jobs"))
-            self.assertEqual(cfg.state_path, os.path.join(d, ".local/state/cc-tgbot/state.json"))
+            self.assertEqual(cfg.state_path, os.path.join(d, ".local/state/zidos-pager/state.json"))
             self.assertEqual((cfg.lang, cfg.vapid_sub, cfg.chain_generic_dirs), ("en", "", []))
             fake = os.path.join(d, "bin")
             os.makedirs(fake)
@@ -671,7 +671,7 @@ class ConfigTests(unittest.TestCase):
             envf = os.path.join(d, "env")
             open(envf, "w").write("TG_BOT_TOKEN=T\n")
             p = subprocess.run([sys.executable, cc.__file__], capture_output=True, text=True,
-                               env={"HOME": d, "CC_TGBOT_ENV": envf})
+                               env={"HOME": d, "ZIDOS_PAGER_ENV": envf})
             self.assertEqual(p.returncode, 2)
             self.assertIn("TG_ALLOWED_USERS", p.stderr)
 
@@ -679,7 +679,7 @@ class ConfigTests(unittest.TestCase):
         import subprocess
         with tempfile.TemporaryDirectory() as d:
             p = subprocess.run([sys.executable, cc.__file__], capture_output=True, text=True,
-                               env={"HOME": d, "CC_TGBOT_ENV": os.path.join(d, "none")})
+                               env={"HOME": d, "ZIDOS_PAGER_ENV": os.path.join(d, "none")})
             self.assertNotEqual(p.returncode, 0)
             self.assertIn("TG_BOT_TOKEN", p.stderr)
 
@@ -3123,7 +3123,7 @@ class ModelSheetTests(unittest.TestCase):
         self.assertEqual(os.stat(self.e.bot.cfg.sdk_env).st_mode & 0o777, 0o600)
         self.assertIn("# keep me", open(self.e.bot.cfg.sdk_env).read())
         self.assertNotIn("sk-secret-123", open(self.e.bot.cfg.sdk_env).read())
-        self.assertIn(["systemctl", "--user", "restart", "cc-tgbot-sdk"], self.runs)
+        self.assertIn(["systemctl", "--user", "restart", "zidos-pager-sdk"], self.runs)
         _, got = self.e.bot.api_dispatch(1, "GET", "/api/model", None)
         self.assertNotIn("sk-secret-123", json.dumps(got))
         self.assertEqual(got["provider"], "deepseek")
@@ -3530,7 +3530,7 @@ class TunnelTests(unittest.TestCase):
         self.assertEqual(len(e.tg.of("setChatMenuButton")), 3)
 
     def test_tunnel_script_writes_url_atomically_and_cleans_up(self):
-        script = os.path.join(os.path.dirname(os.path.abspath(cc.__file__)), "deploy", "cc-tgbot-tunnel.sh")
+        script = os.path.join(os.path.dirname(os.path.abspath(cc.__file__)), "deploy", "zidos-pager-tunnel.sh")
         with tempfile.TemporaryDirectory() as d:
             fake = os.path.join(d, "cloudflared")
             with open(fake, "w") as f:
@@ -3560,15 +3560,15 @@ class TunnelTests(unittest.TestCase):
 
     def test_service_unit_files(self):
         base = os.path.dirname(os.path.abspath(cc.__file__))
-        unit = open(os.path.join(base, "deploy", "cc-tgbot-tunnel.service"), encoding="utf-8").read()
+        unit = open(os.path.join(base, "deploy", "zidos-pager-tunnel.service"), encoding="utf-8").read()
         for want in ("Restart=always", "RestartSec=10", "cloudflared tunnel --no-autoupdate", " run",
                      "Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin"):
             self.assertIn(want, unit)
-        script = open(os.path.join(base, "deploy", "cc-tgbot-tunnel.sh"), encoding="utf-8").read()
+        script = open(os.path.join(base, "deploy", "zidos-pager-tunnel.sh"), encoding="utf-8").read()
         self.assertIn("tunnel --no-autoupdate --url", script)
         self.assertIn("cloudflared", script)
         self.assertNotIn("/home/", script)
-        self.assertTrue(os.access(os.path.join(base, "deploy", "cc-tgbot-tunnel.sh"), os.X_OK))
+        self.assertTrue(os.access(os.path.join(base, "deploy", "zidos-pager-tunnel.sh"), os.X_OK))
 
 
 # ---------------------------------------------------------------- история, слеш-команды, экран, клавиши
@@ -4330,7 +4330,7 @@ class FilterTests(unittest.TestCase):
         self.assertEqual(h[1]["files"], [])
 
     def test_safe_dirname_keeps_name_and_never_escapes(self):
-        self.assertEqual(cc.safe_dirname("cc-tgbot: подтверждения SDK №4"), "cc-tgbot: подтверждения SDK №4")
+        self.assertEqual(cc.safe_dirname("zidos-pager: подтверждения SDK №4"), "zidos-pager: подтверждения SDK №4")
         for bad in ("..", "../..", "/etc", "a/../b", "x\x00y"):
             d = cc.safe_dirname(bad)
             self.assertNotIn("/", d)
@@ -6231,17 +6231,17 @@ class RepositoryHygieneTests(unittest.TestCase):
     BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     def test_units_use_home_placeholder(self):
-        for name in ("cc-tgbot.service", "cc-tgbot-tunnel.service", "cc-tgbot-quick-tunnel.service"):
+        for name in ("zidos-pager.service", "zidos-pager-tunnel.service", "zidos-pager-quick-tunnel.service"):
             text = open(os.path.join(self.BASE, "deploy", name), encoding="utf-8").read()
             self.assertIn("%h", text, name)
             self.assertNotIn("/home/", text, name)
-        example = open(os.path.join(self.BASE, "deploy", "cc-tgbot.yml.example"), encoding="utf-8").read()
+        example = open(os.path.join(self.BASE, "deploy", "zidos-pager.yml.example"), encoding="utf-8").read()
         self.assertIn("<TUNNEL_UUID>", example)
         self.assertIn("example.com", example)
 
     def test_source_has_no_personal_defaults(self):
         src = open(cc.__file__, encoding="utf-8").read()
-        for bad in (w[::-1] for w in ("ivak/emoh/", "liamnotorp", "semreh.", "oivaoivak", "sodiz")):  # reversed on purpose
+        for bad in (w[::-1] for w in ("ivak/emoh/", "liamnotorp", "semreh.", "oivaoivak")):  # reversed on purpose  # the zidos brand is the product name now
             self.assertNotIn(bad, src, bad)
 
 
@@ -6283,7 +6283,7 @@ class EndToEndTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             envf = os.path.join(d, "env")
             open(envf, "w").write("TG_BOT_TOKEN=T\nTG_ALLOWED_USERS=5\nTG_API_BASE=http://127.0.0.1:%d\n"
-                                  "CC_JOBS_DIR=%s\nCC_TGBOT_STATE=%s\n"
+                                  "CC_JOBS_DIR=%s\nZIDOS_PAGER_STATE=%s\n"
                                   % (srv.server_address[1], d, os.path.join(d, "state.json")))
             cfg = cc.Config(env_path=envf, environ={"HOME": d})
             agents = [{"id": "aaaaaaaa", "name": "Сессия", "state": "blocked"}]
@@ -6335,7 +6335,7 @@ class EndToEndTests(unittest.TestCase):
             envf = os.path.join(d, "env")
             with open(envf, "w") as f:
                 f.write("TG_BOT_TOKEN=T\nTG_ALLOWED_USERS=5\nTG_API_BASE=http://127.0.0.1:%d\n"
-                        "CC_JOBS_DIR=%s\nCC_TGBOT_STATE=%s\n" % (srv.server_address[1], d, os.path.join(d, "s.json")))
+                        "CC_JOBS_DIR=%s\nZIDOS_PAGER_STATE=%s\n" % (srv.server_address[1], d, os.path.join(d, "s.json")))
             cfg = cc.Config(env_path=envf, environ={"HOME": d})
             agents = [{"id": "aaaaaaaa", "name": "Сессия", "state": "working", "cwd": "/tmp"}]
             os.makedirs(os.path.join(d, "aaaaaaaa"))
@@ -7105,7 +7105,7 @@ class SdkTests(unittest.TestCase):
     def test_config(self):
         e = Env(self)
         self.assertEqual(e.cfg.sdk_mode, "auto")
-        self.assertTrue(e.cfg.sdk_socket.endswith(".local/state/cc-tgbot/sdk.sock"))
+        self.assertTrue(e.cfg.sdk_socket.endswith(".local/state/zidos-pager/sdk.sock"))
         cfg = cc.Config(env_path=os.path.join(e.tmp.name, "env"), environ={"HOME": e.tmp.name, "CC_SDK": "off",
                                                                           "CC_SDK_SOCKET": "/x/y.sock"})
         self.assertEqual((cfg.sdk_mode, cfg.sdk_socket), ("off", "/x/y.sock"))
@@ -8918,7 +8918,7 @@ class SttConfigTests(unittest.TestCase):
     def test_config(self):
         e = Env(self)
         self.assertEqual(e.cfg.stt_mode, "auto")
-        self.assertTrue(e.cfg.stt_socket.endswith(".local/state/cc-tgbot/stt.sock"))
+        self.assertTrue(e.cfg.stt_socket.endswith(".local/state/zidos-pager/stt.sock"))
         self.assertEqual(e.cfg.stt_lang, "")
         cfg = cc.Config(env_path=os.path.join(e.tmp.name, "env"), environ={
             "HOME": e.tmp.name, "CC_STT": "off", "CC_STT_SOCKET": "/x/s.sock", "CC_STT_LANG": "EN"})
@@ -9059,7 +9059,7 @@ class SttTelegramTests(unittest.TestCase):
         e.bot.stt = cc.SttClient(os.path.join(e.tmp.name, "none.sock"))
         e.bot.handle_update(voice_msg(thread=self.th))
         self.assertIn("Голосовой ввод не настроен", e.tg.of("sendMessage")[-1]["text"])
-        self.assertIn("cc-tgbot-stt", e.tg.of("sendMessage")[-1]["text"])
+        self.assertIn("zidos-pager-stt", e.tg.of("sendMessage")[-1]["text"])
         stt_attach(e, self.fake)
         self.fake.error = "internal"
         e.bot.handle_update(voice_msg(mid=61, thread=self.th))

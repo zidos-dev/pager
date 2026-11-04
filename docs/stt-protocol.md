@@ -5,7 +5,7 @@ stdlib-only: it sends the path of an audio file to the runner and gets the text 
 
 ## Transport
 
-Same as the SDK runner (`docs/sdk-protocol.md`): Unix socket (default `~/.local/state/cc-tgbot/stt.sock`, mode
+Same as the SDK runner (`docs/sdk-protocol.md`): Unix socket (default `~/.local/state/zidos-pager/stt.sock`, mode
 `0600`, directory `0700`), newline-delimited JSON, one request per connection.
 
 - Request: `{"id": "1", "method": "stt.transcribe", "params": {...}}`

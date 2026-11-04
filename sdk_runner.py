@@ -126,7 +126,7 @@ def load_sdk():
 
 def scrub_env():
     for k in list(os.environ):
-        if k.startswith(("ANTHROPIC_", "TG_", "CC_TGBOT_")):
+        if k.startswith(("ANTHROPIC_", "TG_", "ZIDOS_PAGER_", "CC_TGBOT_")):  # CC_TGBOT_ is the legacy prefix
             del os.environ[k]
 
 
@@ -306,10 +306,10 @@ class Runner:
         scrub_env()
         env = os.environ
         self.socket_path = os.path.expanduser(socket_path or env.get("CC_SDK_SOCKET")
-                                              or "~/.local/state/cc-tgbot/sdk.sock")
+                                              or "~/.local/state/zidos-pager/sdk.sock")
         self.state_path = os.path.expanduser(state_path or env.get("CC_SDK_STATE")
-                                             or "~/.local/state/cc-tgbot/sdk.json")
-        self.key_file = env.get("CC_SDK_KEY_FILE") or "~/.config/cc-tgbot/anthropic-api.env"
+                                             or "~/.local/state/zidos-pager/sdk.json")
+        self.key_file = env.get("CC_SDK_KEY_FILE") or "~/.config/zidos-pager/anthropic-api.env"
         self.key_var = env.get("CC_SDK_KEY_VAR") or "ANTHROPIC_API_KEY"
         self.model = env.get("CC_SDK_MODEL") or "sonnet"
         # an Anthropic-compatible endpoint (DeepSeek and the like); empty: Anthropic itself, behaviour unchanged

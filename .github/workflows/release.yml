@@ -32,7 +32,7 @@ jobs:
       - name: Smoke test
         shell: bash
         run: |
-          dist/cc-tgbot-Setup-windows.exe --no-browser --port 18800 > wizard.log 2>&1 &
+          dist/zidos-pager-Setup-windows.exe --no-browser --port 18800 > wizard.log 2>&1 &
           pid=$!
           url=""
           for _ in $(seq 60); do
@@ -48,18 +48,18 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: windows-exe
-          path: dist/cc-tgbot-Setup-windows.exe
+          path: dist/zidos-pager-Setup-windows.exe
   linux:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - run: |
           mkdir dist
-          git archive --prefix=cc-tgbot/ -o dist/cc-tgbot-linux.tar.gz HEAD
+          git archive --prefix=zidos-pager/ -o dist/zidos-pager-linux.tar.gz HEAD
       - uses: actions/upload-artifact@v4
         with:
           name: linux-tarball
-          path: dist/cc-tgbot-linux.tar.gz
+          path: dist/zidos-pager-linux.tar.gz
   publish:
     needs: [macos, windows, linux]
     runs-on: ubuntu-latest
@@ -70,7 +70,7 @@ jobs:
           merge-multiple: true
       - name: Checksums
         working-directory: dist
-        run: sha256sum cc-tgbot-* > SHA256SUMS && cat SHA256SUMS
+        run: sha256sum zidos-pager-* > SHA256SUMS && cat SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
           name: SHA256SUMS
@@ -83,7 +83,7 @@ jobs:
         run: |
           cd dist
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" cc-tgbot-* SHA256SUMS --clobber
+            gh release upload "$GITHUB_REF_NAME" zidos-pager-* SHA256SUMS --clobber
           else
-            gh release create "$GITHUB_REF_NAME" cc-tgbot-* SHA256SUMS --generate-notes
+            gh release create "$GITHUB_REF_NAME" zidos-pager-* SHA256SUMS --generate-notes
           fi

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Quick Cloudflare tunnel for the cc-tgbot mini-app: catches the https://*.trycloudflare.com address and writes it to a file.
+# Quick Cloudflare tunnel for the zidos-pager mini-app: catches the https://*.trycloudflare.com address and writes it to a file.
 set -u
 set -o pipefail
 PORT="${CC_WEBAPP_PORT:-18795}"
-OUT="${CC_TUNNEL_FILE:-$HOME/.local/state/cc-tgbot/tunnel-url}"
+OUT="${CC_TUNNEL_FILE:-$HOME/.local/state/zidos-pager/tunnel-url}"
 BIN="${CLOUDFLARED_BIN:-$(command -v cloudflared || echo "$HOME/.local/bin/cloudflared")}"
 mkdir -p "$(dirname "$OUT")"
 rm -f "$OUT"

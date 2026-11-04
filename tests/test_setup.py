@@ -163,7 +163,7 @@ elif name == "xdg-open" and os.environ.get("SETUP_TEST_BROWSER_HANG"):
 
 class SetupTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix="cc-tgbot-setup-test-")
+        self.tmp = tempfile.TemporaryDirectory(prefix="zidos-pager-setup-test-")
         self.addCleanup(self.tmp.cleanup)
         self.base = Path(self.tmp.name)
         self.home = self.base / "home"
@@ -171,7 +171,7 @@ class SetupTests(unittest.TestCase):
         self.repo = self.base / "checkout"
         self.repo.mkdir()
         shutil.copytree(ROOT / "deploy", self.repo / "deploy")
-        for name in ("cc_tgbot.py", "sdk_runner.py", "stt_runner.py", "env.example"):
+        for name in ("zidos_pager.py", "sdk_runner.py", "stt_runner.py", "env.example"):
             shutil.copy2(ROOT / name, self.repo / name)
         self.script = self.repo / "deploy" / "setup.sh"
         self.bin = self.base / "bin"
@@ -182,7 +182,7 @@ class SetupTests(unittest.TestCase):
         self.fake.chmod(0o755)
         for name in ("python3", "systemctl", "loginctl", "tailscale", "cloudflared", "curl", "ffmpeg", "ffprobe", "bwrap", "socat", "sudo", "xdg-open"):
             (self.bin / name).symlink_to(self.fake)
-        for name in ("bash", "dirname", "basename", "mkdir", "chmod", "cat", "rm", "mv", "mktemp", "id", "cp", "readlink", "sed", "grep", "tr", "head", "tail", "touch", "date", "uname", "realpath", "install", "timeout", "sleep"):
+        for name in ("bash", "dirname", "basename", "mkdir", "chmod", "cat", "rm", "mv", "mktemp", "id", "cp", "readlink", "sed", "grep", "tr", "head", "tail", "touch", "date", "uname", "realpath", "install", "timeout", "sleep", "ln"):
             executable = shutil.which(name)
             if executable:
                 (self.bin / name).symlink_to(executable)
@@ -191,9 +191,9 @@ class SetupTests(unittest.TestCase):
                     "XDG_CONFIG_HOME": str(self.home / ".config"),
                     "SETUP_TEST_LOG": str(self.log), "SETUP_TEST_REPO": str(self.repo),
                     "SETUP_TEST_FAKE": str(self.fake), "SETUP_TEST_PYTHON": sys.executable}
-        self.config = self.home / ".config" / "cc-tgbot"
+        self.config = self.home / ".config" / "zidos-pager"
         self.env_file = self.config / "env"
-        self.tunnel_file = self.home / ".local/state/cc-tgbot/tunnel-url"
+        self.tunnel_file = self.home / ".local/state/zidos-pager/tunnel-url"
 
     def run_setup(self, *args, stdin=""):
         result = subprocess.run([str(self.bin / "bash"), str(self.script), *args],
@@ -271,9 +271,9 @@ class SetupTests(unittest.TestCase):
         self.assertEqual((self.tunnel_file).read_text().strip(), "https://box.tail1234.ts.net")
         self.assertEqual((self.config / "publish-mode").read_text().strip(), "funnel")
         units = self.home / ".config" / "systemd" / "user"
-        bot_unit = (units / "cc-tgbot.service").read_text()
-        self.assertIn(str(self.repo / "cc_tgbot.py"), bot_unit)
-        self.assertNotIn("%h/cc-tgbot/", bot_unit)
+        bot_unit = (units / "zidos-pager.service").read_text()
+        self.assertIn(str(self.repo / "zidos_pager.py"), bot_unit)
+        self.assertNotIn("%h/zidos-pager/", bot_unit)
         self.assertTrue(any(c[0] == "tailscale" and c[1:] == ["funnel", "--bg", "18795"] for c in self.calls()), self.calls())
 
     def test_existing_env_refused_without_changes(self):
@@ -285,6 +285,43 @@ class SetupTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0, result.stdout)
         self.assertEqual(self.snapshot_home(), before)
         self.assert_no_mutating_commands()
+
+    def test_legacy_install_refused_without_update(self):
+        legacy = self.home / ".config" / "cc-tgbot"  # legacy install
+        legacy.mkdir(parents=True)
+        (legacy / "env").write_text("TG_BOT_TOKEN=legacy-private-value\n")  # legacy env
+        before = self.snapshot_home()
+        result = self.install()
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("--update", result.stdout)
+        self.assertEqual(self.snapshot_home(), before)
+        self.assert_no_mutating_commands()
+
+    def test_legacy_install_migrated_on_update(self):
+        legacy = self.home / ".config" / "cc-tgbot"  # legacy install
+        legacy.mkdir(parents=True)
+        (legacy / "env").write_text("TG_BOT_TOKEN=legacy-private-value\nTG_ALLOWED_USERS=987\n")  # legacy env
+        units = self.home / ".config/systemd/user"
+        units.mkdir(parents=True)
+        (units / "cc-tgbot.service").write_text("[Service]\n")  # legacy unit
+        result = self.install("funnel", "--update")
+        self.assertFalse((units / "cc-tgbot.service").exists())  # legacy unit retired
+        self.assertIn("cc-tgbot.service", json.dumps(self.calls()))  # legacy unit disabled via systemctl
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertTrue(self.env_file.is_file())
+        self.assertTrue(legacy.is_symlink())  # legacy paths keep resolving
+
+    def test_legacy_units_survive_a_failed_update(self):
+        legacy = self.home / ".config" / "cc-tgbot"  # legacy install
+        legacy.mkdir(parents=True)
+        (legacy / "env").write_text("TG_BOT_TOKEN=legacy-private-value\n")  # legacy env
+        units = self.home / ".config/systemd/user"
+        units.mkdir(parents=True)
+        (units / "cc-tgbot.service").write_text("[Service]\n")  # legacy unit
+        result = self.run_setup("--non-interactive", "--update", "--publish=funnel")  # no token: fails before install
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertTrue((units / "cc-tgbot.service").exists())  # legacy unit still in place
+        self.assertEqual((legacy / "env").read_text(), "TG_BOT_TOKEN=legacy-private-value\n")  # legacy path resolves
 
     def test_missing_tailscale_is_deterministic_and_actionable(self):
         (self.bin / "tailscale").unlink()
@@ -324,7 +361,7 @@ class SetupTests(unittest.TestCase):
         self.assertLess(time.monotonic() - t0, 30)
         self.assertNotEqual(result.returncode, 0, result.stdout)
         self.assertIn("https://login.tailscale.com/f/funnel?node=test", (result.stdout or "") + (result.stderr or ""))
-        self.assertFalse((self.home / ".local/state/cc-tgbot/tunnel-url").exists())
+        self.assertFalse((self.home / ".local/state/zidos-pager/tunnel-url").exists())
 
     def touch_later(self, path, delay=2.0):
         import threading
@@ -621,8 +658,8 @@ await_ts interrupted_probe
             self.assertIn(word, output)
         self.assertTrue("chang" in output or "new url" in output, output)
         self.assertEqual((self.config / "publish-mode").read_text().strip(), "quick")
-        unit = self.home / ".config/systemd/user/cc-tgbot-quick-tunnel.service"
-        self.assertIn(str(self.repo / "deploy/cc-tgbot-tunnel.sh"), unit.read_text())
+        unit = self.home / ".config/systemd/user/zidos-pager-quick-tunnel.service"
+        self.assertIn(str(self.repo / "deploy/zidos-pager-tunnel.sh"), unit.read_text())
         self.assertFalse(any(c[0] == "tailscale" for c in self.calls()))
 
     def test_none_does_not_publish(self):
@@ -657,9 +694,9 @@ await_ts interrupted_probe
         self.env["SETUP_TEST_REPO"] = str(self.repo)
         result = self.install("none")
         self.assert_success(result)
-        unit = (self.home / ".config/systemd/user/cc-tgbot.service").read_text()
+        unit = (self.home / ".config/systemd/user/zidos-pager.service").read_text()
         escaped = str(self.repo).replace("%", "%%").replace("$", "$$").replace(" ", r"\x20")
-        self.assertIn(escaped + "/cc_tgbot.py", unit)
+        self.assertIn(escaped + "/zidos_pager.py", unit)
 
     def test_conflicting_funnel_configuration_is_preserved(self):
         host = "box.tail1234.ts.net:443"
@@ -682,7 +719,7 @@ await_ts interrupted_probe
                 self.assert_no_mutating_commands()
 
     def test_existing_quick_unit_without_env_is_preserved(self):
-        unit = self.home / ".config/systemd/user/cc-tgbot-quick-tunnel.service"
+        unit = self.home / ".config/systemd/user/zidos-pager-quick-tunnel.service"
         unit.parent.mkdir(parents=True)
         unit.write_text("# existing manually managed service\n")
         before = self.snapshot_home()
@@ -705,10 +742,10 @@ await_ts interrupted_probe
         self.assert_success(result)
         argument_root = str(self.base) + r"/checkout\x20with\x20spaces%%$$\x27\x22\x5c"
         units = self.home / ".config/systemd/user"
-        quick = (units / "cc-tgbot-quick-tunnel.service").read_text()
-        self.assertIn("ExecStart=/usr/bin/env " + argument_root + "/deploy/cc-tgbot-tunnel.sh\n", quick)
+        quick = (units / "zidos-pager-quick-tunnel.service").read_text()
+        self.assertIn("ExecStart=/usr/bin/env " + argument_root + "/deploy/zidos-pager-tunnel.sh\n", quick)
         for runner in ("sdk", "stt"):
-            unit = (units / ("cc-tgbot-" + runner + ".service")).read_text()
+            unit = (units / ("zidos-pager-" + runner + ".service")).read_text()
             expected = ("ExecStart=/usr/bin/env " + argument_root + "/.venv-" + runner + "/bin/python -u "
                         + argument_root + "/" + runner + "_runner.py serve\n")
             self.assertIn(expected, unit)
@@ -792,7 +829,7 @@ await_ts interrupted_probe
         result = self.run_setup("--reconfigure-publish", "--publish=funnel")
         self.assert_success(result)
         calls = self.calls()
-        stop = ["systemctl", "--user", "disable", "--now", "cc-tgbot-quick-tunnel"]
+        stop = ["systemctl", "--user", "disable", "--now", "zidos-pager-quick-tunnel"]
         start = ["tailscale", "funnel", "--bg", "18795"]
         self.assertLess(calls.index(stop), calls.index(start))
         self.assertEqual(self.env_file.read_bytes(), before)
@@ -806,7 +843,7 @@ await_ts interrupted_probe
         self.assert_success(result)
         calls = self.calls()
         stop = ["tailscale", "funnel", "reset"]
-        start = ["systemctl", "--user", "enable", "--now", "cc-tgbot-quick-tunnel"]
+        start = ["systemctl", "--user", "enable", "--now", "zidos-pager-quick-tunnel"]
         self.assertLess(calls.index(stop), calls.index(start))
         self.assertFalse(self.tunnel_file.exists())
         self.assertEqual(self.env_file.read_bytes(), before)
@@ -859,7 +896,7 @@ await_ts interrupted_probe
             self.assertNotIn(TOKEN, path.read_text())
             self.assertNotIn(SDK_SECRET, path.read_text())
             self.assertNotIn(GROQ_SECRET, path.read_text())
-            unit = (self.home / (".config/systemd/user/cc-tgbot-" + runner + ".service")).read_text()
+            unit = (self.home / (".config/systemd/user/zidos-pager-" + runner + ".service")).read_text()
             self.assertIn(str(self.repo / (runner + "_runner.py")), unit)
             self.assertTrue((self.repo / (".venv-" + runner) / "bin/pip").is_file())
         self.assertIn(str(sdk_key), (self.config / "sdk.env").read_text())
@@ -956,7 +993,7 @@ await_ts interrupted_probe
         calls = self.calls()
         self.assertFalse(any(c[1:3] == ["-m", "venv"] for c in calls), calls)
         self.assertTrue(any(c[0] == "pip" and "-U" in c and "claude-agent-sdk" in c for c in calls), calls)
-        self.assertTrue(any(c[0] == "systemctl" and "restart" in c and "cc-tgbot-sdk" in c for c in calls), calls)
+        self.assertTrue(any(c[0] == "systemctl" and "restart" in c and "zidos-pager-sdk" in c for c in calls), calls)
 
     def test_update_dry_run_changes_nothing(self):
         self.assert_success(self.install("none"))

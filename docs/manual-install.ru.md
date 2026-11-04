@@ -55,37 +55,37 @@ Tailscale и войдите в аккаунт (скрипт выведет оф�
 
 1. **Создайте бота.** В @BotFather: `/newbot`, скопируйте токен. Включите темы в личных чатах («Threaded Mode» в
    настройках бота), если нужны топики под сессии; без них бот работает с одной «текущей сессией».
-2. **Скачайте код.** `git clone https://github.com/kavioavio/cc-tgbot ~/cc-tgbot` (путь любой, поправьте юнит).
+2. **Скачайте код.** `git clone https://github.com/zidos-dev/pager ~/zidos-pager` (путь любой, поправьте юнит).
 3. **Настройте.**
    ```bash
-   mkdir -p ~/.config/cc-tgbot
-   cp ~/cc-tgbot/env.example ~/.config/cc-tgbot/env
-   chmod 600 ~/.config/cc-tgbot/env
-   $EDITOR ~/.config/cc-tgbot/env     # TG_BOT_TOKEN, TG_ALLOWED_USERS (ваш Telegram id), CC_LANG
+   mkdir -p ~/.config/zidos-pager
+   cp ~/zidos-pager/env.example ~/.config/zidos-pager/env
+   chmod 600 ~/.config/zidos-pager/env
+   $EDITOR ~/.config/zidos-pager/env     # TG_BOT_TOKEN, TG_ALLOWED_USERS (ваш Telegram id), CC_LANG
    ```
    Числовой id узнайте у любого бота «get my id». **Без `TG_ALLOWED_USERS` бот не запускается.**
 4. **Запустите как пользовательскую службу systemd.**
    ```bash
    mkdir -p ~/.config/systemd/user
-   cp ~/cc-tgbot/deploy/cc-tgbot.service ~/.config/systemd/user/
+   cp ~/zidos-pager/deploy/zidos-pager.service ~/.config/systemd/user/
    systemctl --user daemon-reload
-   systemctl --user enable --now cc-tgbot
-   journalctl --user -u cc-tgbot -f            # в журнале нет текстов сообщений
+   systemctl --user enable --now zidos-pager
+   journalctl --user -u zidos-pager -f            # в журнале нет текстов сообщений
    loginctl enable-linger "$USER"              # чтобы работало и без входа в систему
    ```
    Откройте бота в Telegram и отправьте `/start`: появится пульт (в режиме тем — в топике «🎛 Агенты»).
 5. **Мини-апп / PWA (по желанию).** Бот отдаёт мини-апп на `127.0.0.1:18795`; Telegram и телефонам нужен публичный
    https-адрес перед ним. Варианты:
-   - **Именованный туннель Cloudflare** (постоянный адрес): по образцу `deploy/cc-tgbot.yml.example`, установите
-     `deploy/cc-tgbot-tunnel.service`, в env задайте `CC_WEBAPP_URL=https://cc.example.com`.
+   - **Именованный туннель Cloudflare** (постоянный адрес): по образцу `deploy/zidos-pager.yml.example`, установите
+     `deploy/zidos-pager-tunnel.service`, в env задайте `CC_WEBAPP_URL=https://cc.example.com`.
    - **Быстрый туннель** (случайный адрес `*.trycloudflare.com`, меняется при перезапуске): установите
-     `deploy/cc-tgbot-quick-tunnel.service`; бот читает адрес из файла и обновляет кнопку меню в Telegram.
+     `deploy/zidos-pager-quick-tunnel.service`; бот читает адрес из файла и обновляет кнопку меню в Telegram.
    - Подойдёт и любой обратный прокси с TLS — укажите его адрес в `CC_WEBAPP_URL`.
 6. **Установка PWA (по желанию).** Отправьте боту `/pwa`, откройте адрес в Safari/Chrome, «На экран Домой», запустите
    приложение с экрана и вставьте одноразовый код (у PWA на iPhone отдельное хранилище, поэтому ссылка из Telegram не
    переносит вход). `/devices` — список и отзыв устройств.
 7. **Push (по желанию).** `pip install cryptography`, задайте `CC_VAPID_SUB=mailto:you@example.com`, перезапустите.
-8. **Файлы из сессий (по желанию).** `ln -s ~/cc-tgbot/deploy/cc-send ~/.local/bin/cc-send`; сессия сможет вызывать
+8. **Файлы из сессий (по желанию).** `ln -s ~/zidos-pager/deploy/cc-send ~/.local/bin/cc-send`; сессия сможет вызывать
    `cc-send report.pdf "подпись"`.
 
 Тесты: `python3 -m unittest discover -s tests` (без сети, Claude и tmux).
@@ -101,15 +101,15 @@ Tailscale и войдите в аккаунт (скрипт выведет оф�
 
 1. Установите раннер в отдельное виртуальное окружение:
    ```
-   cd ~/cc-tgbot
+   cd ~/zidos-pager
    python3 -m venv .venv-sdk && .venv-sdk/bin/pip install claude-agent-sdk
    ```
-2. Положите ключ в файл со строкой `NAME=value` и закройте его: `chmod 600 ~/.config/cc-tgbot/anthropic.env`
+2. Положите ключ в файл со строкой `NAME=value` и закройте его: `chmod 600 ~/.config/zidos-pager/anthropic.env`
    (например, `ANTHROPIC_API_KEY=sk-ant-...`).
-3. Создайте `~/.config/cc-tgbot/sdk.env` (`chmod 600`) только с настройками раннера — не env-файл бота, в нём токен
+3. Создайте `~/.config/zidos-pager/sdk.env` (`chmod 600`) только с настройками раннера — не env-файл бота, в нём токен
    Telegram:
    ```
-   CC_SDK_KEY_FILE=/home/you/.config/cc-tgbot/anthropic.env
+   CC_SDK_KEY_FILE=/home/you/.config/zidos-pager/anthropic.env
    CC_SDK_KEY_VAR=ANTHROPIC_API_KEY
    CC_SDK_MODEL=sonnet
    CC_SDK_BUDGET=1.00
@@ -117,8 +117,8 @@ Tailscale и войдите в аккаунт (скрипт выведет оф�
 4. Установите оба юнита (поправьте пути внутри) и запустите:
    ```
    mkdir -p ~/.config/systemd/user
-   cp deploy/cc-tgbot.service deploy/cc-tgbot-sdk.service ~/.config/systemd/user/
-   systemctl --user daemon-reload && systemctl --user enable --now cc-tgbot-sdk cc-tgbot
+   cp deploy/zidos-pager.service deploy/zidos-pager-sdk.service ~/.config/systemd/user/
+   systemctl --user daemon-reload && systemctl --user enable --now zidos-pager-sdk zidos-pager
    ```
 
 **Работает:** сессии, запущенные из бота, переписка с ними, запросы разрешений 🔐, кнопки вопросов, стоимость 💲 и
@@ -134,23 +134,23 @@ SDK-раннер работает с любым провайдером, у ко�
 чата не запускаются.
 
 1. Создайте бота в @BotFather и узнайте свой числовой id в Telegram через любого бота вида «get my id». Скачайте код:
-   `git clone https://github.com/kavioavio/cc-tgbot ~/cc-tgbot && cd ~/cc-tgbot` или из архива:
-   `tar -xzf cc-tgbot-own-bot.tar.gz -C ~ && cd ~/cc-tgbot`
+   `git clone https://github.com/zidos-dev/pager ~/zidos-pager && cd ~/zidos-pager` или из архива:
+   `tar -xzf zidos-pager-own-bot.tar.gz -C ~ && cd ~/zidos-pager`
 2. Положите ключ в файл и закройте доступ:
    ```
-   mkdir -p ~/.config/cc-tgbot
-   echo 'DEEPSEEK_API_KEY=sk-...' > ~/.config/cc-tgbot/deepseek.env
-   chmod 600 ~/.config/cc-tgbot/deepseek.env
+   mkdir -p ~/.config/zidos-pager
+   echo 'DEEPSEEK_API_KEY=sk-...' > ~/.config/zidos-pager/deepseek.env
+   chmod 600 ~/.config/zidos-pager/deepseek.env
    ```
 3. Установите:
    ```
    deploy/setup.sh --token 'ТОКЕН_БОТА' --users ВАШ_ID --publish none --with-sdk \
-     --sdk-key-file ~/.config/cc-tgbot/deepseek.env --sdk-key-var DEEPSEEK_API_KEY \
+     --sdk-key-file ~/.config/zidos-pager/deepseek.env --sdk-key-var DEEPSEEK_API_KEY \
      --sdk-base-url https://api.deepseek.com/anthropic --sdk-model deepseek-flash
    ```
    Теперь с моделью можно говорить в личке с ботом.
 4. **Чтобы бот отвечал в группе:** добавьте его туда и напишите `@ваш_бот id` (номер группы придёт вам в личку).
-   Затем допишите в `~/.config/cc-tgbot/env` и выполните `systemctl --user restart cc-tgbot`:
+   Затем допишите в `~/.config/zidos-pager/env` и выполните `systemctl --user restart zidos-pager`:
    ```
    CC_RESPONDER_CHAT=-100...                 # номер группы
    CC_RESPONDER_CWD=/home/you/knowledge      # папка, по которой бот отвечает: обычная или клон git
@@ -171,7 +171,7 @@ SDK-раннер работает с любым провайдером, у ко�
 В `sdk.env` раннера есть ещё `CC_SDK_STRONG_MODEL` (модель для просьб что-то изменить, по умолчанию та же),
 `CC_SDK_MAX_TURNS` (шагов на ответ, по умолчанию 30) и `CC_CHAT_SITE` (сайт, доступный из песочницы чата).
 
-**Codex** не Anthropic-совместим, поэтому для группы это отдельный движок: выполните `codex login` и задайте в `~/.config/cc-tgbot/env` `CC_RESPONDER_ENGINE=codex` (и при желании `CC_CODEX_MODEL`). Он читает папку и отвечает, но ничего не меняет; SDK-раннер для группы не нужен. Сессии в личке остаются на раннере. Подходит только для группы своих: модель может прочитать файл входа Codex, и гость может его запросить.
+**Codex** не Anthropic-совместим, поэтому для группы это отдельный движок: выполните `codex login` и задайте в `~/.config/zidos-pager/env` `CC_RESPONDER_ENGINE=codex` (и при желании `CC_CODEX_MODEL`). Он читает папку и отвечает, но ничего не меняет; SDK-раннер для группы не нужен. Сессии в личке остаются на раннере. Подходит только для группы своих: модель может прочитать файл входа Codex, и гость может его запросить.
 
 **В мини-аппе** те же настройки открывает кнопка с ползунками рядом с «Сессии»: выберите провайдера, вставьте ключ, нажмите «Проверить и подключить». Ключ сохраняется только после того, как провайдер его принял, и обратно на экран не возвращается. Мини-аппу нужен публичный адрес: при установке вместо `--publish none` укажите `--publish quick`. Подключение перезапускает раннер и обрывает его текущие сессии.
 
@@ -181,21 +181,21 @@ SDK-раннер работает с любым провайдером, у ко�
 
 ## Ещё боты из командной строки
 
-Каждый дополнительный бот для группы — отдельная пара процессов (`cc-tgbot-bot@<бот>`, `cc-tgbot-bot-sdk@<бот>`; на Mac
-`com.cctgbot.bot.<бот>`, `com.cctgbot.sdk.<бот>`), настройки — в `~/.config/cc-tgbot/bots/<бот>/`. Мастер и лист «Боты»
+Каждый дополнительный бот для группы — отдельная пара процессов (`zidos-pager-bot@<бот>`, `zidos-pager-bot-sdk@<бот>`; на Mac
+`dev.zidos.pager.bot.<бот>`, `dev.zidos.pager.sdk.<бот>`), настройки — в `~/.config/zidos-pager/bots/<бот>/`. Мастер и лист «Боты»
 в мини-аппе вызывают те же команды: каждая читает JSON на входе и печатает JSON (`{"ok": false, "error": ...}` при отказе).
 Ключи не вводите в командной строке: подавайте их из файла.
 
 ```
-cd ~/cc-tgbot
-echo '{"token": "123456:ABC..."}' | python3 cc_tgbot.py bots add            # -> {"ok": true, "slug": "my_bot", ...}
-python3 - <<'PY' | python3 cc_tgbot.py bots save                              # модель и ключ, проверяются до сохранения
+cd ~/zidos-pager
+echo '{"token": "123456:ABC..."}' | python3 zidos_pager.py bots add            # -> {"ok": true, "slug": "my_bot", ...}
+python3 - <<'PY' | python3 zidos_pager.py bots save                              # модель и ключ, проверяются до сохранения
 import json; print(json.dumps({"slug": "my_bot", "provider": "deepseek", "key": open("deepseek.key").read().strip()}))
 PY
-echo '{"slug": "my_bot", "about": "Школа танцев: расписание, цены, запись."}' | python3 cc_tgbot.py bots persona
-echo '{"slug": "my_bot", "cwd": "~/dance", "site": "https://dance.example", "chat": -100123}' | python3 cc_tgbot.py bots save
-python3 cc_tgbot.py bots list
-echo '{"slug": "my_bot"}' | python3 cc_tgbot.py bots remove
+echo '{"slug": "my_bot", "about": "Школа танцев: расписание, цены, запись."}' | python3 zidos_pager.py bots persona
+echo '{"slug": "my_bot", "cwd": "~/dance", "site": "https://dance.example", "chat": -100123}' | python3 zidos_pager.py bots save
+python3 zidos_pager.py bots list
+echo '{"slug": "my_bot"}' | python3 zidos_pager.py bots remove
 ```
 
 `bots persona` возвращает сгенерированные `brief` и `persona` (`name`, `short`, `description`), но не сохраняет их: передайте

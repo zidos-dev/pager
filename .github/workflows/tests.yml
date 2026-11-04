@@ -14,4 +14,4 @@ jobs:
       - run: sudo apt-get install -y bubblewrap socat  # the chat sandbox; the wizard probe and the Codex engine expect them
       - run: pip install cryptography  # the push tests sign with it; the bot itself needs it only for Web Push
       - run: python3 -m unittest discover -s tests -q
-      - run: bash -n deploy/setup.sh deploy/setup-macos.sh deploy/cc-tgbot-tunnel.sh
+      - run: bash -n deploy/setup.sh deploy/setup-macos.sh deploy/zidos-pager-tunnel.sh

@@ -105,7 +105,9 @@ parse_args() {
 }
 
 check_existing() {
-    if [[ -e $config/env || -L $config/env ]]; then
+    if [[ ! -e $config/env && -e $HOME/.config/cc-tgbot/env ]]; then  # legacy install: migrate only on --update, never overwrite it
+        (( update )) || fail "Existing legacy cc-tgbot install found: $HOME/.config/cc-tgbot/env. Nothing changed. Run with --update to migrate it to Zidos Pager."
+    elif [[ -e $config/env || -L $config/env ]]; then
         (( reconfigure || update )) || fail "Existing install found: $config/env. Nothing changed. A new install would write bot/runner configuration, create selected venvs, copy and enable user services, and configure publishing. Use --reconfigure-publish to change publishing only, or --update to update it."
         [[ -f $config/env && ! -L $config/env ]] || fail 'Existing env must be a regular file.'
     elif (( reconfigure )); then
@@ -146,7 +148,7 @@ check_platform() {
 
 check_publish_config() {
     if (( reconfigure )); then
-        if [[ $publish != cloudflare && -e $unit_dir/cc-tgbot-tunnel.service ]]; then
+        if [[ $publish != cloudflare && -e $unit_dir/zidos-pager-tunnel.service ]]; then
             fail 'A manual named Cloudflare tunnel unit exists. Disable it and remove the unit before switching publishers.'
         fi
         # Parse as data, never source a file holding credentials or shell-like text.
@@ -175,9 +177,9 @@ PY
     if [[ -f $config/publish-mode ]]; then
         IFS= read -r previous < "$config/publish-mode" || true
         case "$previous" in funnel|quick|none) ;; *) fail 'Unknown previous publish-mode; inspect it before continuing.' ;; esac
-    elif (( reconfigure )) && [[ -e $unit_dir/cc-tgbot-quick-tunnel.service ]]; then
+    elif (( reconfigure )) && [[ -e $unit_dir/zidos-pager-quick-tunnel.service ]]; then
         previous=quick
-    elif (( reconfigure )) && [[ -e $tunnel_file || -e $unit_dir/cc-tgbot-tunnel.service ]]; then
+    elif (( reconfigure )) && [[ -e $tunnel_file || -e $unit_dir/zidos-pager-tunnel.service ]]; then
         fail 'Unmanaged publisher found. Stop it and remove its stale tunnel-url/unit before retrying; no changes made.'
     fi
     if [[ $publish == funnel || ( $previous == funnel && $publish != cloudflare ) ]]; then
@@ -584,7 +586,7 @@ PY
     for name in "${services[@]}"; do
         [[ ! -e $unit_dir/$name.service && ! -L $unit_dir/$name.service ]] || fail 'A selected service unit already exists; inspect the partial/manual installation first.'
     done
-    if [[ $publish == quick && ( -e $unit_dir/cc-tgbot-quick-tunnel.service || -L $unit_dir/cc-tgbot-quick-tunnel.service ) ]]; then
+    if [[ $publish == quick && ( -e $unit_dir/zidos-pager-quick-tunnel.service || -L $unit_dir/zidos-pager-quick-tunnel.service ) ]]; then
         fail 'A quick tunnel unit already exists; inspect the partial/manual installation first.'
     fi
     for name in sdk stt; do
@@ -631,13 +633,13 @@ lines = []
 for line in source.splitlines():
     if line.startswith("ExecStart="):
         executable, separator, arguments = line[len("ExecStart="):].partition(" ")
-        executable = executable.replace("%h/cc-tgbot", escape(repo))
-        arguments = arguments.replace("%h/cc-tgbot", escape(repo))
-        if name in ("cc-tgbot", "cc-tgbot-bot@"):
+        executable = executable.replace("%h/zidos-pager", escape(repo))
+        arguments = arguments.replace("%h/zidos-pager", escape(repo))
+        if name in ("zidos-pager", "zidos-pager-bot@"):
             executable = executable.replace("/usr/bin/python3", escape(python), 1)
         line = "ExecStart=/usr/bin/env " + executable + separator + arguments
     lines.append(line)
-    if line == "[Service]" and name == "cc-tgbot-quick-tunnel":
+    if line == "[Service]" and name == "zidos-pager-quick-tunnel":
         lines.append("UMask=0077")
 path = pathlib.Path(destination) / (name + ".service")
 if path.is_symlink():
@@ -684,13 +686,14 @@ if sys.argv[1]:
 PY
     fi
     for name in "${services[@]}"; do install_unit "$name"; done
-    # templates of the extra group-assistant bots (`cc_tgbot.py bots`): installed, never started here
-    install_unit 'cc-tgbot-bot@'
-    install_unit 'cc-tgbot-bot-sdk@'
+    # templates of the extra group-assistant bots (`zidos_pager.py bots`): installed, never started here
+    install_unit 'zidos-pager-bot@'
+    install_unit 'zidos-pager-bot-sdk@'
     if [[ $linger != yes ]] && (( ! non_interactive && ! dry_run )); then
         read -r -p 'Enable linger now? [y/N] ' answer || answer=n
         case "$answer" in y|Y|yes|YES) run loginctl enable-linger "$login_user" ;; esac
     fi
+    (( ! update )) || retire_legacy_units
     run systemctl --user daemon-reload
     if (( update )); then
         run systemctl --user enable "${services[@]}"
@@ -712,13 +715,13 @@ proxies = [h.get("Proxy", "") for site in (d.get("Web") or {}).values() for h in
 sys.exit(0 if proxies and all(p.rstrip("/").endswith(":18795") for p in proxies) else 1)' <<< "$status" 2>/dev/null; then
         run tailscale funnel reset
     else
-        printf 'Funnel/serve on this node has other handlers; switch off only the cc-tgbot one by hand (tailscale funnel status).\n' >&2
+        printf 'Funnel/serve on this node has other handlers; switch off only the zidos-pager one by hand (tailscale funnel status).\n' >&2
     fi
 }
 
 stop_previous() {
     if [[ $previous == quick ]]; then
-        run systemctl --user disable --now cc-tgbot-quick-tunnel
+        run systemctl --user disable --now zidos-pager-quick-tunnel
     elif [[ $previous == funnel ]]; then
         funnel_off
     fi
@@ -753,20 +756,20 @@ cloudflare_steps() {
     fi
     if [[ $previous != none ]]; then
         printf 'Before switching, stop the current publisher:\n'
-        if [[ $previous == quick ]]; then command_line systemctl --user disable --now cc-tgbot-quick-tunnel
+        if [[ $previous == quick ]]; then command_line systemctl --user disable --now zidos-pager-quick-tunnel
         else command_line tailscale funnel reset; fi
     fi
     cat <<'STEPS'
 cloudflared tunnel login
-cloudflared tunnel create cc-tgbot
+cloudflared tunnel create zidos-pager
 # Copy the UUID printed above (the credentials JSON is created by cloudflared):
 read -r -p 'Tunnel UUID: ' TUNNEL_UUID
-mkdir -p "$HOME/.cloudflared" "$HOME/.config/systemd/user" "$HOME/.local/state/cc-tgbot"
+mkdir -p "$HOME/.cloudflared" "$HOME/.config/systemd/user" "$HOME/.local/state/zidos-pager"
 umask 077
 STEPS
-    printf 'cloudflared tunnel route dns cc-tgbot %q\n' "$cf_hostname"
+    printf 'cloudflared tunnel route dns zidos-pager %q\n' "$cf_hostname"
     cat <<STEPS
-cat > "\$HOME/.cloudflared/cc-tgbot.yml" <<YAML
+cat > "\$HOME/.cloudflared/zidos-pager.yml" <<YAML
 tunnel: \$TUNNEL_UUID
 credentials-file: '\$HOME/.cloudflared/\$TUNNEL_UUID.json'
 ingress:
@@ -775,13 +778,13 @@ ingress:
   - service: http_status:404
 YAML
 STEPS
-    printf 'cp %q "$HOME/.config/systemd/user/cc-tgbot-tunnel.service"\n' "$repo/deploy/cc-tgbot-tunnel.service"
+    printf 'cp %q "$HOME/.config/systemd/user/zidos-pager-tunnel.service"\n' "$repo/deploy/zidos-pager-tunnel.service"
     cat <<STEPS
 systemctl --user daemon-reload
-systemctl --user enable --now cc-tgbot-tunnel
-# The unit runs: cloudflared tunnel --no-autoupdate --config ~/.cloudflared/cc-tgbot.yml run
-printf '%s\\n' 'https://$cf_hostname' > "\$HOME/.local/state/cc-tgbot/tunnel-url"
-chmod 600 "\$HOME/.local/state/cc-tgbot/tunnel-url"
+systemctl --user enable --now zidos-pager-tunnel
+# The unit runs: cloudflared tunnel --no-autoupdate --config ~/.cloudflared/zidos-pager.yml run
+printf '%s\\n' 'https://$cf_hostname' > "\$HOME/.local/state/zidos-pager/tunnel-url"
+chmod 600 "\$HOME/.local/state/zidos-pager/tunnel-url"
 # Bot polls this file; no bot restart needed. CC_WEBAPP_URL must be unset.
 STEPS
     printf 'PWA URL after completing these steps: https://%s/app/\n' "$cf_hostname"
@@ -857,9 +860,9 @@ publish_app() {
         quick)
             # Make the shared directory private before the existing tunnel script writes its file.
             run mkdir -p "${tunnel_file%/*}"
-            install_unit cc-tgbot-quick-tunnel
+            install_unit zidos-pager-quick-tunnel
             run systemctl --user daemon-reload
-            run systemctl --user enable --now cc-tgbot-quick-tunnel
+            run systemctl --user enable --now zidos-pager-quick-tunnel
             pwa_url="pending: the quick tunnel writes $tunnel_file; check /start once ready"
             ;;
         none)
@@ -884,15 +887,35 @@ summary() {
     printf '\nUndo commands (review before running):\n'
     if [[ $publish == funnel ]]; then command_line tailscale funnel reset; fi
     local undo_services=("${services[@]}")
-    [[ $publish != quick ]] || undo_services+=(cc-tgbot-quick-tunnel)
-    [[ $publish != cloudflare ]] || undo_services+=(cc-tgbot-tunnel)
+    [[ $publish != quick ]] || undo_services+=(zidos-pager-quick-tunnel)
+    [[ $publish != cloudflare ]] || undo_services+=(zidos-pager-tunnel)
     command_line systemctl --user disable --now "${undo_services[@]}"
     for name in "${undo_services[@]}"; do command_line rm -f "$unit_dir/$name.service"; done
     command_line systemctl --user daemon-reload
     command_line rm -f "$config/env" "$config/publish-mode" "$tunnel_file"
     if (( with_sdk )); then command_line rm -f "$config/sdk.env"; command_line rm -rf "$repo/.venv-sdk"; fi
     if (( with_stt )); then command_line rm -f "$config/stt.env"; command_line rm -rf "$repo/.venv-stt"; fi
-    printf 'Session data and API key files are retained. Cloudflare tunnel deletion is manual (cloudflared tunnel delete cc-tgbot); remove its DNS record too.\n'
+    printf 'Session data and API key files are retained. Cloudflare tunnel deletion is manual (cloudflared tunnel delete zidos-pager); remove its DNS record too.\n'
+}
+
+# Legacy cc-tgbot dirs: move to the zidos-pager names and leave a symlink, so the old bot keeps running if setup stops later.
+retire_legacy_dirs() {
+    local legacy_base legacy_old legacy_new
+    for legacy_base in .config .local/share .local/state; do
+        legacy_old=$HOME/$legacy_base/cc-tgbot  # legacy dir
+        legacy_new=$HOME/$legacy_base/zidos-pager
+        if [[ -d $legacy_old && ! -L $legacy_old && ! -e $legacy_new ]]; then run mv "$legacy_old" "$legacy_new"; run ln -s "$legacy_new" "$legacy_old"; fi  # legacy paths keep resolving
+    done
+}
+
+# Legacy cc-tgbot units: stopped and removed only right before the new units start.
+retire_legacy_units() {
+    local legacy_unit
+    for legacy_unit in "$unit_dir"/cc-tgbot*.service; do  # legacy unit files
+        [[ -e $legacy_unit ]] || continue
+        run systemctl --user disable --now "${legacy_unit##*/}" || true
+        run rm -f "$legacy_unit"
+    done
 }
 
 main() {
@@ -903,15 +926,16 @@ main() {
     parse_args "$@"
     [[ -z $ts_api_key_file ]] || wait_enable=1
     repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
-    config=$HOME/.config/cc-tgbot
+    config=$HOME/.config/zidos-pager
     unit_dir=$HOME/.config/systemd/user
-    tunnel_file=$HOME/.local/state/cc-tgbot/tunnel-url
+    tunnel_file=$HOME/.local/state/zidos-pager/tunnel-url
     login_user=${USER:-$(id -un)}
-    services=(cc-tgbot)
-    (( ! with_sdk )) || services+=(cc-tgbot-sdk)
-    (( ! with_stt )) || services+=(cc-tgbot-stt)
+    services=(zidos-pager)
+    (( ! with_sdk )) || services+=(zidos-pager-sdk)
+    (( ! with_stt )) || services+=(zidos-pager-stt)
     check_existing
     check_platform
+    (( ! update )) || retire_legacy_dirs
     [[ -z $ts_api_key_file ]] || key_file_check "$ts_api_key_file"
     check_publish_config
     collect_config

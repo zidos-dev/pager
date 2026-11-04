@@ -55,37 +55,37 @@ and port. Push additionally needs `cryptography` and `CC_VAPID_SUB` (see below).
 
 1. **Create the bot.** In @BotFather: `/newbot`, copy the token. Enable topics for private chats ("Threaded Mode" in
    the bot settings) if you want per-session topics; without it the bot works with a single "current session".
-2. **Get the code.** `git clone https://github.com/kavioavio/cc-tgbot ~/cc-tgbot` (any path works; adjust the unit file).
+2. **Get the code.** `git clone https://github.com/zidos-dev/pager ~/zidos-pager` (any path works; adjust the unit file).
 3. **Configure.**
    ```bash
-   mkdir -p ~/.config/cc-tgbot
-   cp ~/cc-tgbot/env.example ~/.config/cc-tgbot/env
-   chmod 600 ~/.config/cc-tgbot/env
-   $EDITOR ~/.config/cc-tgbot/env     # set TG_BOT_TOKEN, TG_ALLOWED_USERS (your Telegram user id), CC_LANG
+   mkdir -p ~/.config/zidos-pager
+   cp ~/zidos-pager/env.example ~/.config/zidos-pager/env
+   chmod 600 ~/.config/zidos-pager/env
+   $EDITOR ~/.config/zidos-pager/env     # set TG_BOT_TOKEN, TG_ALLOWED_USERS (your Telegram user id), CC_LANG
    ```
    Find your numeric user id with any "get my id" bot. The bot **refuses to start without `TG_ALLOWED_USERS`**.
 4. **Run it as a systemd user service.**
    ```bash
    mkdir -p ~/.config/systemd/user
-   cp ~/cc-tgbot/deploy/cc-tgbot.service ~/.config/systemd/user/
+   cp ~/zidos-pager/deploy/zidos-pager.service ~/.config/systemd/user/
    systemctl --user daemon-reload
-   systemctl --user enable --now cc-tgbot
-   journalctl --user -u cc-tgbot -f            # logs never contain message texts
+   systemctl --user enable --now zidos-pager
+   journalctl --user -u zidos-pager -f            # logs never contain message texts
    loginctl enable-linger "$USER"              # keep it running when you are logged out
    ```
    Open the bot in Telegram and send `/start`: the panel appears (in a "🎛 Agents" topic in threaded mode).
 5. **Mini-app / PWA (optional).** The bot serves the mini-app on `127.0.0.1:18795`; Telegram and phones need a public
    https address in front of it. Pick one:
-   - **Named Cloudflare tunnel** (stable address): follow `deploy/cc-tgbot.yml.example`, install
-     `deploy/cc-tgbot-tunnel.service`, set `CC_WEBAPP_URL=https://cc.example.com` in the env file.
+   - **Named Cloudflare tunnel** (stable address): follow `deploy/zidos-pager.yml.example`, install
+     `deploy/zidos-pager-tunnel.service`, set `CC_WEBAPP_URL=https://cc.example.com` in the env file.
    - **Quick tunnel** (random `*.trycloudflare.com` address, changes on restart): install
-     `deploy/cc-tgbot-quick-tunnel.service`; the bot reads the address from a file and updates the Telegram menu button.
+     `deploy/zidos-pager-quick-tunnel.service`; the bot reads the address from a file and updates the Telegram menu button.
    - Any reverse proxy with TLS works too — just point `CC_WEBAPP_URL` at it.
 6. **Install the PWA (optional).** Send `/pwa` to the bot, open the address in Safari/Chrome, "Add to Home Screen",
    launch the app from the home screen and paste the one-time code (iPhone PWAs have separate storage, so the link
    from Telegram does not carry over). `/devices` lists and revokes signed-in devices.
 7. **Push notifications (optional).** `pip install cryptography`, set `CC_VAPID_SUB=mailto:you@example.com`, restart.
-8. **Files from sessions (optional).** `ln -s ~/cc-tgbot/deploy/cc-send ~/.local/bin/cc-send`; a session can then run
+8. **Files from sessions (optional).** `ln -s ~/zidos-pager/deploy/cc-send ~/.local/bin/cc-send`; a session can then run
    `cc-send report.pdf "caption"`.
 
 Run the tests with `python3 -m unittest discover -s tests` (no network, no Claude, no tmux needed).
@@ -101,15 +101,15 @@ forces this mode even when `claude` is installed.
 
 1. Install the runner into its own virtualenv:
    ```
-   cd ~/cc-tgbot
+   cd ~/zidos-pager
    python3 -m venv .venv-sdk && .venv-sdk/bin/pip install claude-agent-sdk
    ```
-2. Put the key in a file with a `NAME=value` line and lock it down: `chmod 600 ~/.config/cc-tgbot/anthropic.env`
+2. Put the key in a file with a `NAME=value` line and lock it down: `chmod 600 ~/.config/zidos-pager/anthropic.env`
    (for example `ANTHROPIC_API_KEY=sk-ant-...`).
-3. Create `~/.config/cc-tgbot/sdk.env` (`chmod 600`) with only the runner's settings — never the bot's env file, it
+3. Create `~/.config/zidos-pager/sdk.env` (`chmod 600`) with only the runner's settings — never the bot's env file, it
    holds the Telegram token:
    ```
-   CC_SDK_KEY_FILE=/home/you/.config/cc-tgbot/anthropic.env
+   CC_SDK_KEY_FILE=/home/you/.config/zidos-pager/anthropic.env
    CC_SDK_KEY_VAR=ANTHROPIC_API_KEY
    CC_SDK_MODEL=sonnet
    CC_SDK_BUDGET=1.00
@@ -117,8 +117,8 @@ forces this mode even when `claude` is installed.
 4. Install both units (fix the paths inside), then start them:
    ```
    mkdir -p ~/.config/systemd/user
-   cp deploy/cc-tgbot.service deploy/cc-tgbot-sdk.service ~/.config/systemd/user/
-   systemctl --user daemon-reload && systemctl --user enable --now cc-tgbot-sdk cc-tgbot
+   cp deploy/zidos-pager.service deploy/zidos-pager-sdk.service ~/.config/systemd/user/
+   systemctl --user daemon-reload && systemctl --user enable --now zidos-pager-sdk zidos-pager
    ```
 
 **Works:** sessions started from the bot, writing to them, 🔐 permission requests, question buttons, the 💲 cost
@@ -134,23 +134,23 @@ and your own key; three settings choose the model.
 refuse to start without the OS sandbox.
 
 1. Create a bot in @BotFather and find your numeric Telegram id with any "get my id" bot. Get the code:
-   `git clone https://github.com/kavioavio/cc-tgbot ~/cc-tgbot && cd ~/cc-tgbot`, or from an archive:
-   `tar -xzf cc-tgbot-own-bot.tar.gz -C ~ && cd ~/cc-tgbot`
+   `git clone https://github.com/zidos-dev/pager ~/zidos-pager && cd ~/zidos-pager`, or from an archive:
+   `tar -xzf zidos-pager-own-bot.tar.gz -C ~ && cd ~/zidos-pager`
 2. Put the key in a file and lock it down:
    ```
-   mkdir -p ~/.config/cc-tgbot
-   echo 'DEEPSEEK_API_KEY=sk-...' > ~/.config/cc-tgbot/deepseek.env
-   chmod 600 ~/.config/cc-tgbot/deepseek.env
+   mkdir -p ~/.config/zidos-pager
+   echo 'DEEPSEEK_API_KEY=sk-...' > ~/.config/zidos-pager/deepseek.env
+   chmod 600 ~/.config/zidos-pager/deepseek.env
    ```
 3. Install:
    ```
    deploy/setup.sh --token 'BOT_TOKEN' --users YOUR_ID --publish none --with-sdk \
-     --sdk-key-file ~/.config/cc-tgbot/deepseek.env --sdk-key-var DEEPSEEK_API_KEY \
+     --sdk-key-file ~/.config/zidos-pager/deepseek.env --sdk-key-var DEEPSEEK_API_KEY \
      --sdk-base-url https://api.deepseek.com/anthropic --sdk-model deepseek-flash
    ```
    Now you can talk to the model in a private chat with the bot.
 4. **To answer in a group:** add the bot, write `@your_bot id` there (the id comes to you privately), then add to
-   `~/.config/cc-tgbot/env` and run `systemctl --user restart cc-tgbot`:
+   `~/.config/zidos-pager/env` and run `systemctl --user restart zidos-pager`:
    ```
    CC_RESPONDER_CHAT=-100...                 # the group id
    CC_RESPONDER_CWD=/home/you/knowledge      # the folder the bot answers from; a plain folder or a git clone
@@ -171,7 +171,7 @@ refuse to start without the OS sandbox.
 The runner's `sdk.env` also takes `CC_SDK_STRONG_MODEL` (model for change requests, default: the same model),
 `CC_SDK_MAX_TURNS` (steps per answer, default 30) and `CC_CHAT_SITE` (a site the chat sandbox may reach).
 
-**Codex** is not Anthropic-compatible, so it is a separate engine for the group: run `codex login`, then set `CC_RESPONDER_ENGINE=codex` (and optionally `CC_CODEX_MODEL`) in `~/.config/cc-tgbot/env`. It reads the folder and answers but changes nothing; no SDK runner is needed for the group. Private-chat sessions stay on the runner. Use it only in a group of people you trust: the model can read the Codex login file, so a guest could ask for it.
+**Codex** is not Anthropic-compatible, so it is a separate engine for the group: run `codex login`, then set `CC_RESPONDER_ENGINE=codex` (and optionally `CC_CODEX_MODEL`) in `~/.config/zidos-pager/env`. It reads the folder and answers but changes nothing; no SDK runner is needed for the group. Private-chat sessions stay on the runner. Use it only in a group of people you trust: the model can read the Codex login file, so a guest could ask for it.
 
 **In the mini-app** the sliders button next to «Sessions» opens the same settings: pick a provider, paste a key, press «Check and connect». The key is saved only after the provider accepts it, and it never comes back to the screen. The mini-app needs a public address: install with `--publish quick` instead of `--publish none`. Connecting restarts the runner and stops its running sessions.
 
@@ -181,21 +181,21 @@ Web search and opening pages depend on the provider: DeepSeek documents `web_sea
 
 ## More bots from the command line
 
-Every extra group bot is its own process pair (`cc-tgbot-bot@<bot>`, `cc-tgbot-bot-sdk@<bot>`; on a Mac
-`com.cctgbot.bot.<bot>`, `com.cctgbot.sdk.<bot>`) with settings in `~/.config/cc-tgbot/bots/<bot>/`. The wizard and the
+Every extra group bot is its own process pair (`zidos-pager-bot@<bot>`, `zidos-pager-bot-sdk@<bot>`; on a Mac
+`dev.zidos.pager.bot.<bot>`, `dev.zidos.pager.sdk.<bot>`) with settings in `~/.config/zidos-pager/bots/<bot>/`. The wizard and the
 mini-app's Bots sheet call the same commands; each reads JSON on stdin and prints JSON (`{"ok": false, "error": ...}`
 on a refusal). Keep keys out of the shell history: pipe them from a file.
 
 ```
-cd ~/cc-tgbot
-echo '{"token": "123456:ABC..."}' | python3 cc_tgbot.py bots add            # -> {"ok": true, "slug": "my_bot", ...}
-python3 - <<'PY' | python3 cc_tgbot.py bots save                              # model and key, checked before saving
+cd ~/zidos-pager
+echo '{"token": "123456:ABC..."}' | python3 zidos_pager.py bots add            # -> {"ok": true, "slug": "my_bot", ...}
+python3 - <<'PY' | python3 zidos_pager.py bots save                              # model and key, checked before saving
 import json; print(json.dumps({"slug": "my_bot", "provider": "deepseek", "key": open("deepseek.key").read().strip()}))
 PY
-echo '{"slug": "my_bot", "about": "A dance school: schedule, prices, sign-up."}' | python3 cc_tgbot.py bots persona
-echo '{"slug": "my_bot", "cwd": "~/dance", "site": "https://dance.example", "chat": -100123}' | python3 cc_tgbot.py bots save
-python3 cc_tgbot.py bots list
-echo '{"slug": "my_bot"}' | python3 cc_tgbot.py bots remove
+echo '{"slug": "my_bot", "about": "A dance school: schedule, prices, sign-up."}' | python3 zidos_pager.py bots persona
+echo '{"slug": "my_bot", "cwd": "~/dance", "site": "https://dance.example", "chat": -100123}' | python3 zidos_pager.py bots save
+python3 zidos_pager.py bots list
+echo '{"slug": "my_bot"}' | python3 zidos_pager.py bots remove
 ```
 
 `bots persona` returns a generated `brief` and `persona` (`name`, `short`, `description`) without saving them; pass them to

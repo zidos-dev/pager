@@ -1,12 +1,12 @@
 [Unit]
-Description=cc-tgbot: SDK runner of the group assistant bot %i
+Description=Zidos Pager: SDK runner of the group assistant bot %i
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 # The runner reads only its own sdk.env (never the bot's env: that one holds the Telegram token).
-EnvironmentFile=-%h/.config/cc-tgbot/bots/%i/sdk.env
-ExecStart=%h/cc-tgbot/.venv-sdk/bin/python -u %h/cc-tgbot/sdk_runner.py serve
+EnvironmentFile=-%h/.config/zidos-pager/bots/%i/sdk.env
+ExecStart=%h/zidos-pager/.venv-sdk/bin/python -u %h/zidos-pager/sdk_runner.py serve
 Restart=on-failure
 RestartSec=5
 KillMode=control-group

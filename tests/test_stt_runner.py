@@ -365,7 +365,7 @@ class HelperTests(unittest.TestCase):
             c = stt_runner.Config()
             self.assertEqual((c.engines, c.model, c.idle, c.timeout, c.max_seconds),
                              (["local"], "small", 10, 60, 300))
-            self.assertTrue(c.socket.endswith("/.local/state/cc-tgbot/stt.sock"))
+            self.assertTrue(c.socket.endswith("/.local/state/zidos-pager/stt.sock"))
             os.environ["CC_STT_ENGINES"] = "groq, bogus,groq,local"
             self.assertEqual(stt_runner.Config().engines, ["groq", "local"])
         finally:

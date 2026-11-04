@@ -80,7 +80,7 @@ class H(http.server.BaseHTTPRequestHandler):
         if not head:
             self.wfile.write(b)
     def do_HEAD(self):
-        # как сервер бота (cc_tgbot.py — только do_GET): HEAD → 501
+        # как сервер бота (zidos_pager.py — только do_GET): HEAD → 501
         self.send_response(501); self.end_headers()
     def j(self, o, code=200):
         b = json.dumps(o, ensure_ascii=False).encode(); self.send_response(code); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(b)

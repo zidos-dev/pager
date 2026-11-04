@@ -1,5 +1,5 @@
 #!/bin/bash
-# Double-click entry of "cc-tgbot Setup.app": opens Terminal, copies the bundled Python and code to a stable path, starts the wizard.
+# Double-click entry of "Zidos Pager Setup.app": opens Terminal, copies the bundled Python and code to a stable path, starts the wizard.
 set -euo pipefail
 if [ -z "${TERM:-}" ] || [ ! -t 0 ]; then
   open -a Terminal "$0"
@@ -7,13 +7,13 @@ if [ -z "${TERM:-}" ] || [ ! -t 0 ]; then
 fi
 HERE="$(cd "$(dirname "$0")" && pwd)"
 PAYLOAD="$HERE/../Resources/payload"
-DEST="$HOME/.local/share/cc-tgbot"
+DEST="$HOME/.local/share/zidos-pager"
 if [ ! -f "$DEST/.version" ] || ! cmp -s "$PAYLOAD/VERSION" "$DEST/.version"; then
-  echo "Copying cc-tgbot to $DEST ..."
+  echo "Copying Zidos Pager to $DEST ..."
   mkdir -p "$DEST"
   rm -rf "$DEST/python" "$DEST/src" "$DEST/.version"
   cp -R "$PAYLOAD/python" "$DEST/python"
-  cp -R "$PAYLOAD/cc-tgbot" "$DEST/src"
+  cp -R "$PAYLOAD/zidos-pager" "$DEST/src"
   xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
   cp "$PAYLOAD/VERSION" "$DEST/.version"  # written last: an interrupted copy is redone
 fi

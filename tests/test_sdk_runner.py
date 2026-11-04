@@ -788,15 +788,15 @@ class RobustnessTests(Base):
 
     async def test_runner_env_scrubbed_of_bot_vars(self):  # finding 8
         os.environ["TG_BOT_TOKEN"] = "t"
-        os.environ["CC_TGBOT_ENV"] = "e"
+        os.environ["ZIDOS_PAGER_ENV"] = "e"
         sdk_runner.Runner(self.sock + "2", self.state + "2")
         self.assertNotIn("TG_BOT_TOKEN", os.environ)
-        self.assertNotIn("CC_TGBOT_ENV", os.environ)
+        self.assertNotIn("ZIDOS_PAGER_ENV", os.environ)
 
     def test_unit_and_env_example(self):  # finding 8
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        with open(os.path.join(root, "deploy", "cc-tgbot-sdk.service")) as f:
-            self.assertIn("EnvironmentFile=-%h/.config/cc-tgbot/sdk.env", f.read())
+        with open(os.path.join(root, "deploy", "zidos-pager-sdk.service")) as f:
+            self.assertIn("EnvironmentFile=-%h/.config/zidos-pager/sdk.env", f.read())
         with open(os.path.join(root, "env.example")) as f:
             self.assertIn("sdk.env", f.read())
 
@@ -827,11 +827,11 @@ class ScrubTests(unittest.TestCase):
     def test_scrub_env(self):
         old = dict(os.environ)
         self.addCleanup(lambda: (os.environ.clear(), os.environ.update(old)))
-        for k in ("ANTHROPIC_API_KEY", "TG_BOT_TOKEN", "CC_TGBOT_ENV"):
+        for k in ("ANTHROPIC_API_KEY", "TG_BOT_TOKEN", "ZIDOS_PAGER_ENV"):
             os.environ[k] = "x"
         os.environ["KEEP_ME"] = "1"
         sdk_runner.scrub_env()
-        self.assertEqual([k for k in ("ANTHROPIC_API_KEY", "TG_BOT_TOKEN", "CC_TGBOT_ENV") if k in os.environ], [])
+        self.assertEqual([k for k in ("ANTHROPIC_API_KEY", "TG_BOT_TOKEN", "ZIDOS_PAGER_ENV") if k in os.environ], [])
         self.assertIn("KEEP_ME", os.environ)
 
 

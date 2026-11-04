@@ -192,7 +192,7 @@ class WizardTests(WizardBase):
         self.assertIn(KEY.encode(), stdin)
         self.assertNotIn(TOKEN, json.dumps(self.call("/api/state")[1]))
         self.assertTrue(any("ControlMaster=auto" in a for a in argv.splitlines()))
-        tok = self.home / ".config/cc-tgbot/token.env"
+        tok = self.home / ".config/zidos-pager/token.env"
         self.assertEqual(stat.S_IMODE(tok.stat().st_mode), 0o600)
 
     def test_owner_from_start(self):
@@ -219,18 +219,18 @@ class WizardTests(WizardBase):
             self.assertIn(flag, args)
         self.assertEqual(args[args.index("--users") + 1], "42")
         self.assertEqual(args[args.index("--publish") + 1], "none")
-        self.assertEqual(args[args.index("--token-file") + 1], f"{self.home}/.config/cc-tgbot/token.env")
+        self.assertEqual(args[args.index("--token-file") + 1], f"{self.home}/.config/zidos-pager/token.env")
         self.assertEqual(args[args.index("--sdk-key-var") + 1], "DEEPSEEK_API_KEY")
         envs = [args[i + 1] for i, a in enumerate(args) if a == "--env"]
         for e in ("CC_RESPONDER_CHAT=-100123", "CC_RESPONDER_NAME=Helper X", "CC_LANG=en",
-                  f"CC_RESPONDER_BRIEF={self.home}/.config/cc-tgbot/brief.md"):
+                  f"CC_RESPONDER_BRIEF={self.home}/.config/zidos-pager/brief.md"):
             self.assertIn(e, envs)
         self.assertNotIn("--update", args)
-        self.assertEqual((self.home / ".config/cc-tgbot/brief.md").read_text().strip(), "be nice")
+        self.assertEqual((self.home / ".config/zidos-pager/brief.md").read_text().strip(), "be nice")
         self.assertEqual(self.tg.sent[0]["chat_id"], 42)
 
     def test_install_update_when_existing(self):
-        unit = self.home / ".config/systemd/user/cc-tgbot.service"
+        unit = self.home / ".config/systemd/user/zidos-pager.service"
         unit.parent.mkdir(parents=True)
         unit.write_text("")
         self.assertTrue(self.full_flow()["ok"])
@@ -324,7 +324,7 @@ class BotsTests(WizardBase):
             (st, r), calls = self.run_cli("/api/bots/" + sub, body, {"ok": True, "slug": "x"})
             self.assertEqual((st, r), (200, {"ok": True, "slug": "x"}))
             (cmd, stdin), = calls
-            self.assertTrue(cmd.endswith(f"python3 cc_tgbot.py bots {sub}"), cmd)
+            self.assertTrue(cmd.endswith(f"python3 zidos_pager.py bots {sub}"), cmd)
             self.assertEqual(json.loads(stdin), body)
             for secret in (self.BTOKEN, KEY):
                 self.assertNotIn(secret, cmd)
@@ -408,14 +408,14 @@ class WindowsTests(WizardBase):
         log = []
         t = ws.Target("wsl", distro="Ubuntu")
         ws.Wizard()._wsl_keepalive(t, log.append)
-        vbs = self.localapp / "cc-tgbot" / "wsl-keepalive.vbs"
+        vbs = self.localapp / "zidos-pager" / "wsl-keepalive.vbs"
         txt = vbs.read_text()
         self.assertIn("wsl.exe -d Ubuntu --exec sleep infinity", txt)
         self.assertIn(", 0, False", txt)
         rec = (self.log / "rec.txt").read_text().splitlines()
-        self.assertIn(f'/Create /TN cc-tgbot-wsl /TR wscript.exe "{vbs}" /SC ONLOGON /RL LIMITED /F', rec[0])
-        self.assertIn("/Run /TN cc-tgbot-wsl", rec[1])
-        self.assertIn("schtasks /Delete /TN cc-tgbot-wsl /F", log[-1])
+        self.assertIn(f'/Create /TN zidos-pager-wsl /TR wscript.exe "{vbs}" /SC ONLOGON /RL LIMITED /F', rec[0])
+        self.assertIn("/Run /TN zidos-pager-wsl", rec[1])
+        self.assertIn("schtasks /Delete /TN zidos-pager-wsl /F", log[-1])
 
     def test_windows_ssh_no_controlmaster(self):
         self.ssh_target()

@@ -7,7 +7,7 @@ set -euo pipefail
 usage() {
     cat <<'HELP'
 Usage: bash deploy/setup-macos.sh [options]
-macOS LaunchAgent installation (~/Library/LaunchAgents/com.cctgbot.{bot,sdk}.plist).
+macOS LaunchAgent installation (~/Library/LaunchAgents/dev.zidos.pager.{bot,sdk}.plist).
 
   --dry-run             Print changes as '+ ' commands; change nothing
   --non-interactive     Never prompt; requires --token-file and --users for a new install
@@ -151,8 +151,8 @@ import os, plistlib, sys
 kind, label, target, home, repo, config, python = sys.argv[1:8]
 path_env = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 if kind == "bot":
-    program = [python, "-u", repo + "/cc_tgbot.py"]
-    env = {"HOME": home, "PATH": path_env, "CC_TGBOT_ENV": config + "/env"}
+    program = [python, "-u", repo + "/zidos_pager.py"]
+    env = {"HOME": home, "PATH": path_env, "ZIDOS_PAGER_ENV": config + "/env"}
 else:
     program = [repo + "/.venv-sdk/bin/python", "-u", repo + "/sdk_runner.py", "serve"]
     env = {"HOME": home, "PATH": path_env}
@@ -174,8 +174,8 @@ doc = {
     "RunAtLoad": True,
     "KeepAlive": True,
     "ProcessType": "Background",
-    "StandardOutPath": home + "/Library/Logs/cc-tgbot/" + kind + ".log",
-    "StandardErrorPath": home + "/Library/Logs/cc-tgbot/" + kind + ".log",
+    "StandardOutPath": home + "/Library/Logs/zidos-pager/" + kind + ".log",
+    "StandardErrorPath": home + "/Library/Logs/zidos-pager/" + kind + ".log",
 }
 fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
 with os.fdopen(fd, "wb") as f:
@@ -184,18 +184,41 @@ os.chmod(target, 0o600)
 PY
 }
 
+# Legacy cc-tgbot dirs: move to the zidos-pager names and leave a symlink, so the old bot keeps running if setup stops later.
+retire_legacy_dirs() {
+    local legacy_base legacy_old legacy_new
+    for legacy_base in .config .local/share .local/state; do
+        legacy_old=$HOME/$legacy_base/cc-tgbot  # legacy dir
+        legacy_new=$HOME/$legacy_base/zidos-pager
+        if [ -d "$legacy_old" ] && [ ! -L "$legacy_old" ] && [ ! -e "$legacy_new" ]; then run mv "$legacy_old" "$legacy_new"; run ln -s "$legacy_new" "$legacy_old"; fi  # legacy paths keep resolving
+    done
+}
+
+# Legacy cc-tgbot launchd jobs: booted out and removed only right before the new jobs start.
+retire_legacy_units() {
+    local legacy_plist legacy_label
+    for legacy_plist in "$agents"/com.cctgbot.*.plist; do  # legacy plists
+        [ -e "$legacy_plist" ] || continue
+        legacy_label=$(basename "$legacy_plist" .plist)
+        command_line launchctl bootout "gui/$uid/$legacy_label"  # legacy label
+        if [ "$dry_run" != 1 ]; then launchctl bootout "gui/$uid/$legacy_label" >/dev/null 2>&1 || true; fi  # legacy label
+        run rm -f "$legacy_plist"
+    done
+}
+
 main() {
     parse_args "$@"
     repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-    config=$HOME/.config/cc-tgbot
+    config=$HOME/.config/zidos-pager
     agents=$HOME/Library/LaunchAgents
-    logs=$HOME/Library/Logs/cc-tgbot
+    logs=$HOME/Library/Logs/zidos-pager
     uid=$(id -u)
+    if [ "$update" = 1 ]; then retire_legacy_dirs; fi  # legacy install is migrated only on --update
     pick_python
     [[ $repo$python_bin$HOME != *=* ]] || fail "Repository, Python and home paths must not contain '='."
 
     if [ "$update" != 1 ]; then
-        if [ -e "$config/env" ] || [ -L "$config/env" ] || [ -e "$agents/com.cctgbot.bot.plist" ] || [ -e "$agents/com.cctgbot.sdk.plist" ]; then
+        if [ -e "$config/env" ] || [ -L "$config/env" ] || [ -e "$HOME/.config/cc-tgbot/env" ] || ls "$agents"/com.cctgbot.*.plist >/dev/null 2>&1 || [ -e "$agents/dev.zidos.pager.bot.plist" ] || [ -e "$agents/dev.zidos.pager.sdk.plist" ]; then  # legacy cc-tgbot counts as an install
             fail "Existing install found (env or LaunchAgents). Nothing changed. Use --update to reload and upgrade."
         fi
         [ -n "$token_file" ] && [ -n "$users" ] || fail 'A new install requires --token-file and --users.'
@@ -242,22 +265,23 @@ PY
 
     labels='bot'
     [ "$with_sdk" != 1 ] || labels='bot sdk'
+    if [ "$update" = 1 ]; then retire_legacy_units; fi  # legacy jobs stop only now
     for kind in $labels; do
-        plist=$agents/com.cctgbot.$kind.plist
-        render_plist "$kind" "com.cctgbot.$kind" "$plist"
-        command_line launchctl bootout "gui/$uid/com.cctgbot.$kind" || true
+        plist=$agents/dev.zidos.pager.$kind.plist
+        render_plist "$kind" "dev.zidos.pager.$kind" "$plist"
+        command_line launchctl bootout "gui/$uid/dev.zidos.pager.$kind" || true
         if [ "$dry_run" != 1 ]; then
-            launchctl bootout "gui/$uid/com.cctgbot.$kind" >/dev/null 2>&1 || true
+            launchctl bootout "gui/$uid/dev.zidos.pager.$kind" >/dev/null 2>&1 || true
             # bootout returns before the job is gone; bootstrap right away fails with «5: Input/output error»
             n=0
-            while launchctl print "gui/$uid/com.cctgbot.$kind" >/dev/null 2>&1 && [ $n -lt 50 ]; do sleep 0.2; n=$((n + 1)); done
+            while launchctl print "gui/$uid/dev.zidos.pager.$kind" >/dev/null 2>&1 && [ $n -lt 50 ]; do sleep 0.2; n=$((n + 1)); done
         fi
         run launchctl bootstrap "gui/$uid" "$plist"
     done
 
     printf '\nUndo:\n'
     for kind in $labels; do
-        printf '  launchctl bootout gui/%s/com.cctgbot.%s; rm -f %q\n' "$uid" "$kind" "$agents/com.cctgbot.$kind.plist"
+        printf '  launchctl bootout gui/%s/dev.zidos.pager.%s; rm -f %q\n' "$uid" "$kind" "$agents/dev.zidos.pager.$kind.plist"
     done
     printf '  rm -rf %q   # config and secrets\n' "$config"
     printf 'The Mac must stay awake for the bot to answer: System Settings > Battery > Options (prevent sleep on power adapter) or run caffeinate -s.\n'

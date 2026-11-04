@@ -11,8 +11,8 @@ from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import cc_tgbot as cc  # noqa: E402
-import test_cc_tgbot as base  # noqa: E402
+import zidos_pager as cc  # noqa: E402
+import test_zidos_pager as base  # noqa: E402
 
 TOKEN = "123456:ABCDEFGHIJKLMNOPQRSTUVWXYZ0123"
 KEY = "sk-bots-SECRET-key-123"
@@ -58,8 +58,8 @@ class BotsCase(unittest.TestCase):
         p.start()
         self.addCleanup(p.stop)
         self.home = self.cfg.home
-        self.cdir = os.path.join(self.home, ".config/cc-tgbot/bots/demo_bot")
-        self.sdir = os.path.join(self.home, ".local/state/cc-tgbot/bots/demo_bot")
+        self.cdir = os.path.join(self.home, ".config/zidos-pager/bots/demo_bot")
+        self.sdir = os.path.join(self.home, ".local/state/zidos-pager/bots/demo_bot")
 
     def add(self):
         r = cc.bots_add(self.cfg, {"token": TOKEN})
@@ -87,11 +87,11 @@ class RegistryTests(BotsCase):
         self.assertEqual(env["CC_RESPONDER_BRIEF"], self.cdir + "/brief.md")
         self.assertEqual(env["TG_API_BASE"], self.cfg.api_base)  # a bot talks to the same Bot API server as the console
         self.assertEqual((env["CC_RESPONDER_RATE"], env["CC_RESPONDER_ENGINE"]), ("30", "sdk"))
-        self.assertEqual((env["CC_TGBOT_STATE"], env["CC_RESPONDER_LOG"]),
+        self.assertEqual((env["ZIDOS_PAGER_STATE"], env["CC_RESPONDER_LOG"]),
                          (self.sdir + "/state.json", self.sdir + "/responder.jsonl"))
         self.assertEqual((env["CC_SDK_SOCKET"], env["CC_SDK_ENV"]), (self.sdir + "/sdk.sock", self.cdir + "/sdk.env"))
         self.assertNotIn("CC_RESPONDER_CHAT", env)
-        self.assertEqual(env["CC_RESPONDER_CWD"], os.path.join(self.home, "cc-tgbot-knowledge", "demo_bot"))  # never the home
+        self.assertEqual(env["CC_RESPONDER_CWD"], os.path.join(self.home, "zidos-pager-knowledge", "demo_bot"))  # never the home
         self.assertTrue(os.path.isdir(env["CC_RESPONDER_CWD"]))
         sdk = cc.env_read(self.cdir + "/sdk.env")
         self.assertEqual((sdk["CC_SDK_SOCKET"], sdk["CC_SDK_STATE"], sdk["CC_SDK_KEY_FILE"]),
@@ -260,7 +260,7 @@ class ServiceTests(unittest.TestCase):
 
     def test_linux_uses_systemd_user_templates(self):
         self.assertEqual(self.run_service("Linux", "start"), [["systemctl", "--user", "enable", "--now",
-                                                              "cc-tgbot-bot@demo_bot", "cc-tgbot-bot-sdk@demo_bot"]])
+                                                              "zidos-pager-bot@demo_bot", "zidos-pager-bot-sdk@demo_bot"]])
         self.assertEqual(self.run_service("Linux", "stop")[0][2:4], ["disable", "--now"])
         self.assertEqual(self.run_service("Linux", "restart")[0][2], "restart")
 
@@ -268,22 +268,22 @@ class ServiceTests(unittest.TestCase):
         import plistlib
         import tempfile
         with tempfile.TemporaryDirectory() as home, mock.patch.dict(os.environ, {"HOME": home}):
-            os.makedirs(home + "/.config/cc-tgbot/bots/demo_bot")
-            with open(home + "/.config/cc-tgbot/bots/demo_bot/sdk.env", "w") as f:
+            os.makedirs(home + "/.config/zidos-pager/bots/demo_bot")
+            with open(home + "/.config/zidos-pager/bots/demo_bot/sdk.env", "w") as f:
                 f.write("CC_SDK_MODEL=m1\nCC_CHAT_SITE=https://x.example\nOTHER=x\n")
             calls = self.run_service("Darwin", "start")
             self.assertTrue(any(c[:2] == ["launchctl", "bootstrap"] for c in calls))
-            sdk = home + "/Library/LaunchAgents/com.cctgbot.sdk.demo_bot.plist"
+            sdk = home + "/Library/LaunchAgents/dev.zidos.pager.sdk.demo_bot.plist"
             self.assertEqual(mode(sdk), 0o600)
             with open(sdk, "rb") as f:
                 doc = plistlib.load(f)
-            self.assertEqual(doc["Label"], "com.cctgbot.sdk.demo_bot")
+            self.assertEqual(doc["Label"], "dev.zidos.pager.sdk.demo_bot")
             self.assertEqual(doc["EnvironmentVariables"]["CC_SDK_MODEL"], "m1")
             self.assertNotIn("OTHER", doc["EnvironmentVariables"])
             self.assertEqual(doc["EnvironmentVariables"]["CC_CHAT_SITE"], "https://x.example")
-            with open(home + "/Library/LaunchAgents/com.cctgbot.bot.demo_bot.plist", "rb") as f:
+            with open(home + "/Library/LaunchAgents/dev.zidos.pager.bot.demo_bot.plist", "rb") as f:
                 env = plistlib.load(f)["EnvironmentVariables"]
-            self.assertTrue(env["CC_TGBOT_ENV"].endswith("/bots/demo_bot/env"))
+            self.assertTrue(env["ZIDOS_PAGER_ENV"].endswith("/bots/demo_bot/env"))
             self.assertTrue(env["PATH"].startswith(home + "/.local/bin:"))
             self.run_service("Darwin", "stop")
             self.assertFalse(os.path.exists(sdk))

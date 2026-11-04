@@ -1,11 +1,11 @@
 [Unit]
-Description=cc-tgbot: quick (trycloudflare.com) tunnel, the address is written to a file the bot reads
+Description=Zidos Pager: quick (trycloudflare.com) tunnel, the address is written to a file the bot reads
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 # Adjust the path to where you cloned the repository (%h is your home directory).
-ExecStart=%h/cc-tgbot/deploy/cc-tgbot-tunnel.sh
+ExecStart=%h/zidos-pager/deploy/zidos-pager-tunnel.sh
 Restart=always
 RestartSec=10
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin

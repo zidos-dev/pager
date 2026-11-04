@@ -4,7 +4,7 @@
   cc-send <path> [caption] [--session <id>]
 
 The session is taken from CLAUDE_JOB_DIR (its last component is the short id) or from --session.
-A request is queued for the bot (~/.local/state/cc-tgbot/outbox); the bot sends the file to the session topic.
+A request is queued for the bot (~/.local/state/zidos-pager/outbox); the bot sends the file to the session topic.
 Messages are in English; set CC_LANG=ru for Russian.
 """
 import argparse
@@ -42,7 +42,7 @@ def main(argv=None):
         print(MSG["nofile"] % path, file=sys.stderr)
         return 1
     home = os.environ.get("HOME") or os.path.expanduser("~")
-    outbox = os.environ.get("CC_OUTBOX") or os.path.join(home, ".local/state/cc-tgbot/outbox")
+    outbox = os.environ.get("CC_OUTBOX") or os.path.join(home, ".local/state/zidos-pager/outbox")
     os.makedirs(outbox, mode=0o700, exist_ok=True)
     name = "%d-%d.json" % (int(time.time() * 1000), os.getpid())
     tmp = os.path.join(outbox, "." + name + ".tmp")

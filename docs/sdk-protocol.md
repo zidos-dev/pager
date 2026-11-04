@@ -26,7 +26,7 @@ affected. SDK sessions are an extra kind that the bot starts on request.
 
 ## Transport
 
-- Unix socket, default `~/.local/state/cc-tgbot/sdk.sock`, mode `0600`.
+- Unix socket, default `~/.local/state/zidos-pager/sdk.sock`, mode `0600`.
 - Newline-delimited JSON, UTF-8, one connection per call (like herdr).
 - Request: `{"id": "1", "method": "session.list", "params": {...}}`
 - Reply: `{"id": "1", "result": {...}}` or
@@ -176,7 +176,7 @@ bot collects the answers of all steps locally and sends them once.
 
 ## Persistence and restarts
 
-- State file `~/.local/state/cc-tgbot/sdk.json` (mode `0600`): sessions
+- State file `~/.local/state/zidos-pager/sdk.json` (mode `0600`): sessions
   without the key and without message bodies. Written atomically on every
   state change.
 - On runner start, sessions that were `working` or `blocked` become
@@ -212,7 +212,7 @@ Live probes:
 ## Configuration
 
 The runner reads only its own environment. The systemd unit loads it from a
-separate file (`~/.config/cc-tgbot/sdk.env`), not from the bot's env file:
+separate file (`~/.config/zidos-pager/sdk.env`), not from the bot's env file:
 the bot's file holds the Telegram token, and everything in the runner's
 environment reaches the agent's tools. `CC_SDK_SOCKET` must be the same in
 both files.

@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="assets/logo/b-prompt.svg" width="96" height="96" alt="cc-tgbot logo">
+  <img src="assets/logo/b-prompt.svg" width="96" height="96" alt="Zidos Pager logo">
 </p>
 
-<h1 align="center">cc-tgbot</h1>
+<h1 align="center">Zidos Pager</h1>
 
 <p align="center">Your Claude Code background sessions, in your pocket.</p>
 
@@ -26,16 +26,16 @@
 
 | System | File | What happens |
 |---|---|---|
-| macOS (Apple silicon) | [cc-tgbot-Setup-macos-arm64.dmg](https://github.com/kavioavio/cc-tgbot/releases/latest/download/cc-tgbot-Setup-macos-arm64.dmg) | Open the app: it starts the install wizard in your browser |
-| macOS (Intel) | [cc-tgbot-Setup-macos-x86_64.dmg](https://github.com/kavioavio/cc-tgbot/releases/latest/download/cc-tgbot-Setup-macos-x86_64.dmg) | Same |
-| Windows | [cc-tgbot-Setup-windows.exe](https://github.com/kavioavio/cc-tgbot/releases/latest/download/cc-tgbot-Setup-windows.exe) | Starts the install wizard in your browser |
-| Linux / server | [cc-tgbot-linux.tar.gz](https://github.com/kavioavio/cc-tgbot/releases/latest/download/cc-tgbot-linux.tar.gz) or `git clone` | Unpack, then `python3 setup.py` |
+| macOS (Apple silicon) | [zidos-pager-Setup-macos-arm64.dmg](https://github.com/zidos-dev/pager/releases/latest/download/zidos-pager-Setup-macos-arm64.dmg) | Open the app: it starts the install wizard in your browser |
+| macOS (Intel) | [zidos-pager-Setup-macos-x86_64.dmg](https://github.com/zidos-dev/pager/releases/latest/download/zidos-pager-Setup-macos-x86_64.dmg) | Same |
+| Windows | [zidos-pager-Setup-windows.exe](https://github.com/zidos-dev/pager/releases/latest/download/zidos-pager-Setup-windows.exe) | Starts the install wizard in your browser |
+| Linux / server | [zidos-pager-linux.tar.gz](https://github.com/zidos-dev/pager/releases/latest/download/zidos-pager-linux.tar.gz) or `git clone` | Unpack, then `python3 setup.py` |
 
-macOS will say it cannot check the developer: open System Settings → Privacy & Security, press Open Anyway, or run `xattr -dr com.apple.quarantine "/Volumes/cc-tgbot Setup/cc-tgbot Setup.app"`. The app copies its own Python to `~/.local/share/cc-tgbot` (keep it: the bot runs on it).
+macOS will say it cannot check the developer: open System Settings → Privacy & Security, press Open Anyway, or run `xattr -dr com.apple.quarantine "/Volumes/Zidos Pager Setup/Zidos Pager Setup.app"`. The app copies its own Python to `~/.local/share/zidos-pager` (keep it: the bot runs on it).
 
 Windows: SmartScreen may warn about an unknown publisher: More info → Run anyway. The bot itself runs in WSL2 (the wizard installs it there).
 
-Check the files against [SHA256SUMS](https://github.com/kavioavio/cc-tgbot/releases/latest/download/SHA256SUMS).
+Check the files against [SHA256SUMS](https://github.com/zidos-dev/pager/releases/latest/download/SHA256SUMS).
 
 Control your [Claude Code](https://docs.claude.com/en/docs/claude-code) background sessions from your phone:
 a Telegram bot with a `claude agents`-style control panel, per-session topics, a mini-app / installable PWA
@@ -45,7 +45,7 @@ It also runs [group assistants](#several-bots): any number of bots, each with it
 folder or site and model (DeepSeek, OpenRouter, GLM, Kimi, Claude or Codex), set up in the wizard or the mini-app.
 
 > **Not affiliated with Anthropic.** This is an independent community project. "Claude" and "Claude Code"
-> are trademarks of their respective owners. cc-tgbot relies on Claude Code's internal files (see
+> are trademarks of their respective owners. Zidos Pager relies on Claude Code's internal files (see
 > [Limitations](#limitations)) and may break when Claude Code changes.
 
 ### In Telegram
@@ -91,22 +91,22 @@ folder or site and model (DeepSeek, OpenRouter, GLM, Kimi, Claude or Codex), set
 
 ## Quick start
 
-**On a Mac, from the archive `cc-tgbot.tar.gz`:** double-click it in Finder, move the `cc-tgbot` folder to your home
+**On a Mac, from the archive `zidos-pager.tar.gz`:** double-click it in Finder, move the `zidos-pager` folder to your home
 folder, open Terminal (⌘ + Space, «Terminal») and run:
 
 ```bash
-cd ~/cc-tgbot && python3 setup.py
+cd ~/zidos-pager && python3 setup.py
 ```
 
 If macOS offers to install the command line tools, accept and run the command again.
 
 **On Windows** the bot runs inside WSL2 (the Linux built into Windows): only there is the sandbox the bot runs guests'
 commands in. Install Python from [python.org](https://www.python.org/downloads/windows/), unpack the archive and run
-`cd $HOME\cc-tgbot; py setup.py` in PowerShell. Without WSL the wizard shows `wsl --install -d Ubuntu` (a reboot
+`cd $HOME\zidos-pager; py setup.py` in PowerShell. Without WSL the wizard shows `wsl --install -d Ubuntu` (a reboot
 follows). The wizard adds a Windows task that keeps the bot running without an open window. «Server over SSH» on
 Windows works with an SSH key only.
 
-**From the repository:** `git clone https://github.com/kavioavio/cc-tgbot ~/cc-tgbot && cd ~/cc-tgbot && python3 setup.py`.
+**From the repository:** `git clone https://github.com/zidos-dev/pager ~/zidos-pager && cd ~/zidos-pager && python3 setup.py`.
 
 A browser opens with the wizard. It runs on your computer only and publishes nothing. Seven steps, the last one optional:
 
@@ -129,7 +129,7 @@ says so in step 1: install it from [python.org](https://www.python.org/downloads
 **The bot answers while the Mac is awake.** On a MacBook: System Settings → Battery → Options → «Prevent automatic
 sleeping on power adapter when the display is off». With the lid closed it sleeps anyway (unless an external display
 is connected). For 24/7 use a server.
-Services go to `~/Library/LaunchAgents` (`com.cctgbot.bot`, `com.cctgbot.sdk`), logs to `~/Library/Logs/cc-tgbot`.
+Services go to `~/Library/LaunchAgents` (`dev.zidos.pager.bot`, `dev.zidos.pager.sdk`), logs to `~/Library/Logs/zidos-pager`.
 
 **On a Linux server you need:** `python3` 3.10 or newer, `bubblewrap`, `socat` and a systemd user session. If
 something is missing, the wizard shows the exact install command.
@@ -151,23 +151,25 @@ mini-app (the robot button: «Bots»); remove them there too.
 - **Personality.** Describe the project in a few lines and press «Generate»: the bot's own model writes its name, short
   description, role, tone and rules. Edit any of it by hand. The name and descriptions are set in Telegram too.
 - **Context.** The folder the bot answers from (a git repository is pulled before answers), an optional site it may open,
-  the group it answers in. A new bot starts with an empty folder `~/cc-tgbot-knowledge/<bot>`, never your home.
+  the group it answers in. A new bot starts with an empty folder `~/zidos-pager-knowledge/<bot>`, never your home.
 - **Model.** Every bot has its own provider and key; one bot's key is never visible to another.
 
-Each bot runs as its own pair of services (`cc-tgbot-bot@<bot>`, `cc-tgbot-bot-sdk@<bot>`; on a Mac
-`com.cctgbot.bot.<bot>`, `com.cctgbot.sdk.<bot>`). Settings live in `~/.config/cc-tgbot/bots/<bot>/`. Write to a bot in
+Each bot runs as its own pair of services (`zidos-pager-bot@<bot>`, `zidos-pager-bot-sdk@<bot>`; on a Mac
+`dev.zidos.pager.bot.<bot>`, `dev.zidos.pager.sdk.<bot>`). Settings live in `~/.config/zidos-pager/bots/<bot>/`. Write to a bot in
 private to see its status; it obeys the same owner list as the main bot. The same actions from the command line:
-`python3 cc_tgbot.py bots list|add|save|persona|remove` (JSON on stdin).
+`python3 zidos_pager.py bots list|add|save|persona|remove` (JSON on stdin).
 
 Updating an older install: run `python3 setup.py` once more, it installs the bot service templates. Removing a
-bot deletes its settings and state, not its folder in `~/cc-tgbot-knowledge`.
+bot deletes its settings and state, not its folder in `~/zidos-pager-knowledge`.
+
+> Upgrading from cc-tgbot (the legacy name): run the installer with `--update`; the wizard does this itself. It moves `~/.config/cc-tgbot`, `~/.local/share/cc-tgbot` and `~/.local/state/cc-tgbot` to `zidos-pager` and leaves a link at the legacy place, so paths in your old env files keep working, then replaces the `cc-tgbot*` services or `com.cctgbot.*` LaunchAgents with the new ones. The legacy `CC_TGBOT_ENV` and `CC_TGBOT_STATE` variables still work.
 
 ## Configuration
 
-All settings are in `~/.config/cc-tgbot/env` (see [`env.example`](env.example) for every variable with comments):
+All settings are in `~/.config/zidos-pager/env` (see [`env.example`](env.example) for every variable with comments):
 `TG_BOT_TOKEN`, `TG_ALLOWED_USERS`, `CC_LANG`, `CC_DEFAULT_CWD`, `CC_CLAUDE_BIN`, `CC_JOBS_DIR`, `CC_WEBAPP_URL`,
 `CC_WEBAPP_PORT`, `CC_VAPID_SUB`, `CC_TOPIC_TTL_HOURS`, `CC_RATE_FILE`, `CC_CHAIN_GENERIC_DIRS` and a few more.
-Bot state lives in `~/.local/state/cc-tgbot/state.json` (mode 0600).
+Bot state lives in `~/.local/state/zidos-pager/state.json` (mode 0600).
 
 Commands: `/s` (recreate the panel), `/new`, `/quota`, `/screen`, `/stop`, `/pwa`, `/devices`, `/help`.
 

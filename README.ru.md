@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="assets/logo/b-prompt.svg" width="96" height="96" alt="cc-tgbot logo">
+  <img src="assets/logo/b-prompt.svg" width="96" height="96" alt="Zidos Pager logo">
 </p>
 
-<h1 align="center">cc-tgbot</h1>
+<h1 align="center">Zidos Pager</h1>
 
 <p align="center">Фоновые сессии Claude Code — в кармане.</p>
 
@@ -26,16 +26,16 @@
 
 | Система | Файл | Что будет |
 |---|---|---|
-| macOS (Apple silicon) | [cc-tgbot-Setup-macos-arm64.dmg](https://github.com/kavioavio/cc-tgbot/releases/latest/download/cc-tgbot-Setup-macos-arm64.dmg) | Откройте приложение: в браузере запустится мастер установки |
-| macOS (Intel) | [cc-tgbot-Setup-macos-x86_64.dmg](https://github.com/kavioavio/cc-tgbot/releases/latest/download/cc-tgbot-Setup-macos-x86_64.dmg) | То же |
-| Windows | [cc-tgbot-Setup-windows.exe](https://github.com/kavioavio/cc-tgbot/releases/latest/download/cc-tgbot-Setup-windows.exe) | В браузере запустится мастер установки |
-| Linux / сервер | [cc-tgbot-linux.tar.gz](https://github.com/kavioavio/cc-tgbot/releases/latest/download/cc-tgbot-linux.tar.gz) или `git clone` | Распакуйте и выполните `python3 setup.py` |
+| macOS (Apple silicon) | [zidos-pager-Setup-macos-arm64.dmg](https://github.com/zidos-dev/pager/releases/latest/download/zidos-pager-Setup-macos-arm64.dmg) | Откройте приложение: в браузере запустится мастер установки |
+| macOS (Intel) | [zidos-pager-Setup-macos-x86_64.dmg](https://github.com/zidos-dev/pager/releases/latest/download/zidos-pager-Setup-macos-x86_64.dmg) | То же |
+| Windows | [zidos-pager-Setup-windows.exe](https://github.com/zidos-dev/pager/releases/latest/download/zidos-pager-Setup-windows.exe) | В браузере запустится мастер установки |
+| Linux / сервер | [zidos-pager-linux.tar.gz](https://github.com/zidos-dev/pager/releases/latest/download/zidos-pager-linux.tar.gz) или `git clone` | Распакуйте и выполните `python3 setup.py` |
 
-macOS скажет, что не может проверить разработчика: откройте Системные настройки → Конфиденциальность и безопасность и нажмите «Всё равно открыть», либо выполните `xattr -dr com.apple.quarantine "/Volumes/cc-tgbot Setup/cc-tgbot Setup.app"`. Приложение копирует свой Python в `~/.local/share/cc-tgbot` — не удаляйте его, бот работает на нём.
+macOS скажет, что не может проверить разработчика: откройте Системные настройки → Конфиденциальность и безопасность и нажмите «Всё равно открыть», либо выполните `xattr -dr com.apple.quarantine "/Volumes/Zidos Pager Setup/Zidos Pager Setup.app"`. Приложение копирует свой Python в `~/.local/share/zidos-pager` — не удаляйте его, бот работает на нём.
 
 Windows: SmartScreen может предупредить о неизвестном издателе: «Подробнее» → «Выполнить в любом случае». Сам бот работает в WSL2 (мастер ставит его туда).
 
-Файлы можно сверить по [SHA256SUMS](https://github.com/kavioavio/cc-tgbot/releases/latest/download/SHA256SUMS).
+Файлы можно сверить по [SHA256SUMS](https://github.com/zidos-dev/pager/releases/latest/download/SHA256SUMS).
 
 Управляйте фоновыми сессиями [Claude Code](https://docs.claude.com/en/docs/claude-code) с телефона: Telegram-бот
 с пультом в духе `claude agents`, топиками под каждую сессию, мини-аппом / устанавливаемым PWA и push-уведомлениями.
@@ -45,7 +45,7 @@ Windows: SmartScreen может предупредить о неизвестно
 проекта или сайт и модель (DeepSeek, OpenRouter, GLM, Kimi, Claude или Codex). Настраиваются в мастере или в мини-аппе.
 
 > **Проект не связан с Anthropic.** Это независимая разработка сообщества. «Claude» и «Claude Code» — товарные знаки
-> их владельцев. cc-tgbot опирается на внутренние файлы Claude Code (см. [Ограничения](#ограничения)) и может
+> их владельцев. Zidos Pager опирается на внутренние файлы Claude Code (см. [Ограничения](#ограничения)) и может
 > ломаться при его обновлениях.
 
 ### В Telegram
@@ -90,24 +90,24 @@ Windows: SmartScreen может предупредить о неизвестно
 
 ## Быстрый старт
 
-**На Mac, если у вас архив `cc-tgbot.tar.gz`:**
+**На Mac, если у вас архив `zidos-pager.tar.gz`:**
 
-1. Дважды щёлкните архив в Finder: появится папка `cc-tgbot`. Перенесите её в свою домашнюю папку (значок домика
+1. Дважды щёлкните архив в Finder: появится папка `zidos-pager`. Перенесите её в свою домашнюю папку (значок домика
    в боковой панели Finder).
 2. Откройте Терминал: ⌘ + пробел, наберите «Терминал», Enter.
 3. Вставьте и нажмите Enter:
    ```bash
-   cd ~/cc-tgbot && python3 setup.py
+   cd ~/zidos-pager && python3 setup.py
    ```
    Если macOS предложит установить «инструменты командной строки», согласитесь и потом повторите команду.
 
 **На Windows** бот работает внутри WSL2 — встроенного в Windows Linux: только там есть песочница, в которой бот
 выполняет команды гостей. Установите Python с [python.org](https://www.python.org/downloads/windows/), распакуйте
-архив и запустите в PowerShell `cd $HOME\cc-tgbot; py setup.py`. Если WSL ещё нет, мастер покажет команду
+архив и запустите в PowerShell `cd $HOME\zidos-pager; py setup.py`. Если WSL ещё нет, мастер покажет команду
 `wsl --install -d Ubuntu` (после неё нужна перезагрузка). Мастер сам добавит задачу Windows, чтобы бот работал без
 открытого окна. Режим «Сервер по SSH» на Windows работает только по SSH-ключу.
 
-**Из репозитория:** `git clone https://github.com/kavioavio/cc-tgbot ~/cc-tgbot && cd ~/cc-tgbot && python3 setup.py`.
+**Из репозитория:** `git clone https://github.com/zidos-dev/pager ~/zidos-pager && cd ~/zidos-pager && python3 setup.py`.
 
 Откроется браузер с мастером. Он работает только на вашем компьютере, ничего не публикует. Семь шагов, последний необязательный:
 
@@ -132,8 +132,8 @@ Windows: SmartScreen может предупредить о неизвестно
 
 **Бот отвечает, пока Mac не спит.** На MacBook: Системные настройки → Аккумулятор → Параметры → «Предотвращать
 автоматический переход в режим сна при питании от сети, когда дисплей выключен». С закрытой крышкой Mac засыпает
-всё равно (кроме работы с внешним монитором). Для работы 24/7 лучше сервер. Службы ставятся в `~/Library/LaunchAgents` (`com.cctgbot.bot`, `com.cctgbot.sdk`), журналы — в
-`~/Library/Logs/cc-tgbot`.
+всё равно (кроме работы с внешним монитором). Для работы 24/7 лучше сервер. Службы ставятся в `~/Library/LaunchAgents` (`dev.zidos.pager.bot`, `dev.zidos.pager.sdk`), журналы — в
+`~/Library/Logs/zidos-pager`.
 
 **На Linux-сервере нужно:** `python3` 3.10 или новее, `bubblewrap`, `socat` и пользовательская сессия systemd.
 Если чего-то не хватает, мастер покажет точную команду установки.
@@ -156,23 +156,25 @@ Windows: SmartScreen может предупредить о неизвестно
   описание, роль, тон и правила. Всё можно поправить руками. Имя и описания попадают и в Telegram.
 - **Контекст.** Папка, по которой бот отвечает (git-репозиторий перед ответом обновляется), сайт, который ему можно
   открывать (необязательно), и группа, где он отвечает. Новый бот начинает с пустой папки
-  `~/cc-tgbot-knowledge/<бот>`, а не с вашего домашнего каталога.
+  `~/zidos-pager-knowledge/<бот>`, а не с вашего домашнего каталога.
 - **Модель.** У каждого бота свой провайдер и ключ; ключ одного бота другому не виден.
 
-Каждый бот работает отдельной парой служб (`cc-tgbot-bot@<бот>`, `cc-tgbot-bot-sdk@<бот>`; на Mac —
-`com.cctgbot.bot.<бот>`, `com.cctgbot.sdk.<бот>`). Настройки лежат в `~/.config/cc-tgbot/bots/<бот>/`. Напишите боту в
+Каждый бот работает отдельной парой служб (`zidos-pager-bot@<бот>`, `zidos-pager-bot-sdk@<бот>`; на Mac —
+`dev.zidos.pager.bot.<бот>`, `dev.zidos.pager.sdk.<бот>`). Настройки лежат в `~/.config/zidos-pager/bots/<бот>/`. Напишите боту в
 личку, чтобы увидеть его состояние; слушается он того же владельца, что и основной бот. Те же действия из командной
-строки: `python3 cc_tgbot.py bots list|add|save|persona|remove` (JSON на вход).
+строки: `python3 zidos_pager.py bots list|add|save|persona|remove` (JSON на вход).
 
 Если бот стоял до этой версии, запустите `python3 setup.py` ещё раз: мастер поставит шаблоны служб для ботов.
-Удаление бота стирает его настройки и состояние, но не папку в `~/cc-tgbot-knowledge`.
+Удаление бота стирает его настройки и состояние, но не папку в `~/zidos-pager-knowledge`.
+
+> Переход со старого имени cc-tgbot (legacy): запустите установщик с `--update`, мастер делает это сам. Он перенесёт `~/.config/cc-tgbot`, `~/.local/share/cc-tgbot` и `~/.local/state/cc-tgbot` в `zidos-pager` и оставит на старом месте ссылку, поэтому пути в прежних env-файлах продолжат работать, а затем заменит службы `cc-tgbot*` или LaunchAgents `com.cctgbot.*` новыми. Переменные `CC_TGBOT_ENV` и `CC_TGBOT_STATE` тоже работают.
 
 ## Настройка
 
-Все параметры — в `~/.config/cc-tgbot/env` (все переменные с комментариями — в [`env.example`](env.example)):
+Все параметры — в `~/.config/zidos-pager/env` (все переменные с комментариями — в [`env.example`](env.example)):
 `TG_BOT_TOKEN`, `TG_ALLOWED_USERS`, `CC_LANG`, `CC_DEFAULT_CWD`, `CC_CLAUDE_BIN`, `CC_JOBS_DIR`, `CC_WEBAPP_URL`,
 `CC_WEBAPP_PORT`, `CC_VAPID_SUB`, `CC_TOPIC_TTL_HOURS`, `CC_RATE_FILE`, `CC_CHAIN_GENERIC_DIRS` и другие.
-Состояние бота — `~/.local/state/cc-tgbot/state.json` (права 0600).
+Состояние бота — `~/.local/state/zidos-pager/state.json` (права 0600).
 
 Команды: `/s` (пересоздать пульт), `/new`, `/quota`, `/screen`, `/stop`, `/pwa`, `/devices`, `/help`.
 

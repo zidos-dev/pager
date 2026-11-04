@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""cc-tgbot install wizard: a local web page (127.0.0.1) that installs the bot on this machine or over ssh.
+"""Zidos Pager install wizard: a local web page (127.0.0.1) that installs the bot on this machine or over ssh.
 
 Secrets (bot token, API key) are held in memory, sent to the target only over stdin, never put in argv or logs.
 """
@@ -26,13 +26,15 @@ from urllib.parse import parse_qs, urlparse
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
-from cc_tgbot import MODEL_PRESETS, model_check  # noqa: E402  (stdlib-only module, no side effects)
+from zidos_pager import MODEL_PRESETS, model_check  # noqa: E402  (stdlib-only module, no side effects)
 
 WEB = ROOT / "assets" / "wizard"
-FIXED = ["cc_tgbot.py", "sdk_runner.py", "stt_runner.py", "LICENSE", "README*", "env.example", "deploy", "assets", "docs"]
-CONF = "$HOME/.config/cc-tgbot"
+FIXED = ["zidos_pager.py", "sdk_runner.py", "stt_runner.py", "LICENSE", "README*", "env.example", "deploy", "assets", "docs"]
+CONF = "$HOME/.config/zidos-pager"
 HOST_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.:@-]*")
-LAUNCHD = "com.cctgbot.bot"
+LEGACY_EXISTING_CHECK = ("test -f ~/.config/systemd/user/zidos-pager.service || test -f ~/Library/LaunchAgents/dev.zidos.pager.bot.plist"
+                         " || test -f ~/.config/systemd/user/cc-tgbot.service || test -f ~/Library/LaunchAgents/com.cctgbot.bot.plist")  # legacy
+LAUNCHD = "dev.zidos.pager.bot"
 
 # One python3 -c one-liner run on the target: line 1 of stdin = token, line 2 = JSON params.
 TG_CODE = (
@@ -57,7 +59,7 @@ echo py=$best
 for c in bwrap socat python3 brew; do command -v $c >/dev/null 2>&1 || echo no=$c; done
 test -d /run/systemd/system && echo systemd=1
 { [ "$(id -u)" = 0 ] || sudo -n true 2>/dev/null; } && echo sudo=1
-{ test -f ~/.config/systemd/user/cc-tgbot.service || test -f ~/Library/LaunchAgents/com.cctgbot.bot.plist; } && echo existing=1
+{ test -f ~/.config/systemd/user/zidos-pager.service || test -f ~/Library/LaunchAgents/dev.zidos.pager.bot.plist || test -f ~/.config/systemd/user/cc-tgbot.service || test -f ~/Library/LaunchAgents/com.cctgbot.bot.plist; } && echo existing=1  # legacy names too
 true
 """
 
@@ -342,7 +344,7 @@ class Wizard:
         if not (self.job["done"] and self.job["ok"]):
             return {"ok": False, "error": "notinstalled"}
         # same PATH as PROBE: a Mac's Homebrew python3 first
-        cmd = f'export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH" XDG_RUNTIME_DIR="${{XDG_RUNTIME_DIR:-/run/user/$(id -u)}}"; cd ~/cc-tgbot && python3 cc_tgbot.py bots {sub}'
+        cmd = f'export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH" XDG_RUNTIME_DIR="${{XDG_RUNTIME_DIR:-/run/user/$(id -u)}}"; cd ~/zidos-pager && python3 zidos_pager.py bots {sub}'
         stdin = None if body is None else json.dumps(body).encode()
         rc, out = self.target.run(cmd, stdin, 180)
         try:
@@ -380,8 +382,8 @@ class Wizard:
 
         try:
             dar = t.os == "Darwin"
-            existing = t.run("test -f ~/.config/systemd/user/cc-tgbot.service || test -f ~/Library/LaunchAgents/com.cctgbot.bot.plist")[0] == 0
-            step("upload code", "mkdir -p ~/cc-tgbot && tar -xzf - -C ~/cc-tgbot", code_tar())
+            existing = t.run(LEGACY_EXISTING_CHECK)[0] == 0
+            step("upload code", "mkdir -p ~/zidos-pager && tar -xzf - -C ~/zidos-pager", code_tar())
             tokf, keyf, briefp = f'"{CONF}/token.env"', f'"{CONF}/sdk-key.env"', f'"{CONF}/brief.md"'
             step("write token", *put(tokf, f"TG_BOT_TOKEN={self.token}\n"))
             if "key" in m:
@@ -394,7 +396,7 @@ class Wizard:
                 fp = Path(folder).expanduser()
                 if not fp.is_dir():
                     raise RuntimeError("folder is not a directory")
-                step("upload folder", "mkdir -p ~/cc-tgbot-knowledge && tar -xzf - -C ~/cc-tgbot-knowledge",
+                step("upload folder", "mkdir -p ~/zidos-pager-knowledge && tar -xzf - -C ~/zidos-pager-knowledge",
                      tar_files(fp, [p.name for p in fp.iterdir()]))
             script = os.environ.get("WIZARD_SETUP_SH") or ("deploy/setup-macos.sh" if dar else "deploy/setup.sh")
             args = ["--non-interactive", "--token-file", tokf, "--users", shlex.quote(str(self.owner["id"]))]
@@ -410,12 +412,12 @@ class Wizard:
             if b.get("group_id"):
                 envs.append(q("CC_RESPONDER_CHAT", b["group_id"]))
             if b.get("group_id"):  # no folder given: an empty one, or the group assistant stays off
-                step("knowledge folder", "mkdir -p ~/cc-tgbot-knowledge")
-                envs.append('"CC_RESPONDER_CWD=$HOME/cc-tgbot-knowledge"')
+                step("knowledge folder", "mkdir -p ~/zidos-pager-knowledge")
+                envs.append('"CC_RESPONDER_CWD=$HOME/zidos-pager-knowledge"')
             if b.get("name"):
                 envs.append(q("CC_RESPONDER_NAME", b["name"]))
             if brief:
-                envs.append('"CC_RESPONDER_BRIEF=$HOME/.config/cc-tgbot/brief.md"')
+                envs.append('"CC_RESPONDER_BRIEF=$HOME/.config/zidos-pager/brief.md"')
             if "key" not in m:
                 envs.append("CC_RESPONDER_ENGINE=codex")
             if os.environ.get("TG_API_BASE"):  # a test Telegram: the installed bot must use it too
@@ -424,16 +426,16 @@ class Wizard:
                 args += ["--env", e]
             if existing:
                 args.append("--update")
-            step("run setup", f"cd ~/cc-tgbot && bash {script} " + " ".join(args), timeout=1800)
+            step("run setup", f"cd ~/zidos-pager && bash {script} " + " ".join(args), timeout=1800)
             if dar:
                 chk = f"launchctl print gui/$(id -u)/{LAUNCHD} >/dev/null"
             else:
-                chk = "export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}; systemctl --user is-active cc-tgbot"
+                chk = "export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}; systemctl --user is-active zidos-pager"
             step("check service", chk, timeout=60)
             log("send test message")
             ru = b.get("lang") == "ru"
             r = self.tg("sendMessage", {"chat_id": self.owner["id"],
-                                        "text": "cc-tgbot установлен и работает." if ru else "cc-tgbot is installed and running."})
+                                        "text": "Zidos Pager установлен и работает." if ru else "Zidos Pager is installed and running."})
             if not r.get("ok"):
                 raise RuntimeError("test message failed")
             if t.mode == "wsl":
@@ -447,19 +449,19 @@ class Wizard:
 
 def _wsl_keepalive(self, t, log):
     """Keep WSL alive without an open terminal: hidden `sleep infinity` started at logon by a scheduled task."""
-    d = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / "cc-tgbot"
+    d = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / "zidos-pager"
     vbs = d / "wsl-keepalive.vbs"
     log("keep WSL running: " + str(vbs))
     d.mkdir(parents=True, exist_ok=True)
     vbs.write_text('CreateObject("WScript.Shell").Run "wsl.exe -d %s --exec sleep infinity", 0, False\r\n' % t.distro)
-    for title, args in (("schtasks create", ["/Create", "/TN", "cc-tgbot-wsl", "/TR", f'wscript.exe "{vbs}"',
+    for title, args in (("schtasks create", ["/Create", "/TN", "zidos-pager-wsl", "/TR", f'wscript.exe "{vbs}"',
                                              "/SC", "ONLOGON", "/RL", "LIMITED", "/F"]),
-                        ("schtasks run", ["/Run", "/TN", "cc-tgbot-wsl"])):
+                        ("schtasks run", ["/Run", "/TN", "zidos-pager-wsl"])):
         log(title)
         p = subprocess.run(["schtasks", *args], capture_output=True, timeout=60)
         if p.returncode:
             raise RuntimeError(f"{title}: exit {p.returncode}")
-    log("undo: schtasks /Delete /TN cc-tgbot-wsl /F")
+    log("undo: schtasks /Delete /TN zidos-pager-wsl /F")
 
 
 Wizard._wsl_keepalive = _wsl_keepalive
@@ -540,13 +542,13 @@ def make_server(port=0):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="cc-tgbot install wizard")
+    ap = argparse.ArgumentParser(description="Zidos Pager install wizard")
     ap.add_argument("--no-browser", action="store_true")
     ap.add_argument("--port", type=int, default=0)
     a = ap.parse_args()
     srv = make_server(a.port)
     url = f"http://127.0.0.1:{srv.server_port}/?t={srv.token}"
-    print("cc-tgbot wizard:", url, flush=True)
+    print("Zidos Pager wizard:", url, flush=True)
     if not a.no_browser:
         webbrowser.open(url)
     try:

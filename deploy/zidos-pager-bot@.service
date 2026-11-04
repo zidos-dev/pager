@@ -1,0 +1,15 @@
+[Unit]
+Description=Zidos Pager: group assistant bot %i (responder role)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# One instance per bot: %i is the slug of ~/.config/zidos-pager/bots/<slug>/ (the registry that `zidos_pager.py bots` writes).
+Environment=ZIDOS_PAGER_ENV=%h/.config/zidos-pager/bots/%i/env
+ExecStart=/usr/bin/python3 -u %h/zidos-pager/zidos_pager.py
+Restart=always
+RestartSec=5
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=default.target

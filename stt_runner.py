@@ -88,7 +88,7 @@ class Config:
 
     def __init__(self, socket_path=None):
         self.socket = os.path.expanduser(socket_path or os.environ.get("CC_STT_SOCKET")
-                                         or "~/.local/state/cc-tgbot/stt.sock")
+                                         or "~/.local/state/zidos-pager/stt.sock")
         engines = [e.strip().lower() for e in (os.environ.get("CC_STT_ENGINES") or "local").split(",")]
         self.engines = []
         for e in engines:
@@ -296,7 +296,7 @@ class CloudEngine:
             fields["language"] = job.lang
         ctype, body = multipart(fields, "audio.ogg", data)
         headers = {"Authorization": "Bearer " + key, "Content-Type": ctype,
-                   "Accept": "application/json", "User-Agent": "cc-tgbot-stt/" + VERSION}
+                   "Accept": "application/json", "User-Agent": "zidos-pager-stt/" + VERSION}
         try:
             raw = http_post(self.url, headers, body, self.cfg.timeout)
         except urllib.error.HTTPError as e:

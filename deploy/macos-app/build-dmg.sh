@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build dist/cc-tgbot-Setup-macos-ARCH.dmg (run on macOS, from the repo): bash deploy/macos-app/build-dmg.sh arm64|x86_64
+# Build dist/zidos-pager-Setup-macos-ARCH.dmg (run on macOS, from the repo): bash deploy/macos-app/build-dmg.sh arm64|x86_64
 set -euo pipefail
 ARCH="${1:-}"
 PBS_TAG=20261026
@@ -25,11 +25,11 @@ if [ "$GOT" != "$PBS_SHA" ]; then
   exit 1
 fi
 
-APP="$WORK/dmg/cc-tgbot Setup.app"
+APP="$WORK/dmg/Zidos Pager Setup.app"
 PAY="$APP/Contents/Resources/payload"
-mkdir -p "$APP/Contents/MacOS" "$PAY/cc-tgbot"
+mkdir -p "$APP/Contents/MacOS" "$PAY/zidos-pager"
 tar -xzf "$WORK/python.tar.gz" -C "$PAY"   # -> payload/python
-git -C "$REPO" archive HEAD | tar -x -C "$PAY/cc-tgbot" --exclude='tests' --exclude='.github'
+git -C "$REPO" archive HEAD | tar -x -C "$PAY/zidos-pager" --exclude='tests' --exclude='.github'
 echo "$(git -C "$REPO" rev-parse HEAD)-${PBS_PY}+${PBS_TAG}" > "$PAY/VERSION"
 cp "$REPO/deploy/macos-app/launcher.sh" "$APP/Contents/MacOS/launcher"
 chmod +x "$APP/Contents/MacOS/launcher"
@@ -38,21 +38,21 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>CFBundleExecutable</key><string>launcher</string>
-<key>CFBundleIdentifier</key><string>io.github.kavioavio.cctgbot.setup</string>
-<key>CFBundleName</key><string>cc-tgbot Setup</string>
+<key>CFBundleIdentifier</key><string>io.github.zidosdev.pager.setup</string>
+<key>CFBundleName</key><string>Zidos Pager Setup</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleVersion</key><string>1</string>
 <key>LSMinimumSystemVersion</key><string>11.0</string>
 </dict></plist>
 PLIST
 cat > "$WORK/dmg/README.txt" <<'TXT'
-Double-click "cc-tgbot Setup". If macOS says it cannot check the developer:
+Double-click "Zidos Pager Setup". If macOS says it cannot check the developer:
 System Settings > Privacy & Security > Open Anyway, or in Terminal:
-  xattr -dr com.apple.quarantine "/Volumes/cc-tgbot Setup/cc-tgbot Setup.app"
-The app copies its own Python to ~/.local/share/cc-tgbot (keep it: the bot runs on it).
+  xattr -dr com.apple.quarantine "/Volumes/Zidos Pager Setup/Zidos Pager Setup.app"
+The app copies its own Python to ~/.local/share/zidos-pager (keep it: the bot runs on it).
 TXT
 
 codesign --force --deep -s - "$APP"
-rm -f "$OUT/cc-tgbot-Setup-macos-$ARCH.dmg"
-hdiutil create -volname "cc-tgbot Setup" -srcfolder "$WORK/dmg" -ov -format UDZO "$OUT/cc-tgbot-Setup-macos-$ARCH.dmg"
-echo "built $OUT/cc-tgbot-Setup-macos-$ARCH.dmg"
+rm -f "$OUT/zidos-pager-Setup-macos-$ARCH.dmg"
+hdiutil create -volname "Zidos Pager Setup" -srcfolder "$WORK/dmg" -ov -format UDZO "$OUT/zidos-pager-Setup-macos-$ARCH.dmg"
+echo "built $OUT/zidos-pager-Setup-macos-$ARCH.dmg"

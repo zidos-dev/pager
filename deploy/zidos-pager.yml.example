@@ -1,0 +1,13 @@
+# Named Cloudflare tunnel for Zidos Pager (copy to ~/.cloudflared/zidos-pager.yml and fill in the placeholders).
+#
+#   cloudflared tunnel login
+#   cloudflared tunnel create zidos-pager             # prints <TUNNEL_UUID>, writes ~/.cloudflared/<TUNNEL_UUID>.json
+#   cloudflared tunnel route dns zidos-pager cc.example.com
+#
+# Then set CC_WEBAPP_URL=https://cc.example.com in ~/.config/zidos-pager/env.
+tunnel: <TUNNEL_UUID>
+credentials-file: /home/<USER>/.cloudflared/<TUNNEL_UUID>.json
+ingress:
+  - hostname: cc.example.com
+    service: http://127.0.0.1:18795   # CC_WEBAPP_PORT
+  - service: http_status:404

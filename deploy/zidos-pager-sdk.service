@@ -1,5 +1,5 @@
 [Unit]
-Description=cc-tgbot: SDK runner for headless Claude Code sessions
+Description=Zidos Pager: SDK runner for headless Claude Code sessions
 After=network-online.target
 Wants=network-online.target
 
@@ -8,8 +8,8 @@ Wants=network-online.target
 # (python -m venv .venv-sdk && .venv-sdk/bin/pip install claude-agent-sdk); %h is your home directory.
 # The runner reads only its own environment, loaded from sdk.env (not from the bot's env file: that one holds
 # the Telegram token, and everything in the runner's environment reaches the agent's tools). See env.example.
-EnvironmentFile=-%h/.config/cc-tgbot/sdk.env
-ExecStart=%h/cc-tgbot/.venv-sdk/bin/python -u %h/cc-tgbot/sdk_runner.py serve
+EnvironmentFile=-%h/.config/zidos-pager/sdk.env
+ExecStart=%h/zidos-pager/.venv-sdk/bin/python -u %h/zidos-pager/sdk_runner.py serve
 Restart=on-failure
 RestartSec=5
 # Kill the bundled CLI children together with the runner.

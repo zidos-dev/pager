@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
-<title>cc-tgbot — установка</title>
+<title>Zidos Pager — установка</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600&display=swap" rel="stylesheet">
@@ -450,7 +450,7 @@ $("b-install").addEventListener("click", () => busy($("b-install"), "installing"
   }
 }).then(x => { if (x) msg("msg-install", err("net")); if ($("b-install").dataset.t === "retry") $("b-install").textContent = t("retry"); }));
 
-/* 7 more bots: every call is one CLI call on the target (cc_tgbot.py bots ...); the registry is not ours */
+/* 7 more bots: every call is one CLI call on the target (zidos_pager.py bots ...); the registry is not ours */
 const M = {slug: "", username: "", provider: "", model: "", sub: 0, group: null, groups: [], bots: [], loop: 0};
 const esc = x => String(x).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const mFill = (id, v) => { $(id).value = v || ""; };
