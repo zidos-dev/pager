@@ -14,6 +14,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#f1f2f5" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0f0f0f" media="(prefers-color-scheme: dark)">
+<link rel="preload" href="/app/onest-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/app/onest-cyrillic.woff2" as="font" type="font/woff2" crossorigin>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
 @font-face{font-family:"Onest";font-style:normal;font-weight:100 900;font-display:swap;src:url(onest-cyrillic.woff2) format("woff2");unicode-range:U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116}
@@ -489,6 +491,7 @@ textarea.field{min-height:120px;resize:vertical}
     <label class="m-l" id="m-base-l" for="m-base" hidden data-i18n="modelBase">Address</label>
     <input class="field" id="m-base" inputmode="url" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="https://" hidden>
     <label class="m-l" id="m-model-l" for="m-model" data-i18n="modelName">Model name</label>
+    <div class="dirs" id="m-models" role="radiogroup" aria-labelledby="m-model-l" hidden></div>
     <input class="field" id="m-model" autocapitalize="off" autocomplete="off" spellcheck="false">
     <label class="m-l" id="m-key-l" for="m-key" data-i18n="modelKey">API key</label>
     <input class="field" id="m-key" type="password" autocapitalize="off" autocomplete="off" spellcheck="false">
@@ -636,6 +639,9 @@ const STR = {
   "modelBusy": "Running sessions: {n}. Connecting will stop them.",
   "modelCodexNote": "Answers in the group and only reads files. Sign in on the server: codex login. Only for a group of people you trust: the model can read the Codex login file.",
   "modelKimiNote": "Needs a Kimi Code subscription.",
+  "modelLoginNote": "No key: sessions use Claude Code's own sign-in on the server (your Claude subscription). Sign in there once: claude auth login.",
+  "modelCodexDefault": "default from Codex settings",
+  "modelErr_claude_login": "Claude Code is not signed in on the server. Run claude auth login there.",
   "modelDone": "Connected: {n}",
   "modelRestart": "Saved. Restart zidos-pager-sdk on the server.",
   "modelErr_key": "The provider did not accept this key.",
@@ -897,6 +903,9 @@ const STR = {
   "modelBusy": "Идёт сессий: {n}. Подключение их оборвёт.",
   "modelCodexNote": "Отвечает в группе и только читает файлы. Вход выполняется на сервере: codex login. Только для группы своих: модель может прочитать файл входа Codex.",
   "modelKimiNote": "Нужна подписка Kimi Code.",
+  "modelLoginNote": "Без ключа: сессии работают через вход Claude Code на сервере, то есть по вашей подписке Claude. Войти один раз там же: claude auth login.",
+  "modelCodexDefault": "по умолчанию из настроек Codex",
+  "modelErr_claude_login": "Claude Code на сервере не выполнил вход. Запустите там claude auth login.",
   "modelDone": "Подключено: {n}",
   "modelRestart": "Сохранено. Перезапустите zidos-pager-sdk на сервере.",
   "modelErr_key": "Провайдер не принял этот ключ.",
@@ -1952,14 +1961,21 @@ function closeSheets(){ SHEETS.forEach(id => sheet(id, false)); }
 let mdl = null, mdlPick = "";
 const mPreset = () => (mdl.presets.find(p => p.id === mdlPick) || {});
 function mErr(text){ $("m-err").textContent = text || ""; $("m-err").hidden = !text; }
+function mModels(){  // a known family: the models as chips; the field stays for any other name
+  const p = mPreset(), cur = $("m-model").value.trim(), list = p.models || [];
+  $("m-models").hidden = !list.length;
+  $("m-models").innerHTML = list.map(m => `<button class="chip" type="button" role="radio" aria-checked="${m === cur}" aria-pressed="${m === cur}" data-m="${esc(m)}">${esc(m[0].toUpperCase() + m.slice(1))}</button>`).join("");
+}
 function mPaint(){
-  const p = mPreset(), codex = mdlPick === "codex", custom = mdlPick === "custom";
+  const p = mPreset(), codex = mdlPick === "codex", custom = mdlPick === "custom", login = !!p.login;
   $("m-list").innerHTML = mdl.presets.map(x => `<button class="chip" type="button" role="radio" aria-checked="${x.id === mdlPick}" aria-pressed="${x.id === mdlPick}" data-p="${x.id}">${esc(x.title || t("modelCustom"))}</button>`).join("");
   $("m-base").hidden = $("m-base-l").hidden = !custom;
-  ["m-model", "m-model-l", "m-key", "m-key-l"].forEach(id => { $(id).hidden = codex; });
+  ["m-key", "m-key-l"].forEach(id => { $(id).hidden = codex || login; });
   $("m-model").value = mdlPick === mdl.provider && mdl.model ? mdl.model : (p.model || "");
+  $("m-model").placeholder = codex ? t("modelCodexDefault") : "";
+  mModels();
   $("m-key").value = ""; $("m-key").placeholder = p.stored ? t("modelKeyStored") : "";
-  const note = codex ? t("modelCodexNote") : mdlPick === "kimi" ? t("modelKimiNote") : "";
+  const note = codex ? t("modelCodexNote") : login ? t("modelLoginNote") : mdlPick === "kimi" ? t("modelKimiNote") : "";
   $("m-note").textContent = note; $("m-note").hidden = !note;
   mErr("");
 }
@@ -1971,13 +1987,15 @@ async function openModel(){
   sheet("model-sheet", true);
 }
 function mNow(){
-  const name = mdl.provider === "codex" ? "Codex" : mdl.model;
+  const name = mdl.provider === "codex" ? "Codex" + (mdl.model ? " · " + mdl.model : "") : mdl.provider === "claude_login" ? "Claude Code · " + mdl.model : mdl.model;
   const lines = [name ? t("modelNow", {n: name}) : t("modelNoneYet")];
   if (mdl.busy) lines.push(t("modelBusy", {n: mdl.busy}));
   $("m-now").textContent = lines.join(". ").replace(/\.\./g, ".");
 }
 $("model-btn").addEventListener("click", openModel);
 $("m-list").addEventListener("click", e => { const b = e.target.closest("[data-p]"); if (b){ mdlPick = b.dataset.p; mPaint(); } });
+$("m-models").addEventListener("click", e => { const b = e.target.closest("[data-m]"); if (b){ $("m-model").value = b.dataset.m; mModels(); } });
+$("m-model").addEventListener("input", mModels);
 $("m-form").addEventListener("submit", async e => {
   e.preventDefault();
   const save = $("m-save"); if (save.disabled) return;
@@ -1987,7 +2005,7 @@ $("m-form").addEventListener("submit", async e => {
     if (!r.ok){ mErr(t("modelErr_" + r.error) || t("modelErr_net")); return; }
     if (!r.restarted){ mErr(t("modelRestart")); }
     mdl = await api("model"); mdlPick = mdl.provider; mPaint();
-    if (r.restarted) $("m-now").textContent = t("modelDone", {n: mdl.provider === "codex" ? "Codex" : mdl.model}); else mNow();
+    if (r.restarted) $("m-now").textContent = t("modelDone", {n: mdl.provider === "codex" ? "Codex" : mdl.provider === "claude_login" ? "Claude Code · " + mdl.model : mdl.model}); else mNow();
   }catch(err){ mErr(t("modelErr_net")); }
   finally{ save.disabled = false; save.textContent = t("modelSave"); }
 });

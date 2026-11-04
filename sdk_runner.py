@@ -311,6 +311,8 @@ class Runner:
                                              or "~/.local/state/zidos-pager/sdk.json")
         self.key_file = env.get("CC_SDK_KEY_FILE") or "~/.config/zidos-pager/anthropic-api.env"
         self.key_var = env.get("CC_SDK_KEY_VAR") or "ANTHROPIC_API_KEY"
+        # login: no key at all, the Claude Code CLI uses its own sign-in on this machine (claude auth login)
+        self.login = (env.get("CC_SDK_AUTH") or "").strip().lower() == "login"
         self.model = env.get("CC_SDK_MODEL") or "sonnet"
         # an Anthropic-compatible endpoint (DeepSeek and the like); empty: Anthropic itself, behaviour unchanged
         self.base_url = env.get("CC_SDK_BASE_URL") or ""
@@ -320,7 +322,7 @@ class Runner:
         except ValueError:
             self.max_turns = 30
         # the CLI prices unknown models like Claude, so a third-party endpoint has no USD limit unless CC_SDK_BUDGET is set
-        default = None if self.base_url else 1.0
+        default = None if self.base_url or self.login else 1.0  # a subscription is not billed per dollar
         try:
             self.budget = float(env["CC_SDK_BUDGET"]) if env.get("CC_SDK_BUDGET") else default
         except ValueError:
@@ -407,6 +409,8 @@ class Runner:
 
     # -- key
     def key_value(self):
+        if self.login:
+            return "login"  # not a key: the CLI signs in by itself; checked by `claude auth status` when chosen
         if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", self.key_var or ""):
             return None
         return read_key(self.key_file, self.key_var)
@@ -656,7 +660,7 @@ class Runner:
     def _helper_settings(self, deny=None, sandbox=None):
         cmd = shlex.join([sys.executable, os.path.abspath(__file__), "key", "--file",
                           os.path.expanduser(self.key_file), "--var", self.key_var])
-        st = {"apiKeyHelper": cmd}
+        st = {} if self.login else {"apiKeyHelper": cmd}
         if deny:
             st["permissions"] = {"deny": list(deny)}
         if sandbox:
@@ -668,7 +672,7 @@ class Runner:
         kw = dict(cwd=s.cwd, model=s.model, permission_mode="default",
                   setting_sources=["project"], max_budget_usd=s.budget_usd,
                   can_use_tool=self._make_can_use_tool(s), settings=self._helper_settings())
-        if self.base_url:  # the key stays in apiKeyHelper only: Bash tools see this env
+        if self.base_url and not self.login:  # the key stays in apiKeyHelper only: Bash tools see this env
             kw.pop("max_budget_usd")
             kw.update(max_turns=self.max_turns, env={
                 "ANTHROPIC_BASE_URL": self.base_url, "ANTHROPIC_DEFAULT_OPUS_MODEL": self.strong_model,
@@ -743,7 +747,7 @@ class Runner:
             if isinstance(m, sdk.SystemMessage):
                 if getattr(m, "subtype", None) == "init":
                     src = (getattr(m, "data", None) or {}).get("apiKeySource")
-                    if src != "apiKeyHelper":
+                    if src != ("none" if self.login else "apiKeyHelper"):  # login: the subscription, never a stray key
                         log("auth check failed", s.id, str(src))
                         self._task_set(s, epoch, "error", "not authenticated with the API key")
                         return "error"

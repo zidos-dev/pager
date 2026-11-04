@@ -3572,10 +3572,13 @@ MODEL_PRESETS = {
     "glm": {"title": "GLM", "base": "https://api.z.ai/api/anthropic", "model": "glm-5.3", "var": "GLM_API_KEY"},
     "kimi": {"title": "Kimi", "base": "https://api.kimi.com/coding", "model": "kimi-for-coding", "var": "KIMI_API_KEY"},
     "openrouter": {"title": "OpenRouter", "base": "https://openrouter.ai/api", "model": "deepseek/deepseek-v4.1-flash", "var": "OPENROUTER_API_KEY"},
-    "anthropic": {"title": "Claude", "base": "", "model": "sonnet", "var": "ANTHROPIC_API_KEY"},
+    "anthropic": {"title": "Claude API", "base": "", "model": "sonnet", "var": "ANTHROPIC_API_KEY"},
     "custom": {"title": "", "base": "", "model": "", "var": "CUSTOM_API_KEY"},
     "codex": {"title": "Codex", "base": None, "model": "", "var": None},
 }
+# the console's own model only (not group bots): the installed Claude Code CLI with its own sign-in, no key
+CLAUDE_LOGIN = {"id": "claude_login", "title": "Claude Code", "model": "sonnet"}
+MODEL_CHOICES = {"anthropic": ["opus", "sonnet", "haiku"], "claude_login": ["opus", "sonnet", "haiku"]}
 _MODEL_NAME = re.compile(r"[\w./:\[\]-]{1,120}")
 _MODEL_KEY = re.compile(r"[\x21-\x7e]{8,512}")
 
@@ -9245,18 +9248,39 @@ class Bot:
         env = env_read(self.cfg.sdk_env)
         keys = self.model_keys()
         base, model = env.get("CC_SDK_BASE_URL", ""), env.get("CC_SDK_MODEL", "")
-        pid = "codex" if self.cfg.responder_engine == "codex" else next(
+        pid = "codex" if self.cfg.responder_engine == "codex" else "claude_login" if env.get("CC_SDK_AUTH") == "login" else next(
             (k for k, p in MODEL_PRESETS.items() if p["base"] == base and p["base"] is not None and k != "custom"), "custom")
+        if pid == "codex":
+            model = self.cfg.codex_model
         try:
             busy = sum(x.get("state") == "working" for x in (self.sdk.sessions() or [])) if self.sdk else 0
         except (HerdrError, AttributeError):
             busy = 0
-        return 200, {"provider": pid, "model": model, "base": base, "busy": busy, "presets": [
-            {"id": k, "title": p["title"], "model": p["model"], "stored": bool(p["var"] and keys.get(p["var"]))}
-            for k, p in MODEL_PRESETS.items()]}
+        presets = [{"id": k, "title": p["title"], "model": p["model"], "stored": bool(p["var"] and keys.get(p["var"]))}
+                   for k, p in MODEL_PRESETS.items()]
+        presets.insert(0, dict(CLAUDE_LOGIN, stored=False, login=True))
+        for p in presets:
+            p["models"] = MODEL_CHOICES.get(p["id"], [])
+        return 200, {"provider": pid, "model": model, "base": base, "busy": busy, "presets": presets}
 
     def api_model_save(self, body):
         """Saved only after the provider has accepted the key; then the runner restarts on it."""
+        if body.get("provider") == "claude_login":  # the CLI's own sign-in: nothing to store but the model
+            model = str(body.get("model") or CLAUDE_LOGIN["model"]).strip()
+            if not _MODEL_NAME.fullmatch(model):
+                return 200, {"ok": False, "error": "model"}
+            rc, out = self.run([self.cfg.claude_bin, "auth", "status"], timeout=20)
+            try:
+                signed = rc == 0 and json.loads(out).get("loggedIn") is True
+            except (ValueError, AttributeError):
+                signed = False
+            if not signed:
+                return 200, {"ok": False, "error": "claude_login"}
+            env_update(self.cfg.sdk_env, {"CC_SDK_AUTH": "login", "CC_SDK_MODEL": model, "CC_SDK_BASE_URL": None})
+            self.cfg.responder_engine = "sdk"
+            env_update(self.cfg.env_path, {"CC_RESPONDER_ENGINE": None})
+            rc, _ = self.run(["systemctl", "--user", "restart", "zidos-pager-sdk"], timeout=30)
+            return 200, {"ok": True, "restarted": rc == 0}
         preset = MODEL_PRESETS.get(body.get("provider"))
         if preset is None:
             return 400, {"ok": False, "error": "provider"}
@@ -9264,8 +9288,11 @@ class Bot:
             rc, _ = self.run(["codex", "login", "status"], timeout=20)
             if rc != 0:
                 return 200, {"ok": False, "error": "codex"}
-            self.cfg.responder_engine = "codex"
-            env_update(self.cfg.env_path, {"CC_RESPONDER_ENGINE": "codex"})
+            model = str(body.get("model") or "").strip()  # empty: the default from ~/.codex/config.toml
+            if model and not _MODEL_NAME.fullmatch(model):
+                return 200, {"ok": False, "error": "model"}
+            self.cfg.responder_engine, self.cfg.codex_model = "codex", model
+            env_update(self.cfg.env_path, {"CC_RESPONDER_ENGINE": "codex", "CC_CODEX_MODEL": model or None})
             return 200, {"ok": True, "restarted": True}
         model = str(body.get("model") or preset["model"]).strip()
         base = str(body.get("base") or "").strip() if body.get("provider") == "custom" else preset["base"]
@@ -9284,7 +9311,7 @@ class Bot:
             return 200, {"ok": False, "error": verdict}
         env_update(self.model_keys_path(), {preset["var"]: key})
         env_update(self.cfg.sdk_env, {"CC_SDK_KEY_FILE": self.model_keys_path(), "CC_SDK_KEY_VAR": preset["var"],
-                                      "CC_SDK_MODEL": model, "CC_SDK_BASE_URL": base or None})
+                                      "CC_SDK_MODEL": model, "CC_SDK_BASE_URL": base or None, "CC_SDK_AUTH": None})
         self.cfg.responder_engine = "sdk"
         env_update(self.cfg.env_path, {"CC_RESPONDER_ENGINE": None})
         rc, _ = self.run(["systemctl", "--user", "restart", "zidos-pager-sdk"], timeout=30)

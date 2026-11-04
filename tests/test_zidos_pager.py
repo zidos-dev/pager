@@ -3167,6 +3167,34 @@ class ModelSheetTests(unittest.TestCase):
         self.assertNotIn("CC_RESPONDER_ENGINE", cc.env_read(self.e.bot.cfg.env_path))
         self.assertEqual(cc.env_read(self.e.bot.cfg.env_path)["TG_BOT_TOKEN"], "1:x")
 
+    def test_claude_code_login_needs_its_sign_in_and_stores_no_key(self):
+        out = {"v": '{"loggedIn": false}'}
+        self.e.bot.run = lambda cmd, **kw: (self.runs.append(cmd) or (0, out["v"] if "auth" in cmd else ""))
+        self.assertEqual(self.save(provider="claude_login", model="opus")[1], {"ok": False, "error": "claude_login"})
+        self.assertNotIn("CC_SDK_AUTH", cc.env_read(self.e.bot.cfg.sdk_env))
+        out["v"] = '{"loggedIn": true, "authMethod": "claude.ai"}'
+        self.save(provider="glm", key="sk-secret-123")
+        self.assertEqual(self.save(provider="claude_login", model="opus")[1], {"ok": True, "restarted": True})
+        env = cc.env_read(self.e.bot.cfg.sdk_env)
+        self.assertEqual((env["CC_SDK_AUTH"], env["CC_SDK_MODEL"]), ("login", "opus"))
+        self.assertNotIn("CC_SDK_BASE_URL", env)  # GLM's address is gone, or the CLI would send the sign-in there
+        self.assertEqual(self.runs[-1], ["systemctl", "--user", "restart", "zidos-pager-sdk"])
+        self.chk.assert_not_called()  # no key check: the CLI signs in by itself
+        got = self.e.bot.api_dispatch(1, "GET", "/api/model", None)[1]
+        self.assertEqual((got["provider"], got["model"]), ("claude_login", "opus"))
+        self.assertEqual(next(p for p in got["presets"] if p["id"] == "claude_login")["models"], ["opus", "sonnet", "haiku"])
+        self.save(provider="glm", key="sk-secret-123")
+        self.assertNotIn("CC_SDK_AUTH", cc.env_read(self.e.bot.cfg.sdk_env))  # a key provider switches login off again
+
+    def test_codex_model_is_chosen_or_left_default(self):
+        self.assertTrue(self.save(provider="codex", model="gpt-6.1-sol")[1]["ok"])
+        self.assertEqual(cc.env_read(self.e.bot.cfg.env_path)["CC_CODEX_MODEL"], "gpt-6.1-sol")
+        self.assertEqual(self.e.bot.cfg.codex_model, "gpt-6.1-sol")
+        self.assertEqual(self.e.bot.api_dispatch(1, "GET", "/api/model", None)[1]["model"], "gpt-6.1-sol")
+        self.assertEqual(self.save(provider="codex", model="a b\nC=1")[1], {"ok": False, "error": "model"})
+        self.assertTrue(self.save(provider="codex")[1]["ok"])
+        self.assertNotIn("CC_CODEX_MODEL", cc.env_read(self.e.bot.cfg.env_path))
+
     def test_failed_restart_is_reported(self):
         self.rc = 1
         self.assertEqual(self.save(provider="glm", key="sk-secret-123")[1], {"ok": True, "restarted": False})

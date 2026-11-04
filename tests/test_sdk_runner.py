@@ -282,6 +282,31 @@ class StartTests(Base):
         self.assertEqual(kw["max_turns"], 7)
         self.assertIn("apiKeyHelper", json.loads(kw["settings"]))
 
+    async def test_login_mode_runs_without_a_key_on_the_cli_sign_in(self):
+        os.environ.update(CC_SDK_AUTH="login", CC_SDK_KEY_FILE="/nonexistent/keys.env", CC_SDK_BASE_URL="https://ignored.example")
+        await self.new_runner()
+        FakeClient.script = None
+        FakeClient.api_key_source = "none"  # what the CLI reports on a claude.ai sign-in
+        s = await self.start()
+        await self.wait_state(s["id"], "idle")  # no «API key is not available»
+        kw = FakeClient.instances[-1].options.kw
+        self.assertNotIn("apiKeyHelper", json.loads(kw["settings"]))
+        self.assertNotIn("env", kw)  # no third-party endpoint: the CLI talks to Anthropic with its own sign-in
+        self.assertNotIn("max_budget_usd", {k: v for k, v in kw.items() if v is not None})
+
+    async def test_login_mode_refuses_a_stray_key(self):
+        os.environ.update(CC_SDK_AUTH="login")
+        await self.new_runner()
+        FakeClient.api_key_source = "ANTHROPIC_API_KEY"
+        s = await self.start()
+        await self.wait_state(s["id"], "error")
+
+    async def test_key_mode_refuses_the_subscription(self):
+        await self.new_runner()
+        FakeClient.api_key_source = "none"
+        s = await self.start()
+        await self.wait_state(s["id"], "error")
+
     async def test_third_party_key_stays_out_of_env(self):
         _, kw = await self._third_party()
         self.assertNotIn(KEY, json.dumps(kw["env"]))

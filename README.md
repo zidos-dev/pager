@@ -67,6 +67,8 @@ folder or site and model (DeepSeek, OpenRouter, GLM, Kimi, Claude or Codex), set
   permissions arrive as 🔐 messages with *Allow / Always / Deny* buttons, questions as buttons, the cost and the
   budget (💲, "+1 $ and continue") in the card. These sessions bill at API rates, not your subscription; the key is
   handed to the CLI through an `apiKeyHelper` command, so it never enters the environment of the agent's tools.
+  Or pick **Claude Code** in the mini-app's Model sheet: no key, the sessions use the CLI's own sign-in on the server
+  (`claude auth login`, your Claude subscription), with Opus, Sonnet or Haiku as buttons.
   Protocol: [`docs/sdk-protocol.md`](docs/sdk-protocol.md). Works even without Claude Code — see
   [Without Claude Code](docs/manual-install.md#without-claude-code-sdk-only).
 - **Questions as buttons** — `AskUserQuestion` prompts (single/multi choice, "your own answer", review/submit)
