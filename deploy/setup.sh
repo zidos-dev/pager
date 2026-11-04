@@ -135,6 +135,10 @@ check_platform() {
     if (( with_sdk && ! reconfigure && ! dry_run )); then  # chat sessions refuse to run unsandboxed
         command -v bwrap >/dev/null && command -v socat >/dev/null || fail 'Install bubblewrap and socat before --with-sdk (e.g. apt install bubblewrap socat).'
     fi
+    # Debian/Ubuntu ship python3 without ensurepip: venv creation would fail half way through the install
+    if (( (with_sdk || with_stt) && ! reconfigure && ! update && ! dry_run )); then
+        python3 -c 'import ensurepip' 2>/dev/null || fail 'Python cannot create virtual environments: install python3-venv (sudo apt-get install -y python3-venv) and run the installer again.'
+    fi
     # Only publish is allowed on reconfiguration: never prompt for or change linger.
     if (( ! reconfigure )); then
         command -v loginctl >/dev/null || fail 'loginctl is required to check linger.'
@@ -656,16 +660,23 @@ os.chmod(path, 0o644)
 PY
 }
 
+# A venv that failed half way is removed: otherwise the next install refuses to overwrite it
+make_venv() {
+    local dir=$repo/.venv-$1 pkg=$2
+    if (( update )) && [[ -d $dir ]]; then run "$dir/bin/pip" install -U "$pkg"; return; fi
+    run python3 -m venv "$dir" && run "$dir/bin/pip" install "$pkg" && return
+    rm -rf -- "$dir"
+    fail "Could not install $pkg into $dir (see above). Nothing was kept; run the installer again."
+}
+
 install_bot() {
+    # venvs first: a network failure in pip then leaves no config behind and a retry is a fresh install
+    (( ! with_sdk )) || make_venv sdk claude-agent-sdk
+    (( ! with_stt )) || make_venv stt faster-whisper
     run mkdir -p "$config"
     { printf 'TG_BOT_TOKEN=%s\nTG_ALLOWED_USERS=%s\n' "$token" "$users"
       for pair in ${env_pairs[@]+"${env_pairs[@]}"}; do printf '%s\n' "$pair"; done; } | write_private "$config/env"
     if (( with_sdk )); then
-        if (( update )) && [[ -d $repo/.venv-sdk ]]; then run "$repo/.venv-sdk/bin/pip" install -U claude-agent-sdk
-        else
-            run python3 -m venv "$repo/.venv-sdk"
-            run "$repo/.venv-sdk/bin/pip" install claude-agent-sdk
-        fi
         # systemd EnvironmentFile double quotes protect whitespace and literal backslashes/quotes.
         if (( sdk_login )); then printf 'CC_SDK_AUTH=login\nCC_SDK_MODEL=%s\n' "${sdk_model:-sonnet}" | write_private "$config/sdk.env"
         else
@@ -682,11 +693,6 @@ PY
         fi
     fi
     if (( with_stt )); then
-        if (( update )) && [[ -d $repo/.venv-stt ]]; then run "$repo/.venv-stt/bin/pip" install -U faster-whisper
-        else
-            run python3 -m venv "$repo/.venv-stt"
-            run "$repo/.venv-stt/bin/pip" install faster-whisper
-        fi
         python3 - "$stt_key_file" <<'PY' | write_private "$config/stt.env"
 import sys
 print("CC_STT_ENGINES=" + ("local,groq" if sys.argv[1] else "local"))

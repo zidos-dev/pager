@@ -130,7 +130,7 @@ Tailscale и войдите в аккаунт (скрипт выведет оф�
 SDK-раннер работает с любым провайдером, у которого есть Anthropic-совместимый адрес. Бот в Telegram и ключ у вас
 свои, модель выбирается тремя настройками.
 
-**Нужно:** Linux с `python3`, `bubblewrap` и `socat` (`sudo apt install bubblewrap socat`): без песочницы ОС сессии
+**Нужно:** Linux с `python3`, `python3-venv`, `bubblewrap` и `socat` (`sudo apt install python3-venv bubblewrap socat`): без песочницы ОС сессии
 чата не запускаются.
 
 1. Создайте бота в @BotFather и узнайте свой числовой id в Telegram через любого бота вида «get my id». Скачайте код:

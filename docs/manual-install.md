@@ -130,7 +130,7 @@ your Claude subscription, the tmux screen and keys, the subscription quota, auto
 The SDK runner works with any provider that offers an Anthropic-compatible address. You bring your own Telegram bot
 and your own key; three settings choose the model.
 
-**You need:** Linux with `python3`, `bubblewrap` and `socat` (`sudo apt install bubblewrap socat`): chat sessions
+**You need:** Linux with `python3`, `python3-venv`, `bubblewrap` and `socat` (`sudo apt install python3-venv bubblewrap socat`): chat sessions
 refuse to start without the OS sandbox.
 
 1. Create a bot in @BotFather and find your numeric Telegram id with any "get my id" bot. Get the code:

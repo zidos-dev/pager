@@ -274,7 +274,7 @@ const T = {
   groupWaiting:"Слежу за новыми группами…",folder:"Папка с материалами на этом компьютере",bname:"Как бот себя называет",brief:"Роль и правила для бота",
   briefPh:"Ты помощник команды. Отвечай коротко, по материалам из папки.",next:"Дальше",skip:"Пропустить",
   install:"Установить",installing:"Устанавливаю…",retry:"Повторить",
-  ok:"есть",miss:"нет",linux:"Linux",python:"Python 3.10+",bwrap:"bubblewrap",socat:"socat",systemd:"systemd для пользователя",existing:"Бот уже стоит здесь: настройки будут обновлены.",
+  ok:"есть",miss:"нет",linux:"Linux",python:"Python 3.10+",bwrap:"bubblewrap",socat:"socat",venv:"python3-venv",systemd:"systemd для пользователя",existing:"Бот уже стоит здесь: настройки будут обновлены.",
   noGroup:"без группы",withGroup:"группа «{g}»",sumInstall:"Бот @{bot} на {model}, {where}, {group}.",
   doneText:"Готово. Бот прислал вам сообщение в Telegram.",installedSum:"установлен, бот написал вам",
   e_auth:"Сервер ждёт пароль: введите его в терминале, где запущен setup.py, и нажмите ещё раз.",e_net:"Нет связи. Проверьте адрес и сеть.",
@@ -307,7 +307,7 @@ const T = {
   groupWaiting:"Watching for new groups…",folder:"Folder with materials on this computer",bname:"What the bot calls itself",brief:"Role and rules for the bot",
   briefPh:"You help the team. Answer briefly, from the materials in the folder.",next:"Next",skip:"Skip",
   install:"Install",installing:"Installing…",retry:"Try again",
-  ok:"yes",miss:"missing",linux:"Linux",python:"Python 3.10+",bwrap:"bubblewrap",socat:"socat",systemd:"systemd user session",existing:"The bot is already installed here: its settings will be updated.",
+  ok:"yes",miss:"missing",linux:"Linux",python:"Python 3.10+",bwrap:"bubblewrap",socat:"socat",venv:"python3-venv",systemd:"systemd user session",existing:"The bot is already installed here: its settings will be updated.",
   noGroup:"no group",withGroup:"group «{g}»",sumInstall:"Bot @{bot} on {model}, {where}, {group}.",
   doneText:"Done. The bot has sent you a message in Telegram.",installedSum:"installed, the bot wrote to you",
   e_auth:"The server waits for a password: type it in the terminal where setup.py runs, then press again.",e_net:"No connection. Check the address and the network.",
@@ -362,7 +362,7 @@ $("f-target").addEventListener("submit", e => { e.preventDefault(); busy($("b-ta
   const r = await api("target", body);
   if (r.os !== undefined || r.missing){
     const miss = new Set(r.missing || []);
-    const rows = [["linux", r.os === "Linux"], ["python", !miss.has("python3>=3.10") && !miss.has("python3")], ["bwrap", !miss.has("bwrap")], ["socat", !miss.has("socat")], ["systemd", r.systemd !== false]];
+    const rows = [["linux", r.os === "Linux"], ["python", !miss.has("python3>=3.10") && !miss.has("python3")], ["bwrap", !miss.has("bwrap")], ["socat", !miss.has("socat")], ...(r.os === "Linux" ? [["venv", !miss.has("venv")]] : []), ["systemd", r.systemd !== false]];
     $("checks").innerHTML = rows.map(([k, y]) => `<li><span class="${y ? "y" : "n"}" aria-hidden="true">${y ? "✓" : "✕"}</span><span>${t(k)}</span><span class="sr">${y ? t("ok") : t("miss")}</span></li>`).join("");
     $("checks").hidden = false;
   }

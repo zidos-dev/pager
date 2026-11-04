@@ -331,6 +331,14 @@ class WizardTests(WizardBase):
         self.assertIn("bubblewrap", r["fix"])
         self.assertIsNone(self.call("/api/state")[1]["target"])
 
+    def test_missing_venv_module_blocks_on_linux(self):  # Ubuntu without python3-venv: the SDK venv would fail at install
+        probe = "os=Linux\npy=3.12\nno=venv\nsystemd=1\n"
+        with mock.patch.object(ws.Target, "run", return_value=(0, probe)):
+            r = self.call("/api/target", {"mode": "local"})[1]
+        self.assertFalse(r["ok"])
+        self.assertEqual(r["missing"], ["venv"])
+        self.assertEqual(r["fix"], "sudo apt-get install -y python3-venv")
+
 
 class BotsTests(WizardBase):
     BTOKEN = "777777:BBBBBBBBBBBBBBBBBBBBBBBBBBBB"

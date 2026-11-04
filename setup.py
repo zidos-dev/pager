@@ -57,6 +57,7 @@ for p in /opt/homebrew/bin/python3 /usr/local/bin/python3 python3; do  # the sam
 done
 echo py=$best
 for c in bwrap socat python3 brew; do command -v $c >/dev/null 2>&1 || echo no=$c; done
+python3 -c 'import ensurepip' 2>/dev/null || echo no=venv  # Debian/Ubuntu: python3-venv is a separate package
 PATH="$HOME/.local/bin:$PATH" claude auth status </dev/null 2>/dev/null | grep -q '"loggedIn": *true' && echo claude=1  # Claude Code signed in: no key needed
 test -d /run/systemd/system && echo systemd=1
 { [ "$(id -u)" = 0 ] || sudo -n true 2>/dev/null; } && echo sudo=1
@@ -235,13 +236,13 @@ class Wizard:
         wsl_nosd = t.mode == "wsl" and "systemd" not in kv
         missing = [] if okpy and "python3" not in no else ["python3>=3.10"]
         if not dar:
-            missing += [c for c in ("bwrap", "socat") if c in no]
+            missing += [c for c in ("bwrap", "socat", "venv") if c in no]
         fix = ""
         if missing and dar:
             # the Command Line Tools bring Python 3.9 only: without Homebrew the python.org installer is the way
             fix = "https://www.python.org/downloads/macos/" if "brew" in no else "brew install python@3.12"
         elif missing:
-            pk = {"bwrap": "bubblewrap", "socat": "socat", "python3>=3.10": "python3"}
+            pk = {"bwrap": "bubblewrap", "socat": "socat", "venv": "python3-venv", "python3>=3.10": "python3"}
             fix = "sudo apt-get install -y " + " ".join(pk[m] for m in missing)
         if wsl_nosd:
             missing.append("systemd")

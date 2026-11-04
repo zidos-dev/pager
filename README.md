@@ -135,7 +135,7 @@ sleeping on power adapter when the display is off». With the lid closed it slee
 is connected). For 24/7 use a server.
 Services go to `~/Library/LaunchAgents` (`dev.zidos.pager.bot`, `dev.zidos.pager.sdk`), logs to `~/Library/Logs/zidos-pager`.
 
-**On a Linux server you need:** `python3` 3.10 or newer, `bubblewrap`, `socat` and a systemd user session. If
+**On a Linux server you need:** `python3` 3.10 or newer, `python3-venv` (Debian, Ubuntu), `bubblewrap`, `socat` and a systemd user session. If
 something is missing, the wizard shows the exact install command.
 
 The command line instead of the wizard is in [manual installation](docs/manual-install.md): `deploy/setup-macos.sh`,

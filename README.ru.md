@@ -139,7 +139,7 @@ Windows: SmartScreen может предупредить о неизвестно
 всё равно (кроме работы с внешним монитором). Для работы 24/7 лучше сервер. Службы ставятся в `~/Library/LaunchAgents` (`dev.zidos.pager.bot`, `dev.zidos.pager.sdk`), журналы — в
 `~/Library/Logs/zidos-pager`.
 
-**На Linux-сервере нужно:** `python3` 3.10 или новее, `bubblewrap`, `socat` и пользовательская сессия systemd.
+**На Linux-сервере нужно:** `python3` 3.10 или новее, `python3-venv` (Debian, Ubuntu), `bubblewrap`, `socat` и пользовательская сессия systemd.
 Если чего-то не хватает, мастер покажет точную команду установки.
 
 Командная строка вместо мастера — в [ручной установке](docs/manual-install.ru.md): `deploy/setup-macos.sh`,

@@ -30,6 +30,8 @@ if name == "systemctl" and os.environ.get("SETUP_TEST_ENVLOG"):
     with open(os.environ["SETUP_TEST_ENVLOG"], "a") as f:
         f.write(os.environ.get("XDG_RUNTIME_DIR", "") + "|" + os.environ.get("DBUS_SESSION_BUS_ADDRESS", "") + "\n")
 if name == "python3":
+    if args == ["-c", "import ensurepip"]:  # never the host's python: Debian/Ubuntu without python3-venv lack it
+        sys.exit(1 if os.environ.get("SETUP_TEST_NO_ENSUREPIP") else 0)
     if len(args) >= 3 and args[:2] == ["-m", "venv"]:
         dest = pathlib.Path(args[-1]).resolve()
         root = pathlib.Path(os.environ["SETUP_TEST_REPO"]).resolve()
@@ -79,7 +81,7 @@ if name == "python3":
     os.execv(os.environ["SETUP_TEST_PYTHON"], [os.environ["SETUP_TEST_PYTHON"]] + args)
 if name in ("python", "pip", "pip3"):
     if name.startswith("pip") or args[:2] == ["-m", "pip"]:
-        sys.exit(0)
+        sys.exit(1 if os.environ.get("SETUP_TEST_PIP_FAIL") and "install" in args else 0)
     os.execv(os.environ["SETUP_TEST_PYTHON"], [os.environ["SETUP_TEST_PYTHON"]] + args)
 if name == "loginctl":
     print(os.environ.get("SETUP_TEST_LINGER", "yes"))
@@ -893,6 +895,30 @@ await_ts interrupted_probe
         self.assertFalse((self.repo / ".venv-stt").exists())
         self.assert_no_mutating_commands()
         self.assertFalse(any(c[0] in ("pip", "pip3") or c[1:3] == ["-m", "venv"] for c in self.calls()))
+
+    def sdk_key(self):
+        key = self.base / "sdk-key.env"
+        key.write_text("ANTHROPIC_API_KEY=" + SDK_SECRET + "\n")
+        key.chmod(0o600)
+        return str(key)
+
+    def test_missing_venv_module_fails_before_any_write(self):
+        self.env["SETUP_TEST_NO_ENSUREPIP"] = "1"
+        result = self.install("none", "--with-sdk", "--sdk-key-file", self.sdk_key())
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("python3-venv", result.stdout)
+        self.assertFalse((self.config / "env").exists())
+        self.assertFalse((self.repo / ".venv-sdk").exists())
+
+    def test_failed_pip_leaves_nothing_so_a_retry_installs(self):
+        self.env["SETUP_TEST_PIP_FAIL"] = "1"
+        result = self.install("none", "--with-sdk", "--sdk-key-file", self.sdk_key())
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertFalse((self.config / "env").exists())
+        self.assertFalse((self.repo / ".venv-sdk").exists())
+        del self.env["SETUP_TEST_PIP_FAIL"]
+        self.assert_success(self.install("none", "--with-sdk", "--sdk-key-file", self.sdk_key()))
+        self.assert_private(self.config / "env")
 
     def test_optional_runners_use_private_key_paths(self):
         sdk_key = self.base / "sdk-key.env"
