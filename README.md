@@ -117,7 +117,9 @@ A browser opens with the wizard. It runs on your computer only and publishes not
 2. **Bot.** In Telegram open [@BotFather](https://t.me/BotFather), Telegram's own bot for making bots, send `/newbot`,
    pick a name and an address ending in `bot`. It replies with a token like `123456789:AA…`; paste it.
 3. **You.** Send `/start` to your bot: that is how it learns your Telegram id and obeys only you.
-4. **Model.** DeepSeek, GLM, Kimi, OpenRouter, Claude or your own address; paste the key. It is checked before install.
+4. **Model.** Claude Code with its own sign-in (no key: run `claude auth login` on the server first), or DeepSeek, GLM, Kimi,
+   OpenRouter, Claude API or your own address with a key, checked before install. Codex can answer in the group
+   instead; if its quota runs out, the question goes to your sessions' model, and the other way round.
 5. **Group and knowledge** (optional). Add the bot to a group and write anything there; it shows up in the list. The
    folder holds the files the bot answers from; in Finder select it and press ⌥⌘C to copy its path.
 6. **Install.** The wizard installs the bot, shows the log and has the bot send you a test message.

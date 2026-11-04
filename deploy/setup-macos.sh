@@ -19,6 +19,7 @@ macOS LaunchAgent installation (~/Library/LaunchAgents/dev.zidos.pager.{bot,sdk}
   --sdk-key-var NAME    Variable name inside the key file (default ANTHROPIC_API_KEY)
   --sdk-base-url URL    Anthropic-compatible endpoint instead of Anthropic
   --sdk-model NAME      Model name for chat sessions (default sonnet)
+  --sdk-login           No key: SDK sessions use Claude Code's own sign-in (run claude auth login first)
   --update              Existing install: reload plists, upgrade the SDK; env is rewritten only with --token-file
   --help                Show this help
 
@@ -33,7 +34,7 @@ run() {
     if [ "$dry_run" != 1 ]; then "$@"; fi
 }
 
-dry_run=0 non_interactive=0 with_sdk=0 update=0
+dry_run=0 non_interactive=0 with_sdk=0 sdk_login=0 update=0
 token_file='' users='' sdk_key_file='' sdk_key_var='' sdk_base_url='' sdk_model=''
 env_pairs=''   # newline-separated KEY=VALUE
 env_re='^(CC_[A-Z0-9_]+|TG_API_BASE)=[^'$'\n\r'']*$'
@@ -50,6 +51,7 @@ parse_args() {
             --dry-run) dry_run=1 ;;
             --non-interactive) non_interactive=1 ;;
             --with-sdk) with_sdk=1 ;;
+            --sdk-login) sdk_login=1 ;;
             --update) update=1 ;;
             --token-file|--users|--env|--sdk-key-file|--sdk-key-var|--sdk-base-url|--sdk-model)
                 [ $# -ge 2 ] && [ -n "$2" ] && [[ $2 != --* ]] || fail 'An option is missing its value; see --help.'
@@ -227,7 +229,12 @@ main() {
         { [ -z "$users" ] && [ -z "$env_pairs" ]; } || [ -n "$token_file" ] || fail '--update with --users or --env also needs --token-file (the bot env is rewritten as a whole).'
     fi
     [ -z "$token_file" ] || [ -n "$users" ] || fail '--token-file requires --users.'
-    if [ "$with_sdk" = 1 ] && [ -z "$sdk_key_file" ] && [ ! -f "$config/sdk.env" ]; then
+    [ "$sdk_login" = 0 ] || [ "$with_sdk" = 1 ] || fail '--sdk-login requires --with-sdk.'
+    [ "$sdk_login" = 0 ] || [ -z "$sdk_key_file$sdk_base_url$sdk_key_var" ] || fail '--sdk-login takes no key file, base URL or key variable.'
+    if [ "$sdk_login" = 1 ] && [ "$dry_run" != 1 ]; then
+        PATH="$HOME/.local/bin:$PATH" claude auth status </dev/null 2>/dev/null | grep -q '"loggedIn": *true' \
+            || fail 'Claude Code is not signed in on this Mac. Run claude auth login, then run the installer again.'
+    elif [ "$with_sdk" = 1 ] && [ "$sdk_login" = 0 ] && [ -z "$sdk_key_file" ] && [ ! -f "$config/sdk.env" ]; then
         fail '--with-sdk requires --sdk-key-file (a mode-600 file with NAME=value).'
     fi
     [ -z "$sdk_key_file" ] || key_file_check "$sdk_key_file"
@@ -249,7 +256,9 @@ main() {
             [ -d "$repo/.venv-sdk" ] || run "$python_bin" -m venv "$repo/.venv-sdk"
             run "$repo/.venv-sdk/bin/pip" install claude-agent-sdk
         fi
-        if [ -n "$sdk_key_file" ]; then
+        if [ "$sdk_login" = 1 ]; then
+            printf 'CC_SDK_AUTH=login\nCC_SDK_MODEL=%s\n' "${sdk_model:-sonnet}" | write_private "$config/sdk.env"
+        elif [ -n "$sdk_key_file" ]; then
             "$python_bin" - "$sdk_key_file" "$sdk_base_url" "$sdk_model" "$sdk_key_var" <<'PY' | write_private "$config/sdk.env"
 import sys
 value = sys.argv[1].replace("\\", "\\\\").replace('"', '\\"')

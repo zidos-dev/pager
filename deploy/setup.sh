@@ -27,6 +27,7 @@ Linux systemd user installation. Default publisher: funnel (permanent HTTPS, no 
   --sdk-key-file FILE      File containing ANTHROPIC_API_KEY=value, mode 600
   --sdk-base-url URL       Anthropic-compatible endpoint (e.g. DeepSeek) instead of Anthropic; needs --with-sdk
   --sdk-model NAME         Model name for chat sessions (default sonnet; the endpoint's own name with --sdk-base-url)
+  --sdk-login              No key: SDK sessions use Claude Code's own sign-in (run claude auth login first)
   --sdk-key-var NAME       Variable name inside the key file (default ANTHROPIC_API_KEY)
   --with-stt               Create .venv-stt and install faster-whisper (needs ffmpeg/ffprobe)
   --stt-groq-key-file FILE  Optional GROQ_API_KEY=value file, mode 600; use local,groq engines
@@ -59,6 +60,7 @@ parse_args() {
             --reconfigure-publish) reconfigure=1 ;;
             --wait-for-enable) wait_enable=1 ;;
             --with-sdk) with_sdk=1 ;;
+            --sdk-login) sdk_login=1 ;;
             --with-stt) with_stt=1 ;;
             --update) update=1 ;;
             --token|--token-file|--env|--users|--publish|--cf-hostname|--cf-api-token-file|--sdk-key-file|--sdk-base-url|--sdk-model|--sdk-key-var|--stt-groq-key-file|--ts-api-key-file)
@@ -98,6 +100,8 @@ parse_args() {
     [[ -z $ts_api_key_file || $publish == funnel ]] || fail '--ts-api-key-file requires --publish=funnel.'
     [[ -z $sdk_key_file ]] || (( with_sdk )) || fail '--sdk-key-file requires --with-sdk.'
     [[ -z $sdk_base_url$sdk_model$sdk_key_var ]] || (( with_sdk )) || fail '--sdk-base-url, --sdk-model and --sdk-key-var require --with-sdk.'
+    (( ! sdk_login )) || (( with_sdk )) || fail '--sdk-login requires --with-sdk.'
+    [[ -z $sdk_key_file$sdk_base_url$sdk_key_var ]] || (( ! sdk_login )) || fail '--sdk-login takes no key file, base URL or key variable.'
     [[ -z $sdk_base_url || $sdk_base_url =~ ^https?://[^[:space:]\"\\]+$ ]] || fail 'Invalid --sdk-base-url (expected http(s)://host/path).'
     [[ -z $sdk_model || $sdk_model =~ ^[A-Za-z0-9._:/-]+$ ]] || fail 'Invalid --sdk-model.'
     [[ -z $sdk_key_var || $sdk_key_var =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || fail 'Invalid --sdk-key-var.'
@@ -562,7 +566,10 @@ PY
     [[ $token =~ ^[A-Za-z0-9:_-]+$ ]] || fail 'Invalid token format (expected a single token, no spaces or newlines).'
     users=${users// /}
     [[ $users =~ ^[0-9]+(,[0-9]+)*$ ]] || fail 'Use comma-separated numeric Telegram user IDs.'
-    if (( with_sdk )); then
+    if (( with_sdk && sdk_login )); then
+        (( dry_run )) || PATH="$HOME/.local/bin:$PATH" claude auth status </dev/null 2>/dev/null | grep -q '"loggedIn": *true' \
+            || fail 'Claude Code is not signed in on this machine. Run claude auth login, then run the installer again.'
+    elif (( with_sdk )); then
         printf 'SDK: put %s=value in a mode-600 file; only its path is stored in sdk.env.\n' "${sdk_key_var:-ANTHROPIC_API_KEY}"
         sdk_key_file=${sdk_key_file:-$config/anthropic-api.env}
         if (( ! non_interactive && ! dry_run )); then
@@ -660,6 +667,8 @@ install_bot() {
             run "$repo/.venv-sdk/bin/pip" install claude-agent-sdk
         fi
         # systemd EnvironmentFile double quotes protect whitespace and literal backslashes/quotes.
+        if (( sdk_login )); then printf 'CC_SDK_AUTH=login\nCC_SDK_MODEL=%s\n' "${sdk_model:-sonnet}" | write_private "$config/sdk.env"
+        else
         python3 - "$sdk_key_file" "$sdk_base_url" "$sdk_model" "$sdk_key_var" <<'PY' | write_private "$config/sdk.env"
 import sys
 value = sys.argv[1].replace("\\", "\\\\").replace('"', '\\"')
@@ -670,6 +679,7 @@ if base:  # a third-party endpoint: no dollar budget (the CLI prices unknown mod
 else:
     print("CC_SDK_BUDGET=1.00")
 PY
+        fi
     fi
     if (( with_stt )); then
         if (( update )) && [[ -d $repo/.venv-stt ]]; then run "$repo/.venv-stt/bin/pip" install -U faster-whisper
@@ -921,7 +931,7 @@ retire_legacy_units() {
 main() {
     dry_run=0 non_interactive=0 reconfigure=0 with_sdk=0 with_stt=0 update=0 token_file='' env_pairs=()
     token='' users='' publish=funnel cf_hostname='' cf_api_token_file=''
-    sdk_key_file='' sdk_base_url='' sdk_model='' sdk_key_var='' stt_key_file='' previous=none linger=yes pwa_url=''
+    sdk_login=0 sdk_key_file='' sdk_base_url='' sdk_model='' sdk_key_var='' stt_key_file='' previous=none linger=yes pwa_url=''
     ts_api_key_file='' wait_enable=0 abort_hint='' funnel_out='' funnel_rc=0 ts_status=''
     parse_args "$@"
     [[ -z $ts_api_key_file ]] || wait_enable=1

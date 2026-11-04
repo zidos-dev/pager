@@ -326,6 +326,10 @@ textarea.field{min-height:120px;resize:vertical}
 .m-l{color:var(--muted);font-size:14.5px;margin-top:6px}
 .m-err{margin:6px 0 0;color:var(--danger);font-size:14.5px}
 #m-save{margin-top:10px;min-height:48px}
+#g-form{margin-top:22px}
+#g-save{width:100%;margin-top:10px;min-height:48px}
+#g-list .chip{min-height:44px;padding:0 16px;font-size:15px}
+#g-list .chip[aria-pressed="true"]{background:var(--ink);color:var(--panel)}
 #m-form .state{margin:6px 0 0}
 .toast{position:fixed;left:16px;right:16px;margin:0 auto;width:max-content;max-width:calc(100% - 32px);bottom:calc(env(safe-area-inset-bottom,0px) + 96px);background:var(--ink);color:var(--canvas);padding:11px 14px;border-radius:14px;font-size:14.5px;line-height:1.35;z-index:40;display:flex;align-items:center;gap:14px;box-shadow:0 8px 28px rgba(0,0,0,.22)}
 .toast .ta{flex:none;color:var(--action);font-weight:600;padding:4px 2px;min-height:32px}
@@ -485,6 +489,7 @@ textarea.field{min-height:120px;resize:vertical}
 </main>
 <section class="sheet" id="model-sheet" hidden aria-label="Model" data-i18n-attr="aria-label:modelTitle"><span class="grab"></span><button class="sx" type="button" aria-label="Close" data-i18n-attr="aria-label:close" data-close-sheet><svg width="18" height="18" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
   <h3 data-i18n="modelTitle">Model</h3>
+  <p class="b-h" data-i18n="mySessions">My sessions</p>
   <p class="state" id="m-now" aria-live="polite"></p>
   <div class="dirs" id="m-list" role="radiogroup" aria-label="Provider" data-i18n-attr="aria-label:modelProvider"></div>
   <form id="m-form" novalidate>
@@ -498,6 +503,16 @@ textarea.field{min-height:120px;resize:vertical}
     <p class="state" id="m-note" hidden></p>
     <p class="m-err" id="m-err" role="alert" hidden></p>
     <button class="btn pri" id="m-save" type="submit" data-i18n="modelSave">Check and connect</button>
+  </form>
+  <form id="g-form" novalidate hidden>
+    <p class="b-h" data-i18n="groupBot">Bot in the group</p>
+    <p class="state" id="g-now" aria-live="polite"></p>
+    <div class="dirs" id="g-list" role="radiogroup" aria-label="Bot in the group" data-i18n-attr="aria-label:groupBot"></div>
+    <label class="m-l" id="g-model-l" for="g-model" data-i18n="groupCodexModel">Codex model</label>
+    <input class="field" id="g-model" autocapitalize="off" autocomplete="off" spellcheck="false">
+    <p class="state" id="g-note"></p>
+    <p class="m-err" id="g-err" role="alert" hidden></p>
+    <button class="btn" id="g-save" type="submit" data-i18n="groupSave">Save</button>
   </form>
 </section>
 <section class="sheet" id="bots-sheet" hidden aria-label="Bots" data-i18n-attr="aria-label:botsTitle"><span class="grab"></span><button class="sx" type="button" aria-label="Close" data-i18n-attr="aria-label:close" data-close-sheet><svg width="18" height="18" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
@@ -639,6 +654,14 @@ const STR = {
   "modelBusy": "Running sessions: {n}. Connecting will stop them.",
   "modelCodexNote": "Answers in the group and only reads files. Sign in on the server: codex login. Only for a group of people you trust: the model can read the Codex login file.",
   "modelKimiNote": "Needs a Kimi Code subscription.",
+  "mySessions": "My sessions",
+  "groupBot": "Bot in the group",
+  "groupSame": "Same as my sessions",
+  "groupSameNote": "The group bot answers on the model chosen above.",
+  "groupCodexFallback": "If Codex runs out of quota, the question goes to the model above.",
+  "groupCodexModel": "Codex model",
+  "groupSave": "Save",
+  "groupSaved": "Saved",
   "modelLoginNote": "No key: sessions use Claude Code's own sign-in on the server (your Claude subscription). Sign in there once: claude auth login.",
   "modelCodexDefault": "default from Codex settings",
   "modelErr_claude_login": "Claude Code is not signed in on the server. Run claude auth login there.",
@@ -903,6 +926,14 @@ const STR = {
   "modelBusy": "Идёт сессий: {n}. Подключение их оборвёт.",
   "modelCodexNote": "Отвечает в группе и только читает файлы. Вход выполняется на сервере: codex login. Только для группы своих: модель может прочитать файл входа Codex.",
   "modelKimiNote": "Нужна подписка Kimi Code.",
+  "mySessions": "Мои сессии",
+  "groupBot": "Бот в группе",
+  "groupSame": "Как мои сессии",
+  "groupSameNote": "Бот в группе отвечает на модели, выбранной выше.",
+  "groupCodexFallback": "Если у Codex кончится квота, вопрос уйдёт модели выше.",
+  "groupCodexModel": "Модель Codex",
+  "groupSave": "Сохранить",
+  "groupSaved": "Сохранено",
   "modelLoginNote": "Без ключа: сессии работают через вход Claude Code на сервере, то есть по вашей подписке Claude. Войти один раз там же: claude auth login.",
   "modelCodexDefault": "по умолчанию из настроек Codex",
   "modelErr_claude_login": "Claude Code на сервере не выполнил вход. Запустите там claude auth login.",
@@ -1966,7 +1997,20 @@ function mModels(){  // a known family: the models as chips; the field stays for
   $("m-models").hidden = !list.length;
   $("m-models").innerHTML = list.map(m => `<button class="chip" type="button" role="radio" aria-checked="${m === cur}" aria-pressed="${m === cur}" data-m="${esc(m)}">${esc(m[0].toUpperCase() + m.slice(1))}</button>`).join("");
 }
+let gPick = "";
+function gPaint(){
+  const g = mdl.group || {}; $("g-form").hidden = !g.on; if (!g.on) return;
+  gPick = gPick || g.engine;
+  $("g-now").textContent = t("modelNow", {n: g.engine === "codex" ? "Codex" + (g.codex_model ? " · " + g.codex_model : "") : t("groupSame")});
+  $("g-list").innerHTML = [["sdk", t("groupSame")], ["codex", "Codex"]].map(([id, title]) => `<button class="chip" type="button" role="radio" aria-checked="${id === gPick}" aria-pressed="${id === gPick}" data-g="${id}">${esc(title)}</button>`).join("");
+  const codex = gPick === "codex";
+  $("g-model").hidden = $("g-model-l").hidden = !codex;
+  $("g-model").value = g.codex_model || ""; $("g-model").placeholder = t("modelCodexDefault");
+  $("g-note").textContent = codex ? t("modelCodexNote") + " " + t("groupCodexFallback") : t("groupSameNote");
+  $("g-err").hidden = true;
+}
 function mPaint(){
+  gPaint();
   const p = mPreset(), codex = mdlPick === "codex", custom = mdlPick === "custom", login = !!p.login;
   $("m-list").innerHTML = mdl.presets.map(x => `<button class="chip" type="button" role="radio" aria-checked="${x.id === mdlPick}" aria-pressed="${x.id === mdlPick}" data-p="${x.id}">${esc(x.title || t("modelCustom"))}</button>`).join("");
   $("m-base").hidden = $("m-base-l").hidden = !custom;
@@ -1981,19 +2025,31 @@ function mPaint(){
 }
 async function openModel(){
   try{  // data first: the sheet's height is measured when it opens and must not jump after
-    mdl = await api("model"); mdlPick = mdl.provider; if (mdl.base) $("m-base").value = mdl.base;
+    mdl = await api("model"); mdlPick = mdl.provider; gPick = ""; if (mdl.base) $("m-base").value = mdl.base;
     mNow(); $("m-form").hidden = false; mPaint();
   }catch(e){ $("m-now").textContent = t("modelLoadErr"); $("m-list").innerHTML = ""; $("m-form").hidden = true; }
   sheet("model-sheet", true);
 }
 function mNow(){
-  const name = mdl.provider === "codex" ? "Codex" + (mdl.model ? " · " + mdl.model : "") : mdl.provider === "claude_login" ? "Claude Code · " + mdl.model : mdl.model;
+  const name = mdl.provider === "claude_login" ? "Claude Code · " + mdl.model : mdl.model;
   const lines = [name ? t("modelNow", {n: name}) : t("modelNoneYet")];
   if (mdl.busy) lines.push(t("modelBusy", {n: mdl.busy}));
   $("m-now").textContent = lines.join(". ").replace(/\.\./g, ".");
 }
 $("model-btn").addEventListener("click", openModel);
 $("m-list").addEventListener("click", e => { const b = e.target.closest("[data-p]"); if (b){ mdlPick = b.dataset.p; mPaint(); } });
+$("g-list").addEventListener("click", e => { const b = e.target.closest("[data-g]"); if (b){ gPick = b.dataset.g; gPaint(); } });
+$("g-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const save = $("g-save"); if (save.disabled) return;
+  save.disabled = true; $("g-err").hidden = true;
+  try{
+    const r = await api("model", {target: "group", engine: gPick, model: $("g-model").value.trim()});
+    if (!r.ok){ $("g-err").textContent = t("modelErr_" + r.error) || t("modelErr_net"); $("g-err").hidden = false; return; }
+    mdl = await api("model"); gPick = ""; gPaint(); toast(t("groupSaved"));
+  }catch(err){ $("g-err").textContent = t("modelErr_net"); $("g-err").hidden = false; }
+  finally{ save.disabled = false; }
+});
 $("m-models").addEventListener("click", e => { const b = e.target.closest("[data-m]"); if (b){ $("m-model").value = b.dataset.m; mModels(); } });
 $("m-model").addEventListener("input", mModels);
 $("m-form").addEventListener("submit", async e => {
@@ -2005,7 +2061,7 @@ $("m-form").addEventListener("submit", async e => {
     if (!r.ok){ mErr(t("modelErr_" + r.error) || t("modelErr_net")); return; }
     if (!r.restarted){ mErr(t("modelRestart")); }
     mdl = await api("model"); mdlPick = mdl.provider; mPaint();
-    if (r.restarted) $("m-now").textContent = t("modelDone", {n: mdl.provider === "codex" ? "Codex" : mdl.provider === "claude_login" ? "Claude Code · " + mdl.model : mdl.model}); else mNow();
+    if (r.restarted) $("m-now").textContent = t("modelDone", {n: mdl.provider === "claude_login" ? "Claude Code · " + mdl.model : mdl.model}); else mNow();
   }catch(err){ mErr(t("modelErr_net")); }
   finally{ save.disabled = false; save.textContent = t("modelSave"); }
 });

@@ -26,7 +26,7 @@ from urllib.parse import parse_qs, urlparse
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
-from zidos_pager import MODEL_PRESETS, model_check  # noqa: E402  (stdlib-only module, no side effects)
+from zidos_pager import CLAUDE_LOGIN, MODEL_PRESETS, model_check  # noqa: E402  (stdlib-only module, no side effects)
 
 WEB = ROOT / "assets" / "wizard"
 FIXED = ["zidos_pager.py", "sdk_runner.py", "stt_runner.py", "LICENSE", "README*", "env.example", "deploy", "assets", "docs"]
@@ -57,6 +57,7 @@ for p in /opt/homebrew/bin/python3 /usr/local/bin/python3 python3; do  # the sam
 done
 echo py=$best
 for c in bwrap socat python3 brew; do command -v $c >/dev/null 2>&1 || echo no=$c; done
+PATH="$HOME/.local/bin:$PATH" claude auth status </dev/null 2>/dev/null | grep -q '"loggedIn": *true' && echo claude=1  # Claude Code signed in: no key needed
 test -d /run/systemd/system && echo systemd=1
 { [ "$(id -u)" = 0 ] || sudo -n true 2>/dev/null; } && echo sudo=1
 { test -f ~/.config/systemd/user/zidos-pager.service || test -f ~/Library/LaunchAgents/dev.zidos.pager.bot.plist || test -f ~/.config/systemd/user/cc-tgbot.service || test -f ~/Library/LaunchAgents/com.cctgbot.bot.plist; } && echo existing=1  # legacy names too
@@ -187,6 +188,8 @@ class Wizard:
         no_codex = self.info.get("os") in ("Darwin", "Windows")
         pres = [{"id": k, "title": v["title"], "model": v["model"], "available": not (no_codex and v["base"] is None)}
                 for k, v in MODEL_PRESETS.items()]
+        # Claude Code's own sign-in on the target: offered once the probe has seen it (or before any probe)
+        pres.insert(0, dict(CLAUDE_LOGIN, login=True, available=self.info.get("claude", True) if self.info else True))
         return {"lang": now_lang(), "presets": pres,
                 "target": self.info or None, "bot": self.bot, "owner": self.owner,
                 "groups": [{"id": k, "title": v} for k, v in self.groups.items()],
@@ -249,7 +252,7 @@ class Wizard:
         if missing:
             t.close()
             return {**res, "ok": False, "error": "missing"}
-        self.target, self.info = t, {"mode": mode, "os": osn}
+        self.target, self.info = t, {"mode": mode, "os": osn, "claude": "claude" in kv}
         return res
 
     def set_bot(self, b):
@@ -303,6 +306,14 @@ class Wizard:
 
     def set_model(self, b):
         prov = b.get("provider")
+        if prov == CLAUDE_LOGIN["id"]:  # no key: the installer checks `claude auth status` on the target
+            model = str(b.get("model") or CLAUDE_LOGIN["model"]).strip()
+            if not re.fullmatch(r"[A-Za-z0-9._:/-]{1,120}", model):
+                return {"ok": False, "error": "model"}
+            if self.info and not self.info.get("claude"):
+                return {"ok": False, "error": "claude_login"}
+            self.model = {"provider": prov, "model": model, "login": True}
+            return {"ok": True}
         if prov not in MODEL_PRESETS:
             return {"ok": False, "error": "provider"}
         pre = MODEL_PRESETS[prov]
@@ -407,6 +418,8 @@ class Wizard:
                          "--sdk-model", shlex.quote(m["model"])]
                 if m["base"]:  # empty: Anthropic itself
                     args += ["--sdk-base-url", shlex.quote(m["base"])]
+            elif m.get("login"):
+                args += ["--with-sdk", "--sdk-login", "--sdk-model", shlex.quote(m["model"])]
             q = lambda k, v: shlex.quote(f"{k}={v}")  # noqa: E731
             envs = [q("CC_LANG", b.get("lang") or "en")]
             if b.get("group_id"):
@@ -418,7 +431,7 @@ class Wizard:
                 envs.append(q("CC_RESPONDER_NAME", b["name"]))
             if brief:
                 envs.append('"CC_RESPONDER_BRIEF=$HOME/.config/zidos-pager/brief.md"')
-            if "key" not in m:
+            if m.get("provider") == "codex":
                 envs.append("CC_RESPONDER_ENGINE=codex")
             if os.environ.get("TG_API_BASE"):  # a test Telegram: the installed bot must use it too
                 envs.append(q("TG_API_BASE", self.api_base))

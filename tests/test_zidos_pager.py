@@ -3160,12 +3160,17 @@ class ModelSheetTests(unittest.TestCase):
         self.rc = 0
         self.assertTrue(self.save(provider="codex")[1]["ok"])
         self.assertEqual(self.e.bot.cfg.responder_engine, "codex")
-        self.assertEqual(self.e.bot.api_dispatch(1, "GET", "/api/model", None)[1]["provider"], "codex")
+        self.assertEqual(self.e.bot.api_dispatch(1, "GET", "/api/model", None)[1]["group"]["engine"], "codex")
         self.assertEqual(cc.env_read(self.e.bot.cfg.env_path)["CC_RESPONDER_ENGINE"], "codex")
-        self.save(provider="glm", key="sk-secret-123")
+        self.save(provider="glm", key="sk-secret-123")  # my sessions' model leaves the group bot alone
+        self.assertEqual(self.e.bot.cfg.responder_engine, "codex")
+        self.assertEqual(self.save(target="group", engine="sdk")[1]["ok"], True)
         self.assertEqual(self.e.bot.cfg.responder_engine, "sdk")
         self.assertNotIn("CC_RESPONDER_ENGINE", cc.env_read(self.e.bot.cfg.env_path))
         self.assertEqual(cc.env_read(self.e.bot.cfg.env_path)["TG_BOT_TOKEN"], "1:x")
+        got = self.e.bot.api_dispatch(1, "GET", "/api/model", None)[1]
+        self.assertEqual(got["provider"], "glm")
+        self.assertNotIn("codex", [p["id"] for p in got["presets"]])  # Codex is a group engine, not a sessions model
 
     def test_claude_code_login_needs_its_sign_in_and_stores_no_key(self):
         out = {"v": '{"loggedIn": false}'}
@@ -3190,7 +3195,8 @@ class ModelSheetTests(unittest.TestCase):
         self.assertTrue(self.save(provider="codex", model="gpt-6.1-sol")[1]["ok"])
         self.assertEqual(cc.env_read(self.e.bot.cfg.env_path)["CC_CODEX_MODEL"], "gpt-6.1-sol")
         self.assertEqual(self.e.bot.cfg.codex_model, "gpt-6.1-sol")
-        self.assertEqual(self.e.bot.api_dispatch(1, "GET", "/api/model", None)[1]["model"], "gpt-6.1-sol")
+        self.assertEqual(self.e.bot.api_dispatch(1, "GET", "/api/model", None)[1]["group"]["codex_model"], "gpt-6.1-sol")
+        self.assertTrue(self.save(target="group", engine="codex", model="gpt-6.1-sol")[1]["ok"])
         self.assertEqual(self.save(provider="codex", model="a b\nC=1")[1], {"ok": False, "error": "model"})
         self.assertTrue(self.save(provider="codex")[1]["ok"])
         self.assertNotIn("CC_CODEX_MODEL", cc.env_read(self.e.bot.cfg.env_path))
@@ -9762,6 +9768,37 @@ class ResponderTests(unittest.TestCase):
         texts = [m["text"] for m in self.to_group(e)]
         self.assertIn("Передам владельцу", texts[0])
         self.assertIn("Ответ кодекса", texts[1])
+
+    def codex_quota_case(self, claude_out=False):
+        e, fake = responder_env(self)
+        e.bot.cfg.responder_engine = "codex"
+        calls = []
+
+        def run(cmd, **kw):
+            calls.append(cmd)
+            return subprocess.CompletedProcess(cmd, 1, "", "ERROR: You've hit your usage limit. Try again later.")
+        e.bot._spawn = lambda fn, *a: fn(*a)
+        with mock.patch.object(cc.subprocess, "run", run), mock.patch.object(
+                cc, "codex_boxed", lambda cwd, prompt, model="": ["codex", "exec", "--", prompt]):
+            e.bot.handle_update(gmsg("@cctg_bot вопрос"))
+            if claude_out:
+                e.bot.sdk_on_event({"event": "session.state", "data": {"session": fake.session(
+                    id="s-aabbccdd", state="error", chat=True, detail="rate_limit")}})
+        return e, fake, calls
+
+    def test_codex_quota_hands_the_question_to_the_sdk_once(self):
+        e, fake, calls = self.codex_quota_case()
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(len(fake.calls("session.start")), 1)  # the console's model takes it over
+        self.done(e, "s-aabbccdd", "Ответ Claude")
+        text = self.to_group(e)[-1]["text"]
+        self.assertIn("Ответ Claude", text)
+        self.assertIn("квота Codex исчерпана", text)
+
+    def test_both_quotas_out_is_one_plain_failure_without_ping_pong(self):
+        e, fake, calls = self.codex_quota_case(claude_out=True)
+        self.assertEqual(len(calls), 1)  # Codex is not asked a second time
+        self.assertIn("Передам владельцу", self.to_group(e)[-1]["text"])
 
     def test_codex_engine_off_keeps_the_sdk_and_fallback(self):
         e, fake, calls = self.codex_case()

@@ -323,6 +323,20 @@ class SetupTests(unittest.TestCase):
         self.assertTrue((units / "cc-tgbot.service").exists())  # legacy unit still in place
         self.assertEqual((legacy / "env").read_text(), "TG_BOT_TOKEN=legacy-private-value\n")  # legacy path resolves
 
+    def test_sdk_login_writes_no_key_and_needs_the_sign_in(self):
+        claude = self.bin / "claude"
+        claude.write_text('#!/bin/sh\necho \'{"loggedIn": false}\'\n')
+        claude.chmod(0o755)
+        result = self.install("funnel", "--with-sdk", "--sdk-login", "--sdk-model", "opus")
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("claude auth login", result.stdout)
+        claude.write_text('#!/bin/sh\necho \'{"loggedIn": true}\'\n')
+        result = self.install("funnel", "--with-sdk", "--sdk-login", "--sdk-model", "opus")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual((self.config / "sdk.env").read_text(), "CC_SDK_AUTH=login\nCC_SDK_MODEL=opus\n")
+        bad = self.install("funnel", "--with-sdk", "--sdk-login", "--sdk-key-file", str(self.home / "k.env"))
+        self.assertNotEqual(bad.returncode, 0)
+
     def test_missing_tailscale_is_deterministic_and_actionable(self):
         (self.bin / "tailscale").unlink()
         result = self.install()

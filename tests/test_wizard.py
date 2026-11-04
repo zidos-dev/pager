@@ -253,6 +253,41 @@ class WizardTests(WizardBase):
         self.assertNotIn("--with-sdk", args)
         self.assertIn("CC_RESPONDER_ENGINE=codex", args)
 
+    def fake_claude(self, signed):
+        f = self.shim / "claude"
+        f.write_text('#!/bin/sh\necho \'{"loggedIn": %s, "authMethod": "claude.ai"}\'\n' % ("true" if signed else "false"))
+        f.chmod(0o755)
+
+    def test_install_claude_code_login(self):
+        self.fake_claude(True)
+        self.ssh_target()
+        pres = {p["id"]: p for p in self.call("/api/state")[1]["presets"]}
+        self.assertTrue(pres["claude_login"]["available"] and pres["claude_login"]["login"])
+        self.call("/api/bot", {"token": TOKEN})
+        self.tg.updates.append(start_msg())
+        self.call("/api/owner", {})
+        with mock.patch.object(ws, "model_check") as mc:
+            self.assertTrue(self.call("/api/model", {"provider": "claude_login", "model": "opus"})[1]["ok"])
+        mc.assert_not_called()  # no key to check
+        self.call("/api/install", {"lang": "ru"})
+        for _ in range(300):
+            log = self.call("/api/install/log?from=0")[1]
+            if log["done"]:
+                break
+            time.sleep(0.2)
+        self.assertTrue(log["ok"], log)
+        args = self.setup_args.read_text().splitlines()
+        self.assertIn("--sdk-login", args)
+        self.assertEqual(args[args.index("--sdk-model") + 1], "opus")
+        self.assertNotIn("--sdk-key-file", args)
+        self.assertNotIn("CC_RESPONDER_ENGINE=codex", args)
+
+    def test_claude_code_login_needs_the_sign_in(self):
+        self.fake_claude(False)
+        self.ssh_target()
+        self.assertFalse(next(p for p in self.call("/api/state")[1]["presets"] if p["id"] == "claude_login")["available"])
+        self.assertEqual(self.call("/api/model", {"provider": "claude_login"})[1], {"ok": False, "error": "claude_login"})
+
     def test_groups(self):
         self.ssh_target()
         self.call("/api/bot", {"token": TOKEN})

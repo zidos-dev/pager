@@ -267,6 +267,7 @@ const T = {
   token:"Токен бота",check:"Проверить",checking:"Проверяю…",
   ownerHint:"Чтобы бот слушался только вас, напишите ему <b>/start</b> в Telegram.",openBot:"Открыть бота",waiting:"Жду сообщение…",
   provider:"Провайдер",base:"Адрес API",mname:"Название модели",key:"Ключ API",checkKey:"Проверить ключ",other:"Другой",
+  loginNote:"Без ключа: сессии работают через вход Claude Code на сервере, то есть по вашей подписке Claude. Перед установкой выполните там claude auth login.",e_claude_login:"Claude Code на сервере не выполнил вход. Запустите там claude auth login и подключитесь снова.",
   codexNote:"Codex входит под вашим аккаунтом на сервере: после установки выполните там codex login. Отвечает в группе и только читает файлы. Только для группы своих.",
   kimiNote:"Нужна подписка Kimi Code.",
   groupHint:"Необязательно. Добавьте бота в группу и напишите там что-нибудь, группа появится ниже. Бот будет отвечать в ней на упоминания.",
@@ -299,6 +300,7 @@ const T = {
   token:"Bot token",check:"Check",checking:"Checking…",
   ownerHint:"So that the bot obeys only you, send it <b>/start</b> in Telegram.",openBot:"Open the bot",waiting:"Waiting for your message…",
   provider:"Provider",base:"API address",mname:"Model name",key:"API key",checkKey:"Check the key",other:"Other",
+  loginNote:"No key: sessions use Claude Code's own sign-in on the server, that is your Claude subscription. Run claude auth login there before installing.",e_claude_login:"Claude Code is not signed in on the server. Run claude auth login there and connect again.",
   codexNote:"Codex signs in with your account on the server: run codex login there after installing. It answers in the group and only reads files. Only for a group of people you trust.",
   kimiNote:"Needs a Kimi Code subscription.",
   groupHint:"Optional. Add the bot to a group and write anything there; the group appears below. The bot answers mentions in it.",
@@ -367,6 +369,9 @@ $("f-target").addEventListener("submit", e => { e.preventDefault(); busy($("b-ta
   if (r.fix){ $("fix-code").textContent = r.fix; $("fix").hidden = false; }
   if (!r.ok){ msg("msg-target", err(r.error || (r.fix ? "missing" : "net"), r.error)); return; }
   S.target = r; if (r.existing) msg("msg-target", t("existing"), "ok");
+  try{ const st = await api("state"); S.presets = st.presets || S.presets;  // the probe decides Claude Code and Codex
+    if (!S.presets.some(p => p.id === S.provider && p.available !== false)) S.provider = (S.presets.find(p => p.available !== false) || {}).id || "";
+    paintPresets(); }catch(e){}
   finish("target", S.mode === "ssh" ? (body.user ? body.user + "@" : "") + body.host : t("local"));
 }).then(x => x && msg("msg-target", err("net"))); });
 
@@ -395,10 +400,10 @@ async function pollOwner(){
 function paintPresets(){
   $("presets").innerHTML = S.presets.filter(p => p.available !== false).map(p => `<button class="chip" type="button" role="radio" aria-checked="${p.id === S.provider}" aria-pressed="${p.id === S.provider}" data-p="${p.id}">${p.title || t("other")}</button>`).join("");
   const p = S.presets.find(x => x.id === S.provider) || {};
-  const codex = S.provider === "codex";
-  $("base-f").hidden = S.provider !== "custom"; $("model-f").hidden = codex; $("key-f").hidden = codex;
+  const codex = S.provider === "codex", login = !!p.login;
+  $("base-f").hidden = S.provider !== "custom"; $("model-f").hidden = codex; $("key-f").hidden = codex || login;
   $("mname").value = p.model || "";
-  const note = codex ? t("codexNote") : S.provider === "kimi" ? t("kimiNote") : "";
+  const note = codex ? t("codexNote") : login ? t("loginNote") : S.provider === "kimi" ? t("kimiNote") : "";
   $("model-note").textContent = note; $("model-note").hidden = !note; msg("msg-model", "");
 }
 $("presets").addEventListener("click", e => { const b = e.target.closest("[data-p]"); if (b){ S.provider = b.dataset.p; paintPresets(); } });
@@ -406,7 +411,7 @@ $("f-model").addEventListener("submit", e => { e.preventDefault(); busy($("b-mod
   msg("msg-model", "");
   const r = await api("model", {provider: S.provider, model: $("mname").value.trim(), base: $("base").value.trim(), key: $("key").value.trim()});
   if (!r.ok){ msg("msg-model", err(r.error, r.error)); return; }
-  $("key").value = ""; S.model = S.provider === "codex" ? "Codex" : $("mname").value.trim();
+  $("key").value = ""; S.model = S.provider === "codex" ? "Codex" : S.provider === "claude_login" ? "Claude Code · " + $("mname").value.trim() : $("mname").value.trim();
   if (!$("bname").value && S.bot) $("bname").value = S.bot.name || "";
   finish("model", S.model);
 }).then(x => x && msg("msg-model", err("net"))); });
@@ -472,7 +477,7 @@ function subShow(n){
   if (n === 6) $("m-sum").textContent = t("mSum", {b: M.username, model: M.model || "?", group: M.group ? t("withGroup", {g: M.group.title}) : t("noGroup")});
 }
 function mOpen(open){ $("wiz-bot").hidden = !open; $("more-acts").hidden = open; $("more-hint").hidden = open; if (open) subShow(1); }
-$("b-add").addEventListener("click", () => { Object.assign(M, {slug: "", username: "", provider: (S.presets.find(p => p.available !== false) || {}).id || "", model: "", group: null, groups: []});
+$("b-add").addEventListener("click", () => { Object.assign(M, {slug: "", username: "", provider: (S.presets.find(p => p.available !== false && !p.login) || {}).id || "", model: "", group: null, groups: []});
   ["m-token", "m-key", "m-base", "m-about", "m-pname", "m-pshort", "m-pdesc", "m-brief", "m-cwd", "m-site"].forEach(i => mFill(i, ""));
   $("persona-f").hidden = true; document.querySelectorAll("#wiz-bot .msg").forEach(m => { m.hidden = true; }); msg("msg-more", ""); mPaint(); mOpen(true); });
 $("b-done").addEventListener("click", () => { $("s-more").dataset.done = "1"; $("s-more").dataset.state = "done"; });
@@ -488,7 +493,7 @@ sub(1).addEventListener("submit", () => busy($("b-m1"), "checking", async () => 
   mFill("m-token", ""); M.slug = r.slug; M.username = r.username || r.slug; mFill("m-pname", r.name); subShow(2);
 }).then(x => x && msg("msg-m1", err("net"))));
 function mPaint(){
-  $("mpresets").innerHTML = S.presets.filter(p => p.available !== false).map(p => `<button class="chip" type="button" role="radio" aria-checked="${p.id === M.provider}" aria-pressed="${p.id === M.provider}" data-p="${p.id}">${esc(p.title || t("other"))}</button>`).join("");
+  $("mpresets").innerHTML = S.presets.filter(p => p.available !== false && !p.login).map(p => `<button class="chip" type="button" role="radio" aria-checked="${p.id === M.provider}" aria-pressed="${p.id === M.provider}" data-p="${p.id}">${esc(p.title || t("other"))}</button>`).join("");
   const p = S.presets.find(x => x.id === M.provider) || {}, codex = M.provider === "codex";
   $("m-base-f").hidden = M.provider !== "custom"; $("m-model-f").hidden = codex; $("m-key-f").hidden = codex;
   mFill("m-mname", p.model); const note = codex ? t("codexNote") : M.provider === "kimi" ? t("kimiNote") : "";

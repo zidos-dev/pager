@@ -5926,8 +5926,12 @@ class Bot:
             rec["ts"] = self.clock()
         self.responder_pull()
         if self.cfg.responder_engine == "codex":  # stateless: every question carries the brief and the chat tail
-            self.responder_codex_run(self.responder_prompt(rec, True) + self.CODEX_RO, "")
+            self.responder_codex_run(self.responder_prompt(rec, True) + self.CODEX_RO, "", rec)
             return
+        self.responder_sdk(rec)
+
+    def responder_sdk(self, rec):
+        """The question goes to the SDK runner's chat session (the console's own model)."""
         st = self.store.data.setdefault("responder", {})
         kind = self.responder_kind(rec)  # the owner's own requests: a session that may write in the project
         st["sid"] = st.get("sid_" + kind)  # «sid» = the session of the question being answered
@@ -6077,6 +6081,9 @@ class Bot:
         if not quota_stop(ev):
             return False
         rec = self._resp_busy
+        if rec.get("fell"):  # Codex already handed this question over: both are out, no ping-pong
+            return False
+        rec["fell"] = True
         prompt = self.responder_prompt(rec, True) + self.CODEX_RO
         self.responder_forget()
         log("responder: Claude quota is out, the question goes to Codex")
@@ -6085,17 +6092,25 @@ class Bot:
 
     CODEX_RO = "\n\nОтвечай по-русски, кратко; ничего не меняй в файлах."
 
-    def responder_codex_run(self, prompt, suffix):
-        """The question goes to Codex in a thread; any failure is a plain «could not answer» and the queue moves on."""
+    def responder_codex_run(self, prompt, suffix, rec=None):
+        """The question goes to Codex in a thread; any failure is a plain «could not answer» and the queue moves on.
+        With `rec` (Codex is the chosen engine) a used-up Codex quota hands the question to the SDK runner once."""
         def work():
-            text = None
+            text, out = None, ""
             try:
                 r = subprocess.run(codex_boxed(self.cfg.responder_cwd, prompt, self.cfg.codex_model),
                                    stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=600)
+                out = (r.stdout or "") + (r.stderr or "")
                 if r.returncode == 0 and r.stdout.strip():
                     text = r.stdout.strip() + suffix
             except (OSError, subprocess.SubprocessError) as e:
                 log("responder codex failed: %s" % type(e).__name__)
+            if (text is None and rec is not None and not rec.get("fell") and quota_stop(out) and self.sdk
+                    and os.environ.get("CC_RESPONDER_CODEX_FALLBACK") != "0" and self._resp_busy is rec):
+                rec["fell"], rec["note"] = True, "\n\n(ответил Claude: квота Codex исчерпана)"
+                log("responder: Codex quota is out, the question goes to the SDK runner")
+                self.responder_sdk(rec)
+                return
             self.responder_answer(text)
         self._spawn(work)
 
@@ -6133,7 +6148,7 @@ class Bot:
             if text is None and it:
                 self.backlog_show(it)
         owner = text is None
-        out = _t("Could not answer now. I will pass this to the owner.") if owner else text.strip()
+        out = _t("Could not answer now. I will pass this to the owner.") if owner else text.strip() + rec.get("note", "")
         if rec.get("link") and not owner:
             out += "\n\n" + rec["link"]
         out, files = self.responder_files(out)
@@ -9248,23 +9263,27 @@ class Bot:
         env = env_read(self.cfg.sdk_env)
         keys = self.model_keys()
         base, model = env.get("CC_SDK_BASE_URL", ""), env.get("CC_SDK_MODEL", "")
-        pid = "codex" if self.cfg.responder_engine == "codex" else "claude_login" if env.get("CC_SDK_AUTH") == "login" else next(
+        pid = "claude_login" if env.get("CC_SDK_AUTH") == "login" else next(
             (k for k, p in MODEL_PRESETS.items() if p["base"] == base and p["base"] is not None and k != "custom"), "custom")
-        if pid == "codex":
-            model = self.cfg.codex_model
         try:
             busy = sum(x.get("state") == "working" for x in (self.sdk.sessions() or [])) if self.sdk else 0
         except (HerdrError, AttributeError):
             busy = 0
         presets = [{"id": k, "title": p["title"], "model": p["model"], "stored": bool(p["var"] and keys.get(p["var"]))}
-                   for k, p in MODEL_PRESETS.items()]
+                   for k, p in MODEL_PRESETS.items() if p["base"] is not None]  # Codex answers in the group only
         presets.insert(0, dict(CLAUDE_LOGIN, stored=False, login=True))
         for p in presets:
             p["models"] = MODEL_CHOICES.get(p["id"], [])
-        return 200, {"provider": pid, "model": model, "base": base, "busy": busy, "presets": presets}
+        group = {"on": bool(self.cfg.responder_token and self.cfg.responder_chat is not None),
+                 "engine": self.cfg.responder_engine, "codex_model": self.cfg.codex_model}
+        return 200, {"provider": pid, "model": model, "base": base, "busy": busy, "presets": presets, "group": group}
 
     def api_model_save(self, body):
         """Saved only after the provider has accepted the key; then the runner restarts on it."""
+        if body.get("target") == "group" and body.get("engine") == "sdk":  # the group answers on the sessions' model
+            self.cfg.responder_engine = "sdk"
+            env_update(self.cfg.env_path, {"CC_RESPONDER_ENGINE": None})
+            return 200, {"ok": True, "restarted": True}
         if body.get("provider") == "claude_login":  # the CLI's own sign-in: nothing to store but the model
             model = str(body.get("model") or CLAUDE_LOGIN["model"]).strip()
             if not _MODEL_NAME.fullmatch(model):
@@ -9277,11 +9296,9 @@ class Bot:
             if not signed:
                 return 200, {"ok": False, "error": "claude_login"}
             env_update(self.cfg.sdk_env, {"CC_SDK_AUTH": "login", "CC_SDK_MODEL": model, "CC_SDK_BASE_URL": None})
-            self.cfg.responder_engine = "sdk"
-            env_update(self.cfg.env_path, {"CC_RESPONDER_ENGINE": None})
             rc, _ = self.run(["systemctl", "--user", "restart", "zidos-pager-sdk"], timeout=30)
             return 200, {"ok": True, "restarted": rc == 0}
-        preset = MODEL_PRESETS.get(body.get("provider"))
+        preset = MODEL_PRESETS.get("codex" if body.get("target") == "group" else body.get("provider"))
         if preset is None:
             return 400, {"ok": False, "error": "provider"}
         if preset["base"] is None:  # Codex: its own login on this machine, group answers only
@@ -9312,8 +9329,6 @@ class Bot:
         env_update(self.model_keys_path(), {preset["var"]: key})
         env_update(self.cfg.sdk_env, {"CC_SDK_KEY_FILE": self.model_keys_path(), "CC_SDK_KEY_VAR": preset["var"],
                                       "CC_SDK_MODEL": model, "CC_SDK_BASE_URL": base or None, "CC_SDK_AUTH": None})
-        self.cfg.responder_engine = "sdk"
-        env_update(self.cfg.env_path, {"CC_RESPONDER_ENGINE": None})
         rc, _ = self.run(["systemctl", "--user", "restart", "zidos-pager-sdk"], timeout=30)
         return 200, {"ok": True, "restarted": rc == 0}
 
