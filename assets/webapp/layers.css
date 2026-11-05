@@ -168,7 +168,7 @@ html.lab-ask-has #s-question{display:none!important}
 /* Лист — поверх всей видимой области, независимо от высоты шапки сессии. */
 .lab-ask-root{position:fixed;inset:var(--vvtop,0px) 0 auto;height:min(var(--vvh,100dvh),100dvh);z-index:20;pointer-events:none;font-family:var(--font,system-ui,sans-serif);color:var(--glass-ink,#111214)}
 .lab-ask-root.leaving{opacity:0;transition:opacity 260ms var(--m-fade,ease)}
-.lab-ask-scrim{position:absolute;inset:0;opacity:0;background:rgba(18,20,26,.14);pointer-events:none}
+.lab-ask-scrim{position:absolute;inset:0;opacity:0;background:rgba(18,20,26,.14);-webkit-backdrop-filter:blur(12px) saturate(1.2);backdrop-filter:blur(12px) saturate(1.2);pointer-events:none}  /* размытый слой под листом; blur не анимируется */
 .lab-ask-root[data-state="open"] .lab-ask-scrim,.lab-ask-root[data-state="open"] .lab-ask-sheet{pointer-events:auto}
 html[data-lab-theme="dark"] .lab-ask-scrim{background:rgba(0,0,0,.3)}
 @media (prefers-color-scheme:dark){html:not([data-lab-theme="light"]):not(.in-tg) .lab-ask-scrim{background:rgba(0,0,0,.3)}}
