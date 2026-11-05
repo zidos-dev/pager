@@ -117,7 +117,7 @@ States:
 | `session.list`      | —                                                         | `{"sessions": [<session>]}`  |
 | `session.get`       | `id`                                                      | `{"session": <session>}`     |
 | `session.start`     | `cwd`, `prompt`, optional `model`, `budget_usd`, `perms`  | `{"session": <session>}`     |
-| `session.send`      | `id`, `text`                                              | `{"session": <session>}`     |
+| `session.send`      | `id`, `text`, optional `model`, `perms`                   | `{"session": <session>}`     |
 | `session.answer`    | `id`, `req`, `decision`, optional `answers`, `message`    | `{"ok": true}`               |
 | `session.interrupt` | `id`                                                      | `{"ok": true}`               |
 | `session.stop`      | `id`                                                      | `{"ok": true}`               |
@@ -134,6 +134,8 @@ Rules:
   on every permission request (the `chat` section for chat sessions, `sessions` otherwise): a deny rule
   denies, an allow rule or the mode (`edits`: edits inside `cwd`; `all`: everything, never for chat) allows,
   anything else is asked as before. Each such decision is appended to the session's `auto` (last 20).
+  `session.send` takes the same optional `perms`: a session started without it (before an upgrade) gets
+  the policy with its next message; the console passes it with every message.
 - `session.send`:
   - `idle`: a new turn in the same client (`client.query(text)`).
   - `working`/`blocked`: error `busy` (the bot tells the owner to wait or

@@ -146,7 +146,7 @@
   /* ---------- клик по «⋯» ---------- */
   window.addEventListener("click",function(e){
     var el=e.target; if(!el||!el.closest) return;
-    // До capture-обработчика Clio: закрытие меню не должно запускать свёртку экрана.
+    // До capture-обработчика слоёв: закрытие меню не должно запускать свёртку экрана.
     if(S.open&&el.closest("#session-screen [data-back]")){
       e.stopImmediatePropagation(); e.preventDefault(); close({focus:true}); return;
     }

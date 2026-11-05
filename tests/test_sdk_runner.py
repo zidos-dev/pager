@@ -1025,6 +1025,14 @@ class PermRuleTests(unittest.TestCase):
     def d(self, pol, tool, inp, chat=False):
         return sdk_runner.perm_decide(pol, tool, inp, self.cwd, chat)[0]
 
+    def test_double_star_slash_also_matches_the_root(self):
+        # as in Claude Code (gitignore): **/x is x at any depth, the folder's root included; a deny must not miss .env there
+        for f in (".env", "src/.env"):
+            p = os.path.join(self.cwd, f)
+            self.assertEqual(self.d({"allow": ["Read"], "deny": ["Read(**/.env)"]}, "Read", {"file_path": p}), "deny", f)
+        self.assertEqual(self.d({"allow": ["Edit(src/**/*.py)"]}, "Edit", {"file_path": os.path.join(self.cwd, "src/a.py")}), "allow")
+        self.assertEqual(self.d({"deny": ["Read(" + self.cwd + "/**/.env)"]}, "Read", {"file_path": os.path.join(self.cwd, ".env")}), "deny")
+
     def bash(self, pol, cmd, chat=False):
         return self.d(pol, "Bash", {"command": cmd}, chat)
 
@@ -1150,3 +1158,82 @@ class PermPolicyRunnerTests(Base):
 
     async def test_perms_path_must_be_absolute(self):
         await self.err("session.start", "bad_request", cwd=self.work, prompt="x", perms="rel/perms.json")
+
+    async def test_deny_rules_reach_the_cli_and_a_change_restarts_its_client(self):
+        # the CLI reads inside cwd and runs read-only commands without asking can_use_tool: «never» must be in its settings
+        path = os.path.join(self.tmp.name, "perms.json")
+        with open(path, "w") as f:
+            json.dump({"sessions": {"deny": ["Read(**/plan.md)"]}, "chat": {"deny": ["Bash(cat:*)"]}}, f)
+
+        async def script(client, text):
+            yield result()
+        FakeClient.script = script
+        s = await self.start(perms=path)
+        await self.wait_state(s["id"], "idle")
+        st = json.loads(FakeClient.instances[-1].options.kw["settings"])
+        self.assertEqual(st["permissions"]["deny"], ["Read(**/plan.md)"])
+        c = await self.start(perms=path, chat=True)
+        await self.wait_state(c["id"], "idle")
+        deny = json.loads(FakeClient.instances[-1].options.kw["settings"])["permissions"]["deny"]
+        self.assertIn("Bash(cat:*)", deny)
+        self.assertIn("Read(**/.env*)", deny)  # the built-in chat denies stay
+        n = len(FakeClient.instances)
+        await self.ok("session.send", id=s["id"], text="same rules")
+        await self.wait_state(s["id"], "idle")
+        self.assertEqual(len(FakeClient.instances), n)  # unchanged rules: the live client keeps going
+        with open(path, "w") as f:
+            json.dump({"sessions": {"deny": ["Read(**/plan.md)", "Bash(rm:*)"]}}, f)
+        await self.ok("session.send", id=s["id"], text="new rules")
+        await self.wait_state(s["id"], "idle")
+        kw = FakeClient.instances[-1].options.kw
+        self.assertEqual(len(FakeClient.instances), n + 1)
+        self.assertEqual(json.loads(kw["settings"])["permissions"]["deny"], ["Read(**/plan.md)", "Bash(rm:*)"])
+        self.assertIn("resume", kw)  # the same conversation goes on
+        self.assertEqual(FakeClient.instances[-1].queries[-1], "new rules")
+
+    async def test_unreadable_policy_keeps_the_running_denies(self):
+        # a missing file is not «no rules»: the live client keeps its denies and is not restarted without them
+        path = os.path.join(self.tmp.name, "perms.json")
+        with open(path, "w") as f:
+            json.dump({"sessions": {"deny": ["Read(**/.env)"]}}, f)
+
+        async def script(client, text):
+            yield result()
+        FakeClient.script = script
+        s = await self.start(perms=path)
+        await self.wait_state(s["id"], "idle")
+        n = len(FakeClient.instances)
+        os.unlink(path)
+        await self.ok("session.send", id=s["id"], text="no file")
+        await self.wait_state(s["id"], "idle")
+        self.assertEqual(len(FakeClient.instances), n)
+
+    def test_cli_gets_absolute_file_rules_in_its_own_syntax(self):
+        # the runner reads a single leading «/» as an absolute path; for the CLI that is the project root, «//» is absolute
+        path = os.path.join(tempfile.mkdtemp(), "perms.json")
+        with open(path, "w") as f:
+            json.dump({"sessions": {"deny": ["Read(/etc/**)", "Edit(//srv/x)", "Bash(/usr/bin/curl:*)", "Read(src/**)"]}}, f)
+        self.assertEqual(sdk_runner.perm_cli_deny(path, False),
+                         ["Read(//etc/**)", "Edit(//srv/x)", "Bash(/usr/bin/curl:*)", "Read(src/**)"])
+        self.assertIsNone(sdk_runner.perm_cli_deny(path + ".gone", False))
+        self.assertEqual(sdk_runner.perm_cli_deny(None, False), [])
+
+    async def test_a_session_started_without_policy_gets_it_with_the_next_message(self):
+        # sessions opened before an upgrade carry no policy path: the console passes it with every message
+        path = os.path.join(self.tmp.name, "perms.json")
+        with open(path, "w") as f:
+            json.dump({"sessions": {"deny": ["Bash(rm:*)"]}}, f)
+        res = []
+
+        async def script(client, text):
+            if text == "second":
+                res.append(await client.options.can_use_tool("Bash", {"command": "rm x"}, Ctx()))
+            yield result()
+        FakeClient.script = script
+        s = await self.start()
+        await self.wait_state(s["id"], "idle")
+        await self.err("session.send", "bad_request", id=s["id"], text="x", perms="rel/perms.json")
+        await self.ok("session.send", id=s["id"], text="second", perms=path)
+        done = await self.wait_state(s["id"], "idle")
+        self.assertIsInstance(res[0], PermissionResultDeny)
+        self.assertEqual(done["perms"], path)

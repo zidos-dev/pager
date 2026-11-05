@@ -1,4 +1,4 @@
-"""Session open/close on a phone is one transition: the Clio morph (lab-open), not the product slide underneath it.
+"""Session open/close on a phone is one transition: the layers morph (lab-open), not the product slide underneath it.
 Owner 20.10 03:55 «выход назад из сессии» looked worse: two systems drove the same layers (paintNav wrote translate3d
 and will-change into both screens every frame under the morph, navdim under it) and the screen stayed a still card
 for ~100 ms after the morph ended. Every frame is sampled: no inline transform / will-change on #session-screen or

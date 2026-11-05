@@ -1,10 +1,10 @@
 // Service worker for the sessions app: caches only the app shell (network-first) + Web Push.
 // /api/* and /f/* are never cached: they carry session data and temporary file links.
-const CACHE = 'zidos-pager-shell-v5';
+const CACHE = 'zidos-pager-shell-v6';  // v6: the shell's layer files were renamed
 const SHELL = [
   '/app/', '/app/index.html', '/app/manifest.webmanifest',
   '/app/icon-192.png', '/app/icon-512.png', '/app/icon-maskable-512.png',
-  '/app/clio.css', '/app/clio.js', '/app/menu.css', '/app/menu.js', '/app/voice.js',
+  '/app/layers.css', '/app/layers.js', '/app/menu.css', '/app/menu.js', '/app/voice.js',
   '/app/onest-latin.woff2', '/app/onest-cyrillic.woff2',
 ];
 

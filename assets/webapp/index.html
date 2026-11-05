@@ -426,7 +426,7 @@ textarea.field{min-height:120px;resize:vertical}
 .note.pm-auto{max-width:100%;text-align:center;overflow-wrap:anywhere}
 @media (prefers-reduced-motion:reduce){.pm-th{transition:none}}
 </style>
-<link rel="stylesheet" href="/app/clio.css">
+<link rel="stylesheet" href="/app/layers.css">
 <link rel="stylesheet" href="/app/menu.css">
 </head>
 <body>
@@ -1266,7 +1266,7 @@ if (tg) document.documentElement.classList.add("in-tg");
 const STANDALONE = !tg;
 /* iPhone: при показанной кнопке «назад» Telegram свайп от края забирает себе — снимок прошлой страницы едет поверх,
    а потом у нас ещё проигрывается сворачивание (владелец 20.10: «свайп на айфоне просто открывает предыдущую страницу»).
-   На iOS назад ведём сами: своя кнопка в шапке и свой свайп за пальцем (морф clio); на Android кнопка Telegram = системная «назад». */
+   На iOS назад ведём сами: своя кнопка в шапке и свой свайп за пальцем (морф слоёв); на Android кнопка Telegram = системная «назад». */
 const OWN_BACK = STANDALONE || (!!tg && tg.platform === "ios");
 let deviceToken = null;
 try{ deviceToken = localStorage.getItem("cc-device"); }catch(e){}
@@ -1511,7 +1511,7 @@ const panel = v => WIDE.matches && v === "session";  // сессия — пра�
 function push(v){
   if (navAnim) navAnim.stop();
   const W = window.innerWidth; show(v);
-  if (!layerOf(v) || panel(v) || v === "session") return;  // сессия: один переход — морф clio, без слайда и navdim
+  if (!layerOf(v) || panel(v) || v === "session") return;  // сессия: один переход — морф слоёв, без слайда и navdim
   paintNav(v, W);
   navAnim = spring(W, 0, {response: 0.34, eps: 1, onUpdate: x => paintNav(v, x), onDone: () => { navAnim = null; settleNav(v); }});
 }
@@ -1525,7 +1525,7 @@ function pop(vel){
   if (tg) tg.MainButton.hide(); else $("fab").hidden = true;
   if (to === "list"){ $("new-btn").hidden = $("lb-new").hidden = false; document.documentElement.classList.remove("locked"); }
   if (v === "session"){
-    /* морф clio сворачивает экран в карточку и шлёт session:closed; запасной таймер — если морфа нет */
+    /* морф слоёв сворачивает экран в карточку и шлёт session:closed; запасной таймер — если морфа нет */
     let tm = 0;
     const done = () => { if (navAnim !== st) return; navAnim = null; settleNav(v); show(to); loadList(); };
     const st = navAnim = {morph: true, stop(){ clearTimeout(tm); document.removeEventListener("session:closed", done); }};
@@ -1715,7 +1715,7 @@ $("s-question").addEventListener("click", async e => {
   if (a === "own") return $("s-question").dispatchEvent(new CustomEvent("question:own", {bubbles: true}));
   if (answering) return;
   answering = true; b.disabled = true; haptic();
-  const failed = () => $("s-question").dispatchEvent(new CustomEvent("question:fail", {bubbles: true})); /* Clio вернёт лист */
+  const failed = () => $("s-question").dispatchEvent(new CustomEvent("question:fail", {bubbles: true})); /* слой вернёт лист */
   try{ const r = await api(`session/${encodeURIComponent(sess.id)}/answer`, body); if (!r.ok){ toast(r.error || t("failed")); failed(); } else haptic("ok"); await loadSession(); }
   catch(x){ toast(t("netRetry")); failed(); }
   finally{ answering = false; b.disabled = false; }
@@ -1747,7 +1747,7 @@ async function submitOwnAnswer(text, id, key){
     }
   }
 }
-/* A DOM event bridges the isolated product and Clio scripts. */
+/* A DOM event bridges the isolated product and layers scripts. */
 $("s-question").addEventListener("question:answer", e => {
   const d = e.detail;
   d.result = submitOwnAnswer(d.text, d.id, d.key);
@@ -2521,7 +2521,7 @@ document.addEventListener("focusin", setVV); document.addEventListener("focusout
     if (dir !== "x") return;
     let x = base + mx; if (x < 0) x = rubber(x, window.innerWidth);
     tr.add(x);
-    if (view === "session" && !panel(view)){ navX = Math.max(0, x); document.dispatchEvent(new CustomEvent("nav:drag", {detail: navX})); }  // морф clio ведёт экран за пальцем
+    if (view === "session" && !panel(view)){ navX = Math.max(0, x); document.dispatchEvent(new CustomEvent("nav:drag", {detail: navX})); }  // морф слоёв ведёт экран за пальцем
     else paintNav(view, Math.max(-20, x));
   }, {passive: true});
   const end = () => {
@@ -2556,7 +2556,7 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden && !a
 
 /* Версия оболочки: сервер должен поддерживать HEAD с Content-Length для всех файлов.
    Не принимаем частичную версию и не перезагружаем страницу с черновиком или открытым листом. */
-const APP_FILES = ["index.html", "clio.js", "clio.css", "menu.js", "menu.css", "voice.js"];
+const APP_FILES = ["index.html", "layers.js", "layers.css", "menu.js", "menu.css", "voice.js"];
 let appVersion = null, appCheckRunning = false, appCheckController = null;
 function stopBackgroundRequests(){
   appReloading = true;
@@ -2657,7 +2657,7 @@ applyI18n();
 boot();
 })();
 </script>
-<script src="/app/clio.js" defer></script>
+<script src="/app/layers.js" defer></script>
 <script src="/app/menu.js" defer></script>
 <script src="/app/voice.js" defer></script>
 </body>

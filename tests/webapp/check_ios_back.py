@@ -1,5 +1,5 @@
 """On an iPhone the app leads «back» itself: Telegram's BackButton stays hidden, so the edge swipe reaches the app
-(the Clio morph follows the finger) instead of Telegram's own back swipe sliding a snapshot of the previous page
+(the layers morph follows the finger) instead of Telegram's own back swipe sliding a snapshot of the previous page
 before the collapse plays (owner 20.10 08:49, IMG_5134). Every layer then shows exactly one back control of its
 own. On Android Telegram's BackButton is the system back and stays.
 

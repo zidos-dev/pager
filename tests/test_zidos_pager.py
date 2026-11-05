@@ -5792,34 +5792,34 @@ class SecurityHeadersTests(unittest.TestCase):
         self.assertIsNone(r.getheader("Content-Security-Policy"))
         self.assertEqual(r.getheader("X-Content-Type-Options"), "nosniff")
 
-    def test_product_webapp_serves_clio_layers(self):
-        """Реальная статика мини-аппа: слои Clio подключены, отдаются с верным типом, CSP их пускает, sw.js кэширует."""
+    def test_product_webapp_serves_layers(self):
+        """Реальная статика мини-аппа: слои подключены, отдаются с верным типом, CSP их пускает, sw.js кэширует."""
         real = os.path.join(os.path.dirname(os.path.abspath(cc.__file__)), "assets", "webapp")
         w = WebEnv(self)
         w.srv.static_dir = real
-        st, body, r = w.req("GET", "/app/clio.js", auth=False)
+        st, body, r = w.req("GET", "/app/layers.js", auth=False)
         self.assertEqual(st, 200)
         self.assertTrue(r.getheader("Content-Type").startswith("application/javascript"))
         self.assertEqual(r.getheader("X-Content-Type-Options"), "nosniff")
         self.assertNotIn(b"lab-source", body)
-        st, body, r = w.req("GET", "/app/clio.css", auth=False)
+        st, body, r = w.req("GET", "/app/layers.css", auth=False)
         self.assertEqual(st, 200)
         self.assertTrue(r.getheader("Content-Type").startswith("text/css"))
         st, body, r = w.req("GET", "/app/", auth=False)
         self.assertEqual(st, 200)
         html = body.decode("utf-8")
-        self.assertRegex(html, r'<link rel="stylesheet" href="/app/clio\.css\?v=\d+">')  # versioned when served
-        self.assertRegex(html, r'<script src="/app/clio\.js\?v=\d+" defer></script>')
+        self.assertRegex(html, r'<link rel="stylesheet" href="/app/layers\.css\?v=\d+">')  # versioned when served
+        self.assertRegex(html, r'<script src="/app/layers\.js\?v=\d+" defer></script>')
         for key in ("filter", "open", "ask", "quota"):
-            self.assertNotIn('data-lab-%s=' % key, html)  # ворот слоёв нет: clio.css их не читает (хотфикс ae3f691 снят 20.10)
+            self.assertNotIn('data-lab-%s=' % key, html)  # ворот слоёв нет: layers.css их не читает (хотфикс ae3f691 снят 20.10)
         self.assertNotIn("data-lab-source", html)
         csp = r.getheader("Content-Security-Policy")
         self.assertIn("script-src 'self' https://telegram.org", csp)
         self.assertNotIn("'unsafe-inline'", csp.split("style-src")[0])  # скрипты по-прежнему только 'self' и хэши
         st, body, r = w.req("GET", "/app/sw.js", auth=False)
         self.assertEqual(st, 200)
-        self.assertIn(b"/app/clio.js", body)
-        self.assertIn(b"/app/clio.css", body)
+        self.assertIn(b"/app/layers.js", body)
+        self.assertIn(b"/app/layers.css", body)
 
     def test_api_and_download_headers(self):
         w = WebEnv(self)
@@ -7204,7 +7204,7 @@ class SdkTests(unittest.TestCase):
         fake = FakeSdk(self)
         e = sdk_env(self, fake)
         self.assertEqual(e.bot.injector(SID, "hello"), (True, ""))
-        self.assertEqual(fake.calls("session.send"), [{"id": SID, "text": "hello"}])
+        self.assertEqual(fake.calls("session.send"), [{"id": SID, "text": "hello", "perms": cc.perms_path(e.cfg)}])  # the policy rides along
         fake.errors["session.send"] = "busy"
         ok, err = e.bot.injector(SID, "again")
         self.assertFalse(ok)
@@ -7439,7 +7439,7 @@ class SdkTests(unittest.TestCase):
         self.assertEqual(btn_[0]["text"], "+1 $ и продолжить")
         e.bot.handle_update(e.cb("sdb:" + SID))
         self.assertEqual(fake.calls("session.budget"), [{"id": SID, "budget_usd": 2.0}])
-        self.assertEqual(fake.calls("session.send"), [{"id": SID, "text": "continue"}])
+        self.assertEqual(fake.calls("session.send"), [{"id": SID, "text": "continue", "perms": cc.perms_path(e.cfg)}])  # the policy rides along
         self.assertLess(fake.methods().index("session.budget"), fake.methods().index("session.send"))
         fake.sessions[SID] = fake.session(state="interrupted")
         e.bot.list_sessions(True)
@@ -9541,6 +9541,7 @@ class ResponderTests(unittest.TestCase):
         sends = fake.calls("session.send")
         self.assertEqual(len(sends), 1)
         self.assertIn("второй", sends[0]["text"])
+        self.assertEqual(sends[0]["perms"], cc.perms_path(e.bot.cfg))  # a chat session opened before an upgrade gets the rules too
         with open(e.bot.cfg.responder_log, encoding="utf-8") as f:
             rec = json.loads(f.readline())
         self.assertEqual((rec["q"], rec["a"], rec["from"]), ("первый", "Ответ один: https://example.com", 777))

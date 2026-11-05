@@ -40,7 +40,7 @@ function setup() {
   let passed=0;
   {
     const {state:s}=setup(); await s.check(true); assert.equal(s.baseline(),600);
-    assert.deepEqual(s.calls.map(x=>x.url).sort(),['clio.css','clio.js','index.html','menu.css','menu.js','voice.js'].map(x=>'/app/'+x).sort());
+    assert.deepEqual(s.calls.map(x=>x.url).sort(),['layers.css','layers.js','index.html','menu.css','menu.js','voice.js'].map(x=>'/app/'+x).sort());
     assert(s.calls.every(x=>!x.method&&x.cache==='no-store'));
     await s.check(); assert.equal(s.reloads,0); s.length=101; await s.check(); assert.equal(s.reloads,1); passed++;
   }

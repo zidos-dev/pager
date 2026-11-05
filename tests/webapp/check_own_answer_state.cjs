@@ -1,4 +1,4 @@
-// Browser-free race checks against the actual product and Clio functions.
+// Browser-free race checks against the actual product and layers functions.
 // APP_DIR=/path/to/assets/webapp node check_own_answer_state.cjs
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -6,9 +6,9 @@ const vm = require('node:vm');
 const path = require('node:path');
 const app = process.env.APP_DIR || path.join(__dirname, '../../assets/webapp');
 const html = fs.readFileSync(path.join(app, 'index.html'), 'utf8');
-const clio = fs.readFileSync(path.join(app, 'clio.js'), 'utf8');
+const layers = fs.readFileSync(path.join(app, 'layers.js'), 'utf8');
 for (const script of html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)) new vm.Script(script[1]);
-new vm.Script(clio);
+new vm.Script(layers);
 function section(source, from, to) {
   const start = source.indexOf(from), end = source.indexOf(to, start);
   assert(start >= 0 && end > start, `missing source section ${from}`);
@@ -142,8 +142,8 @@ function sheetTransitions() {
     teardown() {s.root = null;},
   };
   const ctx = vm.createContext(sandbox);
-  vm.runInContext(section(clio, '  function ownPending(', '  function ownEditor('), ctx);
-  vm.runInContext(section(clio, '  function run(){', '  var mo=new MutationObserver(sync);'), ctx);
+  vm.runInContext(section(layers, '  function ownPending(', '  function ownEditor('), ctx);
+  vm.runInContext(section(layers, '  function run(){', '  var mo=new MutationObserver(sync);'), ctx);
   sandbox.q = {sig: 'a', pending: true}; vm.runInContext('run()', ctx);
   assert(buttons.every(b => b.disabled)); assert.equal(ta.readOnly, true);
   // A reconstructed pending sheet has no open editor until failure arrives.
@@ -167,5 +167,5 @@ function sheetTransitions() {
 }
 (async () => {
   const count = await races() + sheetTransitions();
-  console.log(`PASS ${count} browser-free own-answer checks; inline scripts and Clio parse`);
+  console.log(`PASS ${count} browser-free own-answer checks; inline scripts and layers parse`);
 })().catch(error => {console.error(error); process.exitCode = 1;});

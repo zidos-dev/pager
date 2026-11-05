@@ -1,5 +1,5 @@
 """Review step of a multi-question AskUserQuestion («Ready to submit your answers?»): question.review=true, options=[].
-The native block sits at the top of the history (far above the end), so the Clio sheet must show it: the answers
+The native block sits at the top of the history (far above the end), so the layers sheet must show it: the answers
 and «Submit answers» → {action:"submit"}, «Cancel» → {action:"cancel"} (owner 19.10 22:44: Submit «не срабатывает»).
 
 Run externally with Playwright; APP_DIR selects checkout. Reuses State from check_own_answer.

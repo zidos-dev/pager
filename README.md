@@ -183,8 +183,10 @@ denied. Rules use Claude Code's syntax, so a line from your `settings.json` work
   A deny rule matches any part. `AskUserQuestion` is never answered by a rule.
 - **«♾ Everywhere».** A permission request in Telegram or in the mini-app offers the rule it would take, for example
   «♾ Everywhere: Bash(npm test:*)»; one press allows the call and adds the rule.
-- **Where it applies.** SDK sessions follow the rules at once (each decision is shown as a quiet line in the session's
-  feed). Terminal sessions the bot starts get them through `claude --settings` on their next start; sessions started
+- **Where it applies.** SDK sessions follow the rules at once, sessions opened earlier from their next message (each
+  decision is shown as a quiet line in the session's feed). Deny rules are also handed to Claude Code itself, so they
+  hold where it does not ask (reads inside the folder, read-only commands); changing them restarts the session's
+  client, and the conversation goes on. Terminal sessions the bot starts get them through `claude --settings` on their next start; sessions started
   outside the bot keep asking with buttons.
 - **Group bots.** Each bot has its own rules in its card under «Bots» (*Ask* or *Edits* only: people in the group are
   not you); whatever the rules do not cover still comes to you as a question.

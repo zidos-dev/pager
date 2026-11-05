@@ -103,7 +103,7 @@ def flow(page, lang, theme):
     labels = page.locator('#s-question [data-a="perm"]').all_inner_texts()
     check(labels[-1].endswith("Deny"), f"deny stays last {labels}")
     expect(page.locator(".lab-ask-root .lab-ask-mk")).to_have_count(4)
-    marks = page.locator(".lab-ask-root .lab-ask-mk").all_inner_texts()  # the sheet the owner sees (clio.js), not the hidden card
+    marks = page.locator(".lab-ask-root .lab-ask-mk").all_inner_texts()  # the sheet the owner sees (layers.js), not the hidden card
     check(marks == ["1", "2", "3", "4"], f"SDK options numbered by place in the sheet {marks}")
     if SHOTS: page.screenshot(path=f"{SHOTS}/perms-feed-{lang}-{theme}-390.png")
 

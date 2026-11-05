@@ -1,5 +1,5 @@
-/* clio.css — слои Clio для мини-аппа (перенос 1:1 со страницы выбора 15.10.2026; filter=Б open=Б ask=Б quota=Б). */
-/* clio.css — общие токены движения и стекла (слои Clio: filter, open, ask, quota).
+/* layers.css — слои мини-аппа (перенос 1:1 со страницы выбора 15.10.2026; filter=Б open=Б ask=Б quota=Б). */
+/* layers.css — общие токены движения и стекла (слои: filter, open, ask, quota).
    Движение: вариант A «Apple-база HIG 2026». *-t — длительность, без суффикса — кривая linear() (пружина).
    Обратный путь быстрее (~60%): --m-*-out. Цвет/прозрачность без отскока: --m-fade. */
 :root{
@@ -33,7 +33,7 @@
   --glass-shadow:0 8px 32px rgba(20,22,30,.10),0 1px 3px rgba(20,22,30,.06);
   --glass-ink:#111214;
 }
-/* Тема слоёв: clio.js ставит html[data-lab-theme] по факту (Telegram colorScheme или prefers-color-scheme).
+/* Тема слоёв: layers.js ставит html[data-lab-theme] по факту (Telegram colorScheme или prefers-color-scheme).
    Переменные самого продукта (--canvas, --panel, --ink …) не трогаем — тема продукта остаётся как есть. */
 html[data-lab-theme="dark"]{--glass-bg:rgba(44,44,48,.58);--glass-edge:inset 0 0 0 1px rgba(255,255,255,.08);--glass-shadow:0 8px 32px rgba(0,0,0,.5),0 1px 3px rgba(0,0,0,.4);--glass-ink:#f2f2f5}
 @media (prefers-reduced-motion:reduce){
@@ -186,7 +186,7 @@ html[data-lab-theme="dark"] .lab-ask-scrim{background:rgba(0,0,0,.3)}
   background:color-mix(in srgb,var(--glass-ink) 7%,transparent);color:inherit;font:inherit;
   transform:scale(1);transition:transform var(--m-state-t,302ms) var(--m-state),background-color var(--m-fade-t,180ms) var(--m-fade),color 180ms var(--m-fade);
   animation:lab-ask-in var(--m-reveal-t,284ms) var(--m-reveal) both;animation-delay:180ms}  /* варианты вместе: без ступенчатости (designkit-owner) */
-/* смена шага на месте: лист не въезжает, варианты не выезжают заново — содержимое проявляется целиком (clio.js build/stepFrom) */
+/* смена шага на месте: лист не въезжает, варианты не выезжают заново — содержимое проявляется целиком (layers.js build/stepFrom) */
 .lab-ask-root.step .lab-ask-opt{animation:none}
 @keyframes lab-ask-in{from{opacity:0;transform:translate3d(0,10px,0)}to{opacity:1;transform:none}}
 .lab-ask-opt.pressed{background:color-mix(in srgb,var(--glass-ink) 14%,transparent);transition-duration:120ms}
@@ -293,7 +293,7 @@ html[data-lab-theme="dark"] .lq,html[data-lab-theme="dark"] .lab-sq{--lq-warn:#f
 @media (prefers-reduced-motion:reduce){.lqd,.lqb,.lqc i{transition-duration:1ms}}
 
 /* Шапка — отдельный flex-ряд экрана, за пределами прокрутки #s-body.
-   Остаётся внутри #session-screen: существующий Clio clip-path раскрывает её вместе с экраном. */
+   Остаётся внутри #session-screen: существующий clip-path слоёв раскрывает её вместе с экраном. */
 .session-header{position:absolute;left:0;right:0;top:0;z-index:8;padding:4px 12px 8px;background:var(--glass-bar);-webkit-backdrop-filter:var(--glass-fx);backdrop-filter:var(--glass-fx)}
 .session-header>*{max-width:696px;margin-left:auto;margin-right:auto}
 :root:not(.in-tg) .session-header{padding-top:calc(env(safe-area-inset-top,0px) + 4px)}

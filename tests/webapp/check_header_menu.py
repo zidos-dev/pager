@@ -32,7 +32,7 @@ BASE = json.loads((ROOT.parent / "stand/demo2.json").read_text())
 PORT = int(os.environ.get("PORT", "18987"))
 URL = f"http://127.0.0.1:{PORT}"
 SID = "a1c3e5f7"
-ASSETS = {"/app/" + name for name in ("index.html", "clio.js", "clio.css", "menu.js", "menu.css", "voice.js")}
+ASSETS = {"/app/" + name for name in ("index.html", "layers.js", "layers.css", "menu.js", "menu.css", "voice.js")}
 LONG_NAME = "Header acceptance: a deliberately very long session title " * 3
 
 
@@ -87,7 +87,7 @@ def ready(page):
     query = "?theme=tg-" + host_theme if host_theme else ""
     page.goto(URL + "/app/" + query, wait_until="load")
     if host_theme:
-        # colorScheme selects Clio's theme; the host variables independently
+        # colorScheme selects the layers' theme; the host variables independently
         # select the product palette. The stand injects Telegram's real shape.
         secondary = page.evaluate("getComputedStyle(document.documentElement).getPropertyValue('--tg-theme-secondary-bg-color').trim()")
         check(secondary == ("#000" if host_theme == "dark" else "#efeff4"),
@@ -219,7 +219,7 @@ def header_menu(page, ctx, engine, lang, surface, theme):
     expect(page.locator("#session-screen")).to_be_visible()
     expansion = page.evaluate(VISIBLE_RECT)
     check(expansion["clip"] == "none" and abs(expansion["p"] - 1) < .001,
-          f"menu popstate also collapsed the Clio session: {expansion}")
+          f"menu popstate also collapsed the layers session: {expansion}")
     page.locator("#s-more").click()
     expect(menu).to_be_visible()
     if surface == "telegram":
@@ -416,7 +416,7 @@ def permission_busy(page, ctx, engine, lang, surface, theme):
 
 
 def telegram_init(theme):
-    # Stub only host integration; product and Clio code remain unmodified.
+    # Stub only host integration; product and layers code remain unmodified.
     return """window.Telegram={WebApp:{initData:'synthetic',colorScheme:%s,
       ready(){},expand(){},disableVerticalSwipes(){},onEvent(){},offEvent(){},
       BackButton:{show(){},hide(){},onClick(fn){window.__hdrBack=fn;},offClick(){}},

@@ -2965,6 +2965,7 @@ class Tmux:
         self.last_used = {}
         self.herdr = None  # HerdrClient: ids of herdr panes (h-...) go there, not to tmux
         self.sdk = None    # SdkClient: ids of SDK sessions (s-...) go to the runner, not to tmux
+        self.perms = None  # the owner's policy file, passed with every message to an SDK session
         self._locks = {}
         self._glock = threading.Lock()
 
@@ -3163,7 +3164,9 @@ class Tmux:
         if self.sdk is None:
             return False, _t("The SDK runner is not responding.")
         try:
-            self.sdk.call("session.send", {"id": sid, "text": text}, timeout=10.0)
+            # the policy path rides with every message: sessions opened before an upgrade get it too
+            self.sdk.call("session.send", {"id": sid, "text": text, **({"perms": self.perms} if self.perms else {})},
+                          timeout=10.0)
         except SdkError as e:
             return False, sdk_err_text(e)
         return True, ""
@@ -4226,6 +4229,7 @@ class Bot:
         self.tmux = tmux or Tmux(cfg.claude_bin, runner)
         self.tmux.herdr = HerdrClient(cfg.herdr_socket, cfg.herdr_mode)
         self.tmux.sdk = SdkClient(cfg.sdk_socket, cfg.sdk_mode)
+        self.tmux.perms = perms_path(cfg)
         self._sdk_logged = 0.0
         self._sdk_ready = (0.0, False)  # (checked at, runner alive and has a key)
         self._sdk_lock = threading.Lock()
@@ -6104,7 +6108,8 @@ class Bot:
             try:
                 st["n_" + kind] = st.get("n_" + kind, 0) + 1
                 self.sdk.call("session.send", {"id": st["sid"], "text": self.responder_prompt(rec, False),
-                                               "model": self.responder_model(rec)}, timeout=10.0)
+                                               "model": self.responder_model(rec), "perms": perms_path(self.cfg)},
+                              timeout=10.0)
                 return
             except HerdrError as e:  # the session is gone or stuck: one more try with a fresh one
                 log("responder send failed: %s" % e.code)

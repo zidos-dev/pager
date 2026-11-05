@@ -1,4 +1,4 @@
-"""Регресс: раскрытие/закрытие сессии Clio + опрос списка не оставляет следов на карточках (кеш listHTML)."""
+"""Регресс: раскрытие/закрытие сессии (слои) + опрос списка не оставляет следов на карточках (кеш listHTML)."""
 import os, sys, json, time, subprocess, urllib.request
 from pathlib import Path
 from playwright.sync_api import sync_playwright

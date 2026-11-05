@@ -150,7 +150,7 @@ def case_kb(page, ctx, logs, files):
     expect(page.locator("#s-attach .att")).to_have_count(2)
     check(not page.evaluate("document.activeElement===document.getElementById('s-text')"), "field keeps focus after the picker: iOS shows no keyboard, the footer stays in keyboard layout")
     check(not page.evaluate("document.documentElement.classList.contains('kb')"), "html.kb stuck after picking files")
-    expect(page.locator("#session-screen .lab-sq")).to_be_visible()  # строка квоты под полем (слой clio)
+    expect(page.locator("#session-screen .lab-sq")).to_be_visible()  # строка квоты под полем (слой layers)
 
 
 def case_thumb(page, ctx, logs, files):

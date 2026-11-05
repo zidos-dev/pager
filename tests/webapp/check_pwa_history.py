@@ -1,5 +1,5 @@
 """iPhone home-screen PWA: opening a layer puts nothing into browser history, so the iOS edge swipe has no page to go
-«back» to — it reaches the app and the Clio morph follows the finger (owner 20.10 10:41: «pwa вне тг живет»; the swipe
+«back» to — it reaches the app and the layers morph follows the finger (owner 20.10 10:41: «pwa вне тг живет»; the swipe
 showed a snapshot of the previous history entry, then popstate played the collapse). In a plain browser (and on
 Android/desktop PWA) layers keep their history entries: the browser/system «back» closes the top layer.
 

@@ -138,6 +138,29 @@ def perm_load(path, chat):
     return pol if isinstance(pol, dict) else None
 
 
+def perm_cli_deny(path, chat):
+    """The owner's deny rules handed to the CLI itself: it reads inside cwd and runs read-only commands without asking
+    can_use_tool, so a «never» there only holds if the CLI knows it.
+    -> list, or None when the file is set but cannot be read (not the same as «no rules»)."""
+    if not isinstance(path, str) or not path:
+        return []
+    if not os.path.isfile(path):
+        return None
+    pol = perm_load(path, chat) or {}
+    deny = pol.get("deny") if isinstance(pol.get("deny"), list) else []
+    out = []
+    for r in deny:
+        parsed = perm_rule_parse(r)
+        if not parsed:
+            continue
+        spec = parsed[1]
+        if parsed[0] in ("Read", "Edit") + tuple(EDIT_TOOLS) + tuple(READ_TOOLS) and spec and spec.startswith("/") \
+                and not spec.startswith("//"):
+            r = "%s(/%s)" % (parsed[0], spec)  # the runner's absolute path is «//» for the CLI («/» = project root there)
+        out.append(r)
+    return out
+
+
 def perm_rule_parse(rule):
     m = PERM_RULE.match(rule) if isinstance(rule, str) else None
     return (m.group(1), m.group(2)) if m else None
@@ -185,6 +208,18 @@ def _target(inp, cwd):
     return os.path.realpath(os.path.join(cwd, p)) if isinstance(p, str) else None
 
 
+def _glob(path, spec):
+    """fnmatch with Claude Code's «**/»: zero or more folders, so **/x also matches x itself and a/**/x matches a/x."""
+    if fnmatch.fnmatchcase(path, spec):
+        return True
+    alt = spec[3:] if spec.startswith("**/") else spec
+    while "/**/" in alt:
+        alt = alt.replace("/**/", "/", 1)
+        if fnmatch.fnmatchcase(path, alt):
+            return True
+    return alt != spec and fnmatch.fnmatchcase(path, alt)
+
+
 def _rule_hit(rule, tool, inp, cwd):
     """Non-Bash rule against a tool call."""
     parsed = perm_rule_parse(rule)
@@ -205,8 +240,8 @@ def _rule_hit(rule, tool, inp, cwd):
         if real is None:
             return False
         if spec.startswith("/"):
-            return fnmatch.fnmatchcase(real, spec.replace("//", "/", 1) if spec.startswith("//") else spec)
-        return _inside(real, root) and fnmatch.fnmatchcase(os.path.relpath(real, root), spec)
+            return _glob(real, spec.replace("//", "/", 1) if spec.startswith("//") else spec)
+        return _inside(real, root) and _glob(os.path.relpath(real, root), spec)
     return False
 
 
@@ -460,6 +495,7 @@ class Session:
         self.chat = kw.get("chat") is True
         self.write = kw.get("write") is True  # a chat session whose sandbox may write in the project (the owner's)
         self.perms = kw.get("perms") if isinstance(kw.get("perms"), str) else None  # the owner's policy file
+        self.cli_deny = None  # the deny rules the running CLI was started with (not saved: set at each client start)
         self.auto = [x for x in kw.get("auto", []) if isinstance(x, dict)][-20:]  # what the rules decided, newest last
         self.pending = {}      # req -> dict(request fields, future)
         self.client = None
@@ -672,8 +708,19 @@ class Runner:
         model = p.get("model")
         if model is not None and not isinstance(model, str):
             raise RunnerError("bad_request", "model must be a string")
+        perms = p.get("perms")  # sessions started before the console passed a policy pick it up with the next message
+        if perms is not None and not (isinstance(perms, str) and os.path.isabs(perms)):
+            raise RunnerError("bad_request", "perms must be an absolute path")
+        if perms and perms != s.perms:
+            s.perms = perms
+            self._save()
         live_idle = (s.state == "idle" and s.task is not None and not s.task.done()
                      and s.inbox is not None)
+        fresh = perm_cli_deny(s.perms, s.chat)
+        if live_idle and fresh is not None and fresh != s.cli_deny:
+            # the CLI takes deny rules only at its start: end this client, the turn below resumes the conversation
+            s.inbox.put_nowait(None)
+            live_idle = False
         if not live_idle and s.task is not None and not s.task.done():
             # the previous task is still in its cleanup: wait, or it would clobber the new one
             try:
@@ -867,9 +914,10 @@ class Runner:
 
     def _options(self, s, resume):
         sdk = load_sdk()
+        s.cli_deny = perm_cli_deny(s.perms, s.chat) or []
         kw = dict(cwd=s.cwd, model=s.model, permission_mode="default",
                   setting_sources=["project"], max_budget_usd=s.budget_usd,
-                  can_use_tool=self._make_can_use_tool(s), settings=self._helper_settings())
+                  can_use_tool=self._make_can_use_tool(s), settings=self._helper_settings(s.cli_deny or None))
         if self.base_url and not self.login:  # the key stays in apiKeyHelper only: Bash tools see this env
             kw.pop("max_budget_usd")
             kw.update(max_turns=self.max_turns, env={
@@ -878,7 +926,7 @@ class Runner:
                 "ANTHROPIC_SMALL_FAST_MODEL": s.model, "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"})
         if s.chat:  # no project settings or MCP; secrets are denied by the CLI itself, not by the prompt
             kw.update(setting_sources=[], strict_mcp_config=True, tools=list(CHAT_TOOLS),
-                      settings=self._helper_settings(CHAT_DENY, chat_sandbox(s.cwd, s.write)))
+                      settings=self._helper_settings(list(CHAT_DENY) + s.cli_deny, chat_sandbox(s.cwd, s.write)))
         kw["resume" if resume else "session_id"] = s.session_id
         return sdk.ClaudeAgentOptions(**kw)
 
