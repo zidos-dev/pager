@@ -21,7 +21,7 @@ KEY = "sk-bots-SECRET-key-123"
 class FakeBotTG(cc.TG):
     calls = []
     updates_error = None
-    me = {"username": "Demo_Bot", "first_name": "Demo"}
+    me = {"username": "Demo_Bot", "first_name": "Demo", "can_read_all_group_messages": True}
     fail_methods = ()
 
     def _open(self, method, req, timeout):
@@ -101,6 +101,19 @@ class RegistryTests(BotsCase):
         for name in ("env", "sdk.env", "keys.env", "about.md", "brief.md"):
             self.assertEqual(mode(os.path.join(self.cdir, name)), 0o600, name)
         self.assertEqual(cc.bots_list(self.cfg)["bots"][0]["slug"], "demo_bot")
+
+    def test_privacy_mode_is_named_with_the_fix(self):
+        # live 05.11: with privacy on, plain «@bot question» never reached the bot, only /cmd@bot did
+        FakeBotTG.me = dict(FakeBotTG.me, can_read_all_group_messages=False)
+        try:
+            self.add()
+            self.assertIn("/setprivacy", cc.bots_list(self.cfg)["bots"][0]["error"])
+            self.save(rate=5)
+            self.assertIn("/setprivacy", cc.bots_list(self.cfg)["bots"][0]["error"])
+        finally:
+            FakeBotTG.me = dict(FakeBotTG.me, can_read_all_group_messages=True)
+        self.save(rate=6)
+        self.assertNotIn("/setprivacy", cc.bots_list(self.cfg)["bots"][0]["error"])
 
     def test_add_errors(self):
         self.assertEqual(cc.bots_add(self.cfg, {"token": "nope"})["error"], "token")

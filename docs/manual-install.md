@@ -157,8 +157,9 @@ refuse to start without the OS sandbox.
    CC_RESPONDER_NAME=Helper                  # how the bot calls itself
    CC_RESPONDER_BRIEF=/home/you/brief.md     # optional: role, tone, rules
    ```
-   With the default privacy mode the bot sees only mentions and replies to it. To let it follow the whole conversation,
-   send `/setprivacy` to @BotFather, choose Disable, and add the bot to the group again.
+   Turn privacy mode off first: send `/setprivacy` to @BotFather, choose Disable, and add the bot to the group again.
+   With privacy mode on, Telegram did not deliver plain «@bot question» messages to the bot in our test, only commands
+   such as `/ask@bot question`; the mini-app shows this as the bot's error until it is fixed.
    The bot answers mentions and replies to its messages. Changing existing files, and anything outside the sandbox, waits for your 🔐; a new file in the folder is possible without it.
 
 | Provider | `--sdk-base-url` | `--sdk-model` | Key variable |

@@ -9913,6 +9913,15 @@ class ResponderTests(unittest.TestCase):
         e.bot.handle_update(gmsg("@CCTG_BOT, вопрос", mid=12))
         self.assertEqual(len(fake.calls("session.start")), 1)
 
+    def test_start_sent_by_telegram_on_joining_is_not_a_question(self):
+        # live 05.11: «Add to group» makes Telegram post /start@bot; the bot answered it with a confused text
+        e, fake = responder_env(self)
+        e.bot.handle_update(gmsg("/start@cctg_bot"))
+        e.bot.handle_update(gmsg("/start@cctg_bot 1", mid=11))
+        self.assertEqual(fake.calls("session.start"), [])
+        e.bot.handle_update(gmsg("/ask@cctg_bot вопрос", mid=12))
+        self.assertEqual(len(fake.calls("session.start")), 1)
+
     def test_lost_session_is_retried_once_with_a_fresh_one(self):
         e, fake = responder_env(self)
         e.bot.store.data["responder"] = {"sid": "s-gone0000", "n": 1}

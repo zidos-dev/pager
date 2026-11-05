@@ -3838,7 +3838,7 @@ def bots_add(cfg, body):
                                    "CC_SDK_KEY_FILE": cdir + "/keys.env", "CC_SDK_KEY_VAR": "ANTHROPIC_API_KEY"})
     for name in ("keys.env", "about.md", "brief.md"):
         bots_write(os.path.join(cdir, name), "")
-    bots_write(cdir + "/error.txt", bots_problem(cdir, "", bots_service("start", slug)))
+    bots_write(cdir + "/error.txt", bots_problem(cdir, bots_privacy(me), bots_service("start", slug)))
     return {"ok": True, "slug": slug, "username": slug, "name": bots_clean(me.get("first_name"), 64)}
 
 
@@ -3914,6 +3914,11 @@ def bots_save(cfg, body):
                     error = error or bots_clean(e, 300).replace(token or "\0", "***")
                     persona[field] = str(saved.get(field) or "")  # not applied: retried by the next save
         bots_write(cdir + "/persona.json", json.dumps(persona, ensure_ascii=False))
+    try:
+        priv = bots_privacy(TG(read_env_file(cdir + "/env").get("TG_BOT_TOKEN", ""), cfg.api_base).get_me() or {})
+    except TGError:
+        priv = ""
+    error = "; ".join(x for x in (error, priv) if x)
     bots_write(cdir + "/error.txt", bots_problem(cdir, error, bots_service("restart", slug)))
     return {"ok": True, "bot": bots_get(cfg, slug)}
 
@@ -3927,6 +3932,15 @@ def bots_read_json(path):
     except ValueError:
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def bots_privacy(me):
+    """getMe of a group bot -> the fix when Telegram hides the group from it (measured 05.11: with privacy mode on,
+    plain «@bot question» never reached the bot, only /cmd@bot did)."""
+    if me.get("can_read_all_group_messages") is False:
+        return ("privacy mode is on, so the bot hears only /commands and replies in the group: send /setprivacy "
+                "to @BotFather, choose Disable, then add the bot to the group again")
+    return ""
 
 
 def bots_problem(cdir, error, started):
@@ -5576,6 +5590,8 @@ class Bot:
         if _REPORT_WORD.fullmatch(q) and self.cfg.role != "responder" and self.responder_git():  # «отчёт», with or without the mention: the last day of the project
             return self.report_request(m)
         if not to_bot:
+            return
+        if re.fullmatch(r"/start(\s.*)?", q, re.S):  # Telegram posts /start@bot itself when the bot is added to a group
             return
         if not q:  # a bare mention: about the message it replies to
             log("responder bare mention: %s" % ",".join(sorted(m)))
