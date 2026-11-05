@@ -1009,3 +1009,144 @@ class PsFallbackTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PermRuleTests(unittest.TestCase):
+    """Owner's permission rules (Claude Code syntax): pure decision function."""
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.cwd = os.path.join(self.tmp.name, "w")
+        os.makedirs(os.path.join(self.cwd, "src"))
+        self.out = os.path.join(self.tmp.name, "outside")
+        os.mkdir(self.out)
+        os.symlink(self.out, os.path.join(self.cwd, "link"))
+
+    def d(self, pol, tool, inp, chat=False):
+        return sdk_runner.perm_decide(pol, tool, inp, self.cwd, chat)[0]
+
+    def bash(self, pol, cmd, chat=False):
+        return self.d(pol, "Bash", {"command": cmd}, chat)
+
+    def test_bash_prefix_needs_every_segment(self):
+        pol = {"allow": ["Bash(git status:*)"]}
+        self.assertEqual(self.bash(pol, "git status"), "allow")
+        self.assertEqual(self.bash(pol, "git status -s"), "allow")
+        self.assertIsNone(self.bash(pol, "git statusx"))
+        for cmd in ("git status; rm -rf ~", "git status && git push", "git status | sh", "git status || rm x",
+                    "git status &\nrm x", "git status & rm x"):
+            self.assertIsNone(self.bash(pol, cmd), cmd)
+        self.assertEqual(self.bash({"allow": ["Bash(git status:*)", "Bash(git push:*)"]}, "git status && git push"), "allow")
+
+    def test_bash_substitution_and_redirects_never_auto(self):
+        pol = {"allow": ["Bash(echo:*)", "Bash(git status:*)"]}
+        for cmd in ("echo $(rm -rf ~)", "echo `id`", "echo x > ~/.bashrc", "echo <(id)", "echo x >> f"):
+            self.assertIsNone(self.bash(pol, cmd), cmd)
+        self.assertEqual(self.bash(pol, "git status 2>&1"), "allow")
+        self.assertEqual(self.bash(pol, "git status >/dev/null 2>&1"), "allow")
+
+    def test_exact_bash_rule(self):
+        self.assertEqual(self.bash({"allow": ["Bash(npm test)"]}, "npm test"), "allow")
+        self.assertIsNone(self.bash({"allow": ["Bash(npm test)"]}, "npm test -- --x"))
+
+    def test_deny_wins_and_sees_any_segment(self):
+        pol = {"mode": "all", "allow": ["Bash"], "deny": ["Bash(rm:*)", "Read(**/.env)"]}
+        self.assertEqual(self.bash(pol, "ls && rm -rf x"), "deny")
+        self.assertEqual(self.bash(pol, "ls"), "allow")
+        self.assertEqual(self.d(pol, "Read", {"file_path": os.path.join(self.cwd, "src", ".env")}), "deny")
+
+    def test_paths_stay_inside_the_folder(self):
+        pol = {"allow": ["Edit(src/**)"]}
+        self.assertEqual(self.d(pol, "Write", {"file_path": os.path.join(self.cwd, "src", "a.py")}), "allow")
+        self.assertEqual(self.d(pol, "Edit", {"file_path": "src/b.py"}), "allow")
+        self.assertIsNone(self.d(pol, "Write", {"file_path": os.path.join(self.cwd, "src", "..", "..", "x")}))
+        self.assertIsNone(self.d({"allow": ["Edit(**)"]}, "Write", {"file_path": os.path.join(self.cwd, "link", "x")}))
+        self.assertIsNone(self.d(pol, "Write", {"file_path": os.path.join(self.cwd, "b.py")}))
+        self.assertEqual(self.d({"allow": ["Read"]}, "Grep", {"pattern": "x"}), "allow")
+        self.assertEqual(self.d({"allow": ["Edit(%s/**)" % self.out]}, "Write", {"file_path": os.path.join(self.out, "y")}), "allow")
+
+    def test_modes(self):
+        edits = {"mode": "edits"}
+        self.assertEqual(self.d(edits, "Write", {"file_path": os.path.join(self.cwd, "a")}), "allow")
+        self.assertEqual(self.d(edits, "NotebookEdit", {"notebook_path": "n.ipynb"}), "allow")
+        self.assertIsNone(self.d(edits, "Write", {"file_path": os.path.join(self.out, "a")}))
+        self.assertIsNone(self.bash(edits, "ls"))
+        self.assertEqual(self.bash({"mode": "all"}, "rm -rf build"), "allow")
+        self.assertIsNone(self.d({"mode": "all", "allow": ["AskUserQuestion"]}, "AskUserQuestion", {"questions": []}))
+
+    def test_chat_never_gets_all_and_keeps_owner_checks(self):
+        pol = {"mode": "all", "allow": ["Bash", "SandboxNetworkAccess"]}
+        self.assertIsNone(self.bash({"mode": "all"}, "rm -rf build", chat=True))
+        self.assertEqual(self.d({"mode": "all"}, "Write", {"file_path": os.path.join(self.cwd, "a")}, chat=True), "allow")
+        self.assertIsNone(self.d(pol, "Bash", {"command": "ls", "dangerouslyDisableSandbox": True}, chat=True))
+        self.assertIsNone(self.d(pol, "SandboxNetworkAccess", {"host": "127.0.0.1"}, chat=True))
+
+    def test_web_domain(self):
+        pol = {"allow": ["WebFetch(domain:example.com)"]}
+        self.assertEqual(self.d(pol, "WebFetch", {"url": "https://docs.example.com/a"}), "allow")
+        self.assertIsNone(self.d(pol, "WebFetch", {"url": "https://example.com.evil.io/"}))
+
+    def test_bad_policy_or_rules_ask(self):
+        for pol in (None, [], {"allow": "Bash"}, {"allow": [1, "Bash("]}, {"mode": "yes"}):
+            self.assertIsNone(self.bash(pol, "ls"), pol)
+        p = os.path.join(self.tmp.name, "perms.json")
+        with open(p, "w") as f:
+            f.write("{broken")
+        self.assertIsNone(sdk_runner.perm_load(p, False))
+        with open(p, "w") as f:
+            json.dump({"sessions": {"allow": ["Read"]}, "chat": {"mode": "edits"}}, f)
+        self.assertEqual(sdk_runner.perm_load(p, False), {"allow": ["Read"]})
+        self.assertEqual(sdk_runner.perm_load(p, True), {"mode": "edits"})
+        self.assertIsNone(sdk_runner.perm_load(None, False))
+
+    def test_everywhere_rule_suggestion(self):
+        s = sdk_runner.perm_suggest
+        self.assertEqual(s("Bash", {"command": "git push origin main"}, self.cwd), "Bash(git push:*)")
+        self.assertEqual(s("Bash", {"command": "ls -la"}, self.cwd), "Bash(ls:*)")
+        self.assertIsNone(s("Bash", {"command": "echo $(id)"}, self.cwd))
+        self.assertEqual(s("Write", {"file_path": "a"}, self.cwd), "Edit(**)")
+        self.assertEqual(s("WebFetch", {"url": "https://a.example.org/x"}, self.cwd), "WebFetch(domain:a.example.org)")
+        self.assertEqual(s("mcp__x__y", {}, self.cwd), "mcp__x__y")
+        self.assertIsNone(s("AskUserQuestion", {}, self.cwd))
+
+
+class PermPolicyRunnerTests(Base):
+    """The policy file reaches can_use_tool: no request for an allowed call, a deny message, a log on the session."""
+    async def run_calls(self, pol, calls, chat=False):
+        path = os.path.join(self.tmp.name, "perms.json")
+        with open(path, "w") as f:
+            json.dump({"chat" if chat else "sessions": pol}, f)
+        res = []
+
+        async def script(client, text):
+            for tool, inp in calls:
+                res.append(await client.options.can_use_tool(tool, inp, Ctx()))
+            yield result()
+        FakeClient.script = script
+        s = await self.start(perms=path, **({"chat": True} if chat else {}))
+        return s, res, path
+
+    async def test_allowed_and_denied_without_asking(self):
+        s, res, _ = await self.run_calls({"allow": ["Bash(git status:*)"], "deny": ["Bash(rm:*)"]},
+                                         [("Bash", {"command": "git status"}), ("Bash", {"command": "rm -rf x"})])
+        done = await self.wait_state(s["id"], "idle")
+        self.assertIsInstance(res[0], PermissionResultAllow)
+        self.assertIsInstance(res[1], PermissionResultDeny)
+        self.assertIn("Bash(rm:*)", res[1].message)
+        self.assertEqual([(a["verdict"], a["rule"], a["what"]) for a in done["auto"]],
+                         [("allow", "Bash(git status:*)", "git status"), ("deny", "Bash(rm:*)", "rm -rf x")])
+
+    async def test_change_applies_without_restart_and_unmatched_asks(self):
+        s, res, path = await self.run_calls({"allow": []}, [("Bash", {"command": "ls"})])
+        req = (await self.wait_state(s["id"], "blocked"))["pending"][0]
+        self.assertEqual(req["tool"], "Bash")  # no rule: the owner decides
+        await self.ok("session.answer", id=s["id"], req=req["req"], decision="allow")
+        await self.wait_state(s["id"], "idle")
+
+    async def test_deny_beats_chat_freedom(self):
+        s, res, _ = await self.run_calls({"deny": ["Bash(curl:*)"]}, [("Bash", {"command": "curl https://x.io"})], chat=True)
+        await self.wait_state(s["id"], "idle")
+        self.assertIsInstance(res[0], PermissionResultDeny)
+
+    async def test_perms_path_must_be_absolute(self):
+        await self.err("session.start", "bad_request", cwd=self.work, prompt="x", perms="rel/perms.json")

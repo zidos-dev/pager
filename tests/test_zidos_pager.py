@@ -7251,7 +7251,7 @@ class SdkTests(unittest.TestCase):
         self.assertIn("🔐 Fix the bug: нужно ваше разрешение — Bash", msgs[0]["text"])
         self.assertIn("ls -la", msgs[0]["text"])
         texts = [b["text"] for b in buttons(msgs[0]["reply_markup"])]
-        self.assertEqual(texts, ["✅ Разрешить", "♾ Всегда Bash в этой сессии", "✖ Отклонить"])
+        self.assertEqual(texts, ["✅ Разрешить", "♾ Всегда Bash в этой сессии", "♾ Везде: Bash(ls:*)", "✖ Отклонить"])
         self.assertTrue(all(len(b["callback_data"].encode()) <= 64 for b in buttons(msgs[0]["reply_markup"])))
         e2 = sdk_env(self, FakeSdk(self))
         m2 = self.open_perm(e2, None, req="r-00000002", can_always=False)
@@ -7275,7 +7275,7 @@ class SdkTests(unittest.TestCase):
 
     def test_perm_press_answers_and_edits(self):
         for idx, decision, note in ((0, "allow", "✔ Разрешено"), (1, "always", "♾ Bash разрешён для сессии"),
-                                    (2, "deny", "✖ Отклонено")):
+                                    (3, "deny", "✖ Отклонено")):
             fake = FakeSdk(self)
             e = sdk_env(self, fake)
             msg = self.open_perm(e, fake)[0]
@@ -7475,7 +7475,7 @@ class SdkTests(unittest.TestCase):
         e.bot.handle_update(e.cb("nd:0"))
         self.assertEqual(e.bot.store.chat(1)["pending_new"]["sdk"], True)
         e.bot.handle_update(e.msg("сделай X", mid=5))
-        self.assertEqual(fake.calls("session.start"), [{"cwd": e.cfg.default_cwd, "prompt": "сделай X"}])
+        self.assertEqual(fake.calls("session.start"), [{"cwd": e.cfg.default_cwd, "prompt": "сделай X", "perms": cc.perms_path(e.cfg)}])
         self.assertTrue(e.bot.is_watched("s-aabbccdd"))
         self.assertEqual(e.bot.store.chat(1)["session"], "s-aabbccdd")
         self.assertFalse([r for r in e.runs if "--bg" in r[0]])
@@ -7682,7 +7682,7 @@ class SdkOnlyTests(unittest.TestCase):
         self.assertNotIn("nds", [b["callback_data"] for b in buttons(e.tg.of("sendMessage")[-1]["reply_markup"])])
         e.bot.handle_update(e.cb("nd:0"))
         e.bot.handle_update(e.msg("сделай X", mid=5))
-        self.assertEqual(fake.calls("session.start"), [{"cwd": e.cfg.default_cwd, "prompt": "сделай X"}])
+        self.assertEqual(fake.calls("session.start"), [{"cwd": e.cfg.default_cwd, "prompt": "сделай X", "perms": cc.perms_path(e.cfg)}])
         self.assertFalse([r for r in e.runs if "--bg" in r[0]])
         self.assertEqual(self.claude_calls, 0)
         self.assertEqual(e.bot.store.chat(1)["session"], "s-aabbccdd")
@@ -8522,7 +8522,7 @@ class PermSdkApiTests(unittest.TestCase):
         fake, e = self.env()
         row = e.bot.api_session(1, SID)
         self.assertEqual(row["perm"], {"kind": "sdk", "req": "r-00000001", "title": "Bash", "summary": "",
-                                       "body": "ls -la", "path": "", "note": "", "question": "", "selected": 1,
+                                       "body": "ls -la", "path": "", "note": "", "question": "", "selected": 1, "everywhere": "Bash(ls:*)",
                                        "options": [{"n": 1, "label": "Разрешить"},
                                                    {"n": 2, "label": "Всегда Bash в этой сессии"},
                                                    {"n": 3, "label": "Отклонить"}]})
@@ -9482,6 +9482,7 @@ class ResponderTests(unittest.TestCase):
         p = start[0]
         self.assertIs(p["chat"], True)
         self.assertEqual(p["cwd"], e.tmp.name)
+        self.assertEqual(p["perms"], cc.perms_path(e.cfg))
         self.assertIn("какая точность за октябрь?", p["prompt"])
         self.assertIn("Анна", p["prompt"])
         self.assertIn("confirm", p["prompt"])
@@ -10268,3 +10269,234 @@ class MissedAndEditedTests(unittest.TestCase):
         e.bot.chat_update({"update_id": 5, "edited_message": gmsg("@sf_chat_bot вопрос, уточнил", mid=40)["message"]})
         self.assertEqual(len(fake.calls("session.start")), 1)
         self.assertEqual(len(e.bot.store.data["chat_tail"]), 1)  # the edit does not add a second line to the tail
+
+
+class PolicyTests(unittest.TestCase):
+    def test_read_defaults_and_normalizes_each_section(self):
+        e = Env(self)
+        path = os.path.join(e.tmp.name, "perms.json")
+        default = {"mode": "ask", "allow": [], "deny": []}
+        self.assertEqual(cc.perms_path(e.cfg), path)
+        self.assertEqual(cc.perms_read(path), {"sessions": default, "chat": default})
+        for broken in ("{", "[]", '{"chat":{"mode":"all"}}', '{"sessions":{"allow":null}}'):
+            with open(path, "w") as f:
+                f.write(broken)
+            self.assertEqual(cc.perms_read(path), {"sessions": default, "chat": default})
+        with open(path, "w") as f:
+            json.dump({"sessions": {"mode": "edits", "allow": [" Read ", "Read"]}, "chat": []}, f)
+        self.assertEqual(cc.perms_read(path), {"sessions": dict(default, mode="edits", allow=["Read"]), "chat": default})
+
+    def test_write_private_atomic_and_cleans_failed_temp(self):
+        e = Env(self)
+        path = os.path.join(e.tmp.name, "policy", "perms.json")
+        data = {"sessions": {"mode": "edits"}, "chat": {}}
+        cc.perms_write(path, data)
+        self.assertEqual(os.stat(path).st_mode & 0o777, 0o600)
+        replace = os.replace
+        def checked_replace(src, dst):
+            self.assertEqual(os.path.dirname(src), os.path.dirname(path))
+            self.assertEqual(dst, path)
+            self.assertEqual(os.stat(src).st_mode & 0o777, 0o600)
+            with open(path) as f:
+                self.assertEqual(json.load(f), data)
+            replace(src, dst)
+        with mock.patch.object(cc.os, "replace", side_effect=checked_replace) as rep:
+            cc.perms_write(path, {"chat": {"mode": "ask"}})
+            rep.assert_called_once()
+        with mock.patch.object(cc.os, "replace", side_effect=OSError("disk")):
+            with self.assertRaises(OSError):
+                cc.perms_write(path, data)
+        self.assertEqual(os.listdir(os.path.dirname(path)), ["perms.json"])
+        with open(path) as f:
+            self.assertEqual(json.load(f), {"chat": {"mode": "ask"}})
+
+    def test_clean_modes_rules_limits_and_order(self):
+        for section, chat in (({"mode": "bad"}, False), ({"mode": "all"}, True), (None, False)):
+            result, error, index = cc.perms_clean(section, chat)
+            self.assertEqual((result, error, index), ({"error": "mode"}, "mode", None))
+        for name in ("allow", "deny"):
+            for rules, i in ((["Read", "bad rule"], 1), (["Read", 3], 1), ("Read", None),
+                             (["Read"] * 101, None), (["X" * 301], 0)):
+                result, error, index = cc.perms_clean({name: rules}, False)
+                self.assertEqual((result, error, index), ({"error": "rule", "list": name, "index": i}, "rule", i))
+        self.assertEqual(cc.perms_clean({"allow": [" Read ", "", "Read", " Bash(git diff:*) "],
+                                         "deny": ["Write", " Write "]}, False),
+                         ({"mode": "ask", "allow": ["Read", "Bash(git diff:*)"], "deny": ["Write"]}, None, None))
+        self.assertIsNone(cc.perms_clean({"mode": "all"}, False)[1])
+        self.assertIsNone(cc.perms_clean({"allow": ["X" * 300] * 100}, False)[1])
+
+    def test_api_perms_get_post_validation_and_methods(self):
+        w = WebEnv(self)
+        default = {"mode": "ask", "allow": [], "deny": []}
+        self.assertEqual(w.req("GET", "/api/perms")[:2],
+                         (200, {"sessions": default, "chat": default, "group_on": False}))
+        w.e.cfg.responder_chat = 0
+        self.assertTrue(w.req("GET", "/api/perms")[1]["group_on"])
+        policy = {"target": "sessions", "mode": "all", "allow": [" Read ", "Read"], "deny": ["Bash(rm:*)"]}
+        st, obj, _ = w.req("POST", "/api/perms", policy)
+        self.assertEqual((st, obj), (200, {"ok": True, "sessions": {"mode": "all", "allow": ["Read"],
+                                                                 "deny": ["Bash(rm:*)"]}, "chat": default}))
+        self.assertEqual(w.req("POST", "/api/perms", {"target": "chat", "mode": "edits"})[1]["chat"],
+                         dict(default, mode="edits"))
+        for body, error in (({"target": "oops"}, {"error": "target"}),
+                            ({"target": "chat", "mode": "all"}, {"error": "mode"}),
+                            ({"target": "sessions", "deny": ["Read", "bad rule"]},
+                             {"error": "rule", "list": "deny", "index": 1})):
+            self.assertEqual(w.req("POST", "/api/perms", body)[1], dict(error, ok=False))
+        saved = cc.perms_read(cc.perms_path(w.e.cfg))
+        self.assertEqual(saved["sessions"], obj["sessions"])
+        self.assertEqual(w.req("GET", "/api/perms")[1]["chat"]["mode"], "edits")
+        for method in ("PUT", "DELETE", "PATCH", "OPTIONS", "TRACE", "CONNECT", "HEAD"):
+            self.assertEqual(w.req(method, "/api/perms")[0], 405)
+        self.assertEqual(w.e.bot.api_dispatch(1, "PUT", "/api/perms", {})[0], 405)
+
+    def test_one_bad_rule_does_not_wipe_its_section(self):
+        # a hand-edited file: the runner skips one bad rule and keeps the rest, so the console must too,
+        # and a write to the other section must not erase the good deny rules on disk
+        w = WebEnv(self)
+        path = cc.perms_path(w.e.cfg)
+        with open(path, "w") as f:
+            json.dump({"sessions": {"mode": "edits", "allow": ["Read", "bad rule"], "deny": ["Bash(rm:*)", "x" * 400]},
+                       "chat": {"mode": "all", "allow": ["Grep"], "deny": []}}, f)
+        got = cc.perms_read(path)
+        self.assertEqual(got["sessions"], {"mode": "edits", "allow": ["Read"], "deny": ["Bash(rm:*)"]})
+        self.assertEqual(got["chat"], {"mode": "ask", "allow": ["Grep"], "deny": []})
+        self.assertTrue(w.req("POST", "/api/perms", {"target": "chat", "mode": "ask", "allow": [], "deny": []})[1]["ok"])
+        self.assertEqual(cc.perms_read(path)["sessions"]["deny"], ["Bash(rm:*)"])
+
+    def test_bg_settings_only_for_nonempty_policy_before_prompt(self):
+        e = Env(self)
+        path = os.path.join(e.tmp.name, "perms.json")
+        for policy, expected in (({}, None), ({"mode": "ask", "allow": [], "deny": []}, None),
+                                 ({"allow": ["Read"], "deny": ["Bash"]}, {"allow": ["Read"], "deny": ["Bash"]}),
+                                 ({"deny": ["Bash"]}, {"deny": ["Bash"]}),
+                                 ({"mode": "edits"}, {"defaultMode": "acceptEdits"}),
+                                 ({"mode": "all"}, {"defaultMode": "bypassPermissions"})):
+            with open(path, "w") as f:
+                json.dump({"sessions": policy}, f)
+            e.bot.do_new(1, e.tmp.name, "-task")
+            cmd = [cmd for cmd, _ in e.runs if "--bg" in cmd][-1]
+            self.assertEqual(cmd[-1], " -task")
+            if expected is None:
+                self.assertNotIn("--settings", cmd)
+            else:
+                self.assertEqual(cmd[-3], "--settings")
+                self.assertEqual(json.loads(cmd[-2]), {"permissions": expected})
+
+
+class EverywhereTests(unittest.TestCase):
+    def env(self, **kw):
+        fake = FakeSdk(self)
+        fake.sessions[SID] = fake.session(state="blocked", pending=[perm_req(**kw)])
+        return fake, sdk_env(self, fake)
+
+    def test_telegram_rule_written_before_allow_and_duplicate_avoided(self):
+        fake, e = self.env()
+        for i in range(2):
+            req = perm_req(req="r-every-%d" % i)
+            fake.sessions[SID]["pending"] = [req]
+            e.bot.sdk_show_perm(SID, req)
+            msg = [p for p in e.tg.of("sendMessage") if "🔐" in p["text"]][-1]
+            rows = msg["reply_markup"]["inline_keyboard"]
+            self.assertEqual([r[0]["text"] for r in rows],
+                             ["✅ Разрешить", "♾ Всегда Bash в этой сессии", "♾ Везде: Bash(ls:*)", "✖ Отклонить"])
+            rec = e.bot.sdk_perms()["1:" + req["req"]]
+            self.assertEqual(rec["rule"], "Bash(ls:*)")
+            real = e.bot.sdk.call
+            def call(method, params=None, **kw):
+                if method == "session.answer":
+                    self.assertEqual(cc.perms_read(cc.perms_path(e.cfg))["sessions"]["allow"], ["Bash(ls:*)"])
+                return real(method, params, **kw)
+            with mock.patch.object(e.bot.sdk, "call", side_effect=call):
+                e.bot.handle_update(e.cb(rows[2][0]["callback_data"], mid=77))
+            self.assertTrue(rec["closed"])
+            self.assertIn("♾ Правило добавлено: Bash(ls:*)", e.tg.of("editMessageText")[-1]["text"])
+        self.assertEqual([p["decision"] for p in fake.calls("session.answer")], ["allow", "allow"])
+
+    def test_chat_and_unsuggestible_tool_have_no_everywhere(self):
+        for kw in ({"can_always": False}, {"inp": {"command": "echo a && echo b"}}):
+            fake, e = self.env(**kw)
+            req = perm_req(**kw)
+            e.bot.sdk_show_perm(SID, req)
+            msg = [p for p in e.tg.of("sendMessage") if "🔐" in p["text"]][-1]
+            self.assertFalse(any("Везде" in b["text"] for b in buttons(msg["reply_markup"])))
+            self.assertIsNone(e.bot.api_session(1, SID)["perm"]["everywhere"])
+            self.assertEqual(e.bot.api_perm(1, SID, {"option": 4})[0], 400)
+            self.assertEqual(fake.calls("session.answer"), [])
+
+    def test_api_option_four_and_view_use_cwd_and_preserve_sections(self):
+        fake, e = self.env()
+        path = os.path.join(e.tmp.name, "perms.json")
+        with open(path, "w") as f:
+            json.dump({"sessions": {"deny": ["Write"]}, "chat": {"mode": "edits"}}, f)
+        with mock.patch.object(cc.sdk_runner, "perm_suggest", wraps=cc.sdk_runner.perm_suggest) as suggest:
+            self.assertEqual(e.bot.api_session(1, SID)["perm"]["everywhere"], "Bash(ls:*)")
+            self.assertEqual(suggest.call_args.args, ("Bash", {"command": "ls -la"}, "/work/proj"))
+            e.bot.known[SID]["cwd"] = ""
+            st, obj = e.bot.api_perm(1, SID, {"option": 4, "req": "r-00000001"})
+            self.assertEqual((st, obj["ok"]), (200, True))
+            self.assertEqual(suggest.call_args.args[-1], "/work/proj")
+        saved = cc.perms_read(path)
+        self.assertEqual(saved["sessions"], {"mode": "ask", "allow": ["Bash(ls:*)"], "deny": ["Write"]})
+        self.assertEqual(saved["chat"], {"mode": "edits", "allow": [], "deny": []})
+        self.assertEqual(fake.calls("session.answer")[-1]["decision"], "allow")
+
+    def test_write_failure_never_answers_allow(self):
+        fake, e = self.env()
+        with mock.patch.object(cc, "perms_write", side_effect=OSError("disk")):
+            st, obj = e.bot.api_perm(1, SID, {"option": 4})
+            self.assertFalse(obj["ok"])
+            e.bot.sdk_show_perm(SID, perm_req())
+            msg = [p for p in e.tg.of("sendMessage") if "🔐" in p["text"]][-1]
+            e.bot.handle_update(e.cb(buttons(msg["reply_markup"])[2]["callback_data"], mid=77))
+        self.assertEqual(fake.calls("session.answer"), [])
+        rec = e.bot.sdk_perms()["1:r-00000001"]
+        self.assertFalse(rec["closed"])
+        self.assertFalse(rec.get("deciding"))
+
+    def test_stale_request_and_rule_limit_do_not_create_grants(self):
+        for stale in (True, False):
+            fake, e = self.env()
+            e.bot.sdk_show_perm(SID, perm_req())
+            msg = [p for p in e.tg.of("sendMessage") if "🔐" in p["text"]][-1]
+            path = cc.perms_path(e.cfg)
+            if stale:
+                fake.sessions[SID]["pending"] = []
+            else:
+                cc.perms_write(path, {"sessions": {"allow": ["Tool%d" % i for i in range(100)]}})
+            before = cc.perms_read(path)
+            self.assertFalse(e.bot.api_perm(1, SID, {"option": 4})[1]["ok"])
+            e.bot.handle_update(e.cb(buttons(msg["reply_markup"])[2]["callback_data"], mid=77))
+            self.assertEqual(cc.perms_read(path), before)
+            self.assertEqual(fake.calls("session.answer"), [])
+
+    def test_unreadable_policy_is_not_replaced_by_a_partial_update(self):
+        fake, e = self.env()
+        path = cc.perms_path(e.cfg)
+        cc.perms_write(path, {"sessions": {"deny": ["Bash"]}, "chat": {"deny": ["Write"]}})
+        before = cc.perms_read(path)
+        e.bot.sdk_show_perm(SID, perm_req())
+        msg = [p for p in e.tg.of("sendMessage") if "🔐" in p["text"]][-1]
+        real_open = open
+        def unreadable(name, *args, **kw):
+            if name == path:
+                raise PermissionError("policy unreadable")
+            return real_open(name, *args, **kw)
+        with mock.patch("builtins.open", side_effect=unreadable), mock.patch.object(cc, "perms_write") as write:
+            self.assertFalse(e.bot.api_perm(1, SID, {"option": 4})[1]["ok"])
+            e.bot.handle_update(e.cb(buttons(msg["reply_markup"])[2]["callback_data"], mid=77))
+            st, obj = e.bot.api_dispatch(1, "POST", "/api/perms", {"target": "chat", "mode": "edits"})
+            self.assertEqual((st, obj["ok"]), (500, False))
+            write.assert_not_called()
+        self.assertEqual(fake.calls("session.answer"), [])
+        self.assertEqual(cc.perms_read(path), before)
+
+    def test_auto_last_twenty_cached_in_list_and_detail(self):
+        fake = FakeSdk(self)
+        auto = [{"tool": "Read", "what": str(i), "verdict": "allow", "rule": "Read", "ts": i} for i in range(25)]
+        fake.sessions[SID]["auto"] = auto
+        e = sdk_env(self, fake)
+        before = list(fake.requests)
+        self.assertEqual(e.bot.api_sessions(1)["sessions"][0]["auto"], auto[-20:])
+        self.assertEqual(e.bot.api_session(1, SID)["auto"], auto[-20:])
+        self.assertEqual(fake.requests, before)

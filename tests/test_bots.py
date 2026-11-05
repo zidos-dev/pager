@@ -74,6 +74,42 @@ class BotsCase(unittest.TestCase):
 
 
 class RegistryTests(BotsCase):
+    def test_perms_save_preserves_sessions_and_get_returns_chat(self):
+        self.add()
+        path = self.cdir + "/perms.json"
+        sessions = {"mode": "all", "allow": ["Read"], "deny": ["Bash"]}
+        cc.bots_write(path, json.dumps({"sessions": sessions}))
+        chat = {"mode": "edits", "allow": [" Read ", "Read"], "deny": ["Bash(rm:*)"]}
+        result = self.save(perms=chat)
+        self.assertTrue(result["ok"], result)
+        with open(path) as f:
+            saved = json.load(f)
+        self.assertEqual(saved["sessions"], sessions)
+        self.assertEqual(saved["chat"], dict(chat, allow=["Read"]))
+        self.assertEqual(result["bot"]["perms"], saved["chat"])
+        self.assertEqual(cc.bots_get(self.cfg, "demo_bot")["perms"], saved["chat"])
+        self.assertEqual(mode(path), 0o600)
+
+    def test_perms_invalid_rejected_before_any_save(self):
+        self.add()
+        for perms in ({"mode": "all"}, {"allow": ["bad rule"]}, None):
+            self.assertEqual(self.save(perms=perms, about="not saved"), {"ok": False, "error": "perms"})
+            self.assertEqual(cc.bots_read(self.cdir + "/about.md"), "")
+            self.assertFalse(os.path.exists(self.cdir + "/perms.json"))
+
+    def test_perms_unreadable_policy_is_not_replaced(self):
+        self.add()
+        path = self.cdir + "/perms.json"
+        cc.bots_write(path, json.dumps({"sessions": {"deny": ["Bash"]}}))
+        real_open = open
+        def unreadable(name, *args, **kw):
+            if name == path:
+                raise PermissionError("policy unreadable")
+            return real_open(name, *args, **kw)
+        with mock.patch("builtins.open", side_effect=unreadable), mock.patch.object(cc, "perms_write") as write:
+            self.assertEqual(self.save(perms={"mode": "edits"}), {"ok": False, "error": "perms"})
+            write.assert_not_called()
+
     def test_empty_list(self):
         self.assertEqual(cc.bots_list(self.cfg), {"ok": True, "bots": []})
 

@@ -35,12 +35,31 @@ def bots_reset():
     BOTS["bots"] = [
         {"slug": "shop_helper_bot", "username": "shop_helper_bot", "name": "Shop Helper", "chat": -1001, "chat_title": "Shop team", "groups": [{"id": -1001, "title": "Shop team"}, {"id": -1002, "title": "Support"}],
          "cwd": "/srv/shop", "git": True, "site": "https://shop.example", "provider": "anthropic", "model": "claude-sonnet-4-5", "engine": "sdk", "about": "An online shop for bikes.",
-         "brief": "You help the shop team answer customers.", "persona": {"name": "Shop Helper", "short": "Answers about the shop", "description": "Ask me about orders."}, "keys": ["anthropic"], "base": "", "active": True, "error": ""},
+         "brief": "You help the shop team answer customers.", "persona": {"name": "Shop Helper", "short": "Answers about the shop", "description": "Ask me about orders."}, "keys": ["anthropic"], "base": "", "active": True, "error": "",
+         "perms": {"mode": "ask", "allow": ["Read", "Grep"], "deny": ["Bash(git push:*)"]}},
         {"slug": "docs_guide_bot", "username": "docs_guide_bot", "name": "Docs Guide", "chat": None, "chat_title": "", "groups": [],
-         "cwd": "", "git": False, "site": "", "provider": "kimi", "model": "kimi-k2", "engine": "sdk", "about": "", "brief": "", "persona": {}, "keys": [], "base": "", "active": False, "error": "401 invalid api key"}]
+         "cwd": "", "git": False, "site": "", "provider": "kimi", "model": "kimi-k2", "engine": "sdk", "about": "", "brief": "", "persona": {}, "keys": [], "base": "", "active": False, "error": "401 invalid api key",
+         "perms": {"mode": "ask", "allow": [], "deny": []}}]
+
+
+PERMS = {}
+
+
+def perms_reset():
+    """Synthetic /api/perms (README «Permissions»): own sessions with rules, the group bot asks."""
+    PERMS.clear()
+    PERMS.update({"sessions": {"mode": "edits", "allow": ["Bash(git status:*)", "Bash(npm test:*)", "WebFetch(domain:docs.python.org)"], "deny": ["Bash(rm -rf:*)"]},
+                  "chat": {"mode": "ask", "allow": ["Read"], "deny": []}, "group_on": True})
+
+
+def perm_rule_ok(r):
+    # as sdk_runner.perm_rule_parse: Tool or Tool(arg), the tool name is a word
+    import re
+    return bool(re.fullmatch(r"[A-Za-z_][\w.:-]*(\(.+\))?", r))
 
 
 bots_reset()
+perms_reset()
 
 
 class H(http.server.BaseHTTPRequestHandler):
@@ -87,6 +106,8 @@ class H(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         raw = self.rfile.read(int(self.headers.get("Content-Length") or 0))
         parts = urllib.parse.urlparse(self.path).path.strip("/").split("/")
+        if parts == ["api", "perms"]:
+            return self.perms_post(raw)
         if len(parts) == 3 and parts[:2] == ["api", "bots"]:
             return self.bots_post(parts[2], raw)
         # Server-side receipts also cover WebKit's unobservable background fetches.
@@ -187,6 +208,24 @@ class H(http.server.BaseHTTPRequestHandler):
         if scenario == "already":
             return self.j({"ok": True, "already": True})
         return self.j({"ok": True, "perm": fresh})
+    def perms_post(self, raw):
+        body = json.loads(raw or b"{}")
+        if body.get("reset"):
+            perms_reset(); return self.j({"ok": True})
+        time.sleep(0.15)
+        tgt = body.get("target")
+        if tgt not in ("sessions", "chat"): return self.j({"ok": False, "error": "target"})
+        if body.get("mode") not in ("ask", "edits", "all") or (tgt == "chat" and body["mode"] == "all"): return self.j({"ok": False, "error": "mode"})
+        clean = {"mode": body["mode"]}
+        for lst in ("allow", "deny"):
+            out = []
+            for i, r in enumerate(body.get(lst) or []):
+                r = str(r).strip()
+                if r and not perm_rule_ok(r): return self.j({"ok": False, "error": "rule", "list": lst, "index": i})
+                if r and r not in out: out.append(r)
+            clean[lst] = out
+        PERMS[tgt] = clean
+        return self.j({"ok": True, "sessions": PERMS["sessions"], "chat": PERMS["chat"]})
     def bots_post(self, action, raw):
         try:
             body = json.loads(raw or b"{}")
@@ -217,7 +256,9 @@ class H(http.server.BaseHTTPRequestHandler):
             if body.get("site") and not body["site"].startswith("https://"): return self.j({"ok": False, "error": "site"})
             if body.get("model") == "bad-model": return self.j({"ok": False, "error": "model"})
             if body.get("key") == "bad-key": return self.j({"ok": False, "error": "key"})
-            for k in ("about", "brief", "persona", "cwd", "site", "chat", "provider", "model", "base"):
+            pm = body.get("perms")
+            if pm is not None and (pm.get("mode") == "all" or not all(perm_rule_ok(r) for r in pm.get("allow", []) + pm.get("deny", []))): return self.j({"ok": False, "error": "perms"})
+            for k in ("about", "brief", "persona", "cwd", "site", "chat", "provider", "model", "base", "perms"):
                 if k in body: b[k] = body[k]
             if body.get("key") and body.get("provider") and body["provider"] not in b["keys"]: b["keys"].append(body["provider"])
             if "persona" in body: b["name"] = body["persona"].get("name") or b["name"]
@@ -290,6 +331,7 @@ class H(http.server.BaseHTTPRequestHandler):
                 return self.j({"error": "synthetic failure"}, 500)
             return self.j(read_data()["sessions"])
         if p == "/api/bots": return self.j(BOTS)
+        if p == "/api/perms": return self.j(PERMS)
         if p == "/api/commands": return self.j(R["commands"])
         if p == "/api/dirs": return self.j(R["dirs"])
         if p == "/api/file": return self.j({"url": "/f/x"})

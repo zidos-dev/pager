@@ -10,6 +10,7 @@ persisted, or returned.
 """
 import argparse
 import asyncio
+import fnmatch
 import ipaddress
 import json
 import os
@@ -111,6 +112,183 @@ def chat_free(tool, inp):
     except ValueError:
         return False
     return u.scheme == "https" and u.port in (None, 443) and public_host(u.hostname)
+
+# ---- the owner's permission rules ------------------------------------------------------------------------
+# perms.json (Claude Code rule syntax): {"sessions": {"mode", "allow", "deny"}, "chat": {...}}; read on every decision,
+# so a change applies at once. Anything unreadable or odd means «ask the owner», never «allow».
+PERM_MODES = ("ask", "edits", "all")
+PERM_RULE = re.compile(r"([A-Za-z][\w-]*)(?:\((.+)\))?\Z", re.S)
+EDIT_TOOLS = ("Edit", "MultiEdit", "Write", "NotebookEdit")
+READ_TOOLS = ("Read", "Grep", "Glob")
+BASH_SPLIT = re.compile(r"\s*(?:&&|\|\||;|\||&|\n)\s*")
+BASH_SUBCMD = ("git", "npm", "pnpm", "yarn", "docker", "kubectl", "gh", "cargo", "go", "pip", "uv", "systemctl",
+               "brew", "apt", "make", "terraform", "helm", "bun", "deno", "poetry", "dotnet")
+
+
+def perm_load(path, chat):
+    """The section of a policy file for this kind of session -> dict or None."""
+    if not isinstance(path, str) or not path:
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            pol = json.load(f)
+        pol = pol.get("chat" if chat else "sessions")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return pol if isinstance(pol, dict) else None
+
+
+def perm_rule_parse(rule):
+    m = PERM_RULE.match(rule) if isinstance(rule, str) else None
+    return (m.group(1), m.group(2)) if m else None
+
+
+def bash_segments(cmd, strict=True):
+    """A command split at ; && || | & and newlines. strict: None when it substitutes or redirects (never auto)."""
+    if not isinstance(cmd, str) or not cmd.strip():
+        return None
+    if strict:
+        bare = re.sub(r"\s*(?:2>&1|[12]?>\s*/dev/null)", "", cmd)
+        if any(x in bare for x in ("$(", "`", "<(", ">(", ">", "<")):
+            return None
+        cmd = bare
+    segs = [x.strip() for x in BASH_SPLIT.split(cmd) if x.strip()]
+    return segs or None
+
+
+def _bash_rule(spec, seg):
+    if spec is None:
+        return True
+    if spec.endswith(":*"):
+        pre = spec[:-2].strip()
+        return seg == pre or seg.startswith(pre + " ")
+    return seg == spec.strip()
+
+
+def _tool_family(rule_tool, tool):
+    if rule_tool == "Edit":
+        return tool in EDIT_TOOLS
+    if rule_tool == "Read":
+        return tool in READ_TOOLS
+    return rule_tool == tool
+
+
+def _inside(real, root):
+    try:
+        return os.path.commonpath([real, root]) == root
+    except ValueError:
+        return False
+
+
+def _target(inp, cwd):
+    p = inp.get("file_path") or inp.get("notebook_path") or inp.get("path") or cwd
+    return os.path.realpath(os.path.join(cwd, p)) if isinstance(p, str) else None
+
+
+def _rule_hit(rule, tool, inp, cwd):
+    """Non-Bash rule against a tool call."""
+    parsed = perm_rule_parse(rule)
+    if not parsed or not _tool_family(parsed[0], tool):
+        return False
+    spec = parsed[1]
+    if spec is None:
+        return True
+    if tool == "WebFetch" and spec.startswith("domain:"):
+        try:
+            host = (urllib.parse.urlsplit(str(inp.get("url") or "")).hostname or "").lower()
+        except ValueError:
+            return False
+        dom = spec[7:].strip().lower()
+        return bool(dom) and (host == dom or host.endswith("." + dom))
+    if tool in EDIT_TOOLS + READ_TOOLS:
+        real, root = _target(inp, cwd), os.path.realpath(cwd)
+        if real is None:
+            return False
+        if spec.startswith("/"):
+            return fnmatch.fnmatchcase(real, spec.replace("//", "/", 1) if spec.startswith("//") else spec)
+        return _inside(real, root) and fnmatch.fnmatchcase(os.path.relpath(real, root), spec)
+    return False
+
+
+def perm_decide(pol, tool, inp, cwd, chat):
+    """-> ("allow" | "deny" | None, the rule or mode that decided). None: ask the owner."""
+    try:
+        if not isinstance(pol, dict) or tool == "AskUserQuestion" or not isinstance(inp, dict):
+            return None, ""
+        allow, deny, mode = pol.get("allow", []), pol.get("deny", []), pol.get("mode", "ask")
+        if not isinstance(allow, list) or not isinstance(deny, list) or mode not in PERM_MODES:
+            return None, ""
+        allow = [r for r in allow if perm_rule_parse(r)]
+        deny = [r for r in deny if perm_rule_parse(r)]
+        if tool == "Bash":
+            loose = bash_segments(inp.get("command"), strict=False) or []
+            for r in deny:
+                t, spec = perm_rule_parse(r)
+                if t == "Bash" and any(_bash_rule(spec, seg) for seg in loose):
+                    return "deny", r
+        else:
+            for r in deny:
+                if _rule_hit(r, tool, inp, cwd):
+                    return "deny", r
+        if chat and ((tool == "Bash" and inp.get("dangerouslyDisableSandbox") is True)
+                     or (tool == "SandboxNetworkAccess" and not public_host(inp.get("host")))):
+            return None, ""  # past the sandbox: the owner decides, whatever the rules say
+        if tool == "Bash":
+            if "Bash" in allow:
+                return "allow", "Bash"
+            segs = bash_segments(inp.get("command"))
+            rules = [perm_rule_parse(r)[1] for r in allow if perm_rule_parse(r)[0] == "Bash"]
+            if segs and all(any(_bash_rule(spec, seg) for spec in rules) for seg in segs):
+                return "allow", ", ".join(r for r in allow if perm_rule_parse(r)[0] == "Bash"
+                                          and any(_bash_rule(perm_rule_parse(r)[1], g) for g in segs))
+        else:
+            for r in allow:
+                if _rule_hit(r, tool, inp, cwd):
+                    return "allow", r
+        if mode == "all" and not chat:
+            return "allow", "mode:all"
+        if mode in ("edits", "all") and tool in EDIT_TOOLS:
+            real = _target(inp, cwd)
+            if real and _inside(real, os.path.realpath(cwd)):
+                return "allow", "mode:edits"
+    except Exception:  # a rule must never turn into an allow by crashing
+        return None, ""
+    return None, ""
+
+
+def perm_what(tool, inp):
+    """A short line about the call for the console: the command, the path or the address."""
+    if not isinstance(inp, dict):
+        return ""
+    v = inp.get("command") or inp.get("file_path") or inp.get("notebook_path") or inp.get("url") or inp.get("path") or ""
+    return str(v).replace("\n", " ")[:160]
+
+
+def perm_suggest(tool, inp, cwd):
+    """The rule behind «always, everywhere» for this call, shown on the button. None: no sensible rule."""
+    if tool == "AskUserQuestion" or not isinstance(inp, dict):
+        return None
+    if tool == "Bash":
+        segs = bash_segments(inp.get("command"))
+        if not segs or len(segs) != 1:
+            return None
+        words = segs[0].split()
+        if not words or "=" in words[0]:
+            return None
+        two = len(words) > 1 and words[0] in BASH_SUBCMD and re.fullmatch(r"[a-z][a-z0-9-]*", words[1])
+        return "Bash(%s:*)" % " ".join(words[:2] if two else words[:1])
+    if tool in EDIT_TOOLS:
+        return "Edit(**)"
+    if tool in READ_TOOLS:
+        return "Read(**)"
+    if tool == "WebFetch":
+        try:
+            host = urllib.parse.urlsplit(str(inp.get("url") or "")).hostname
+        except ValueError:
+            return None
+        return "WebFetch(domain:%s)" % host if host else None
+    return tool if PERM_RULE.match(tool) else None
+
 
 # secrets that may sit inside the folder of a read-only session
 # defence in depth: the folder itself should hold no secrets (a clean clone); Read rules also cover Grep/Glob
@@ -263,7 +441,7 @@ def is_our_cli(pid):
 
 class Session:
     PUBLIC = ("id", "session_id", "cwd", "name", "model", "state", "detail", "budget_usd",
-              "cost_usd", "created", "updated", "always", "chat", "write")
+              "cost_usd", "created", "updated", "always", "chat", "write", "perms", "auto")
 
     def __init__(self, **kw):
         self.id = kw["id"]
@@ -281,6 +459,8 @@ class Session:
         self.always = [x for x in kw.get("always", []) if isinstance(x, str)]
         self.chat = kw.get("chat") is True
         self.write = kw.get("write") is True  # a chat session whose sandbox may write in the project (the owner's)
+        self.perms = kw.get("perms") if isinstance(kw.get("perms"), str) else None  # the owner's policy file
+        self.auto = [x for x in kw.get("auto", []) if isinstance(x, dict)][-20:]  # what the rules decided, newest last
         self.pending = {}      # req -> dict(request fields, future)
         self.client = None
         self.task = None
@@ -451,6 +631,9 @@ class Runner:
         if not isinstance(prompt, str) or not prompt.strip():
             raise RunnerError("bad_request", "prompt required")
         budget = self._budget_arg(p.get("budget_usd"), self.budget)
+        perms = p.get("perms")
+        if perms is not None and not (isinstance(perms, str) and os.path.isabs(perms)):
+            raise RunnerError("bad_request", "perms must be an absolute path")
         model = p.get("model") or self.model
         if not isinstance(model, str):
             raise RunnerError("bad_request", "model must be a string")
@@ -463,7 +646,8 @@ class Runner:
         s = Session(id="s-" + uuid.uuid4().hex[:8], session_id=str(uuid.uuid4()),
                     cwd=os.path.abspath(cwd), name=prompt.strip().splitlines()[0][:60],
                     model=model, state="working", budget_usd=budget, chat=p.get("chat") is True,
-                    write=p.get("chat") is True and p.get("write") is True)
+                    write=p.get("chat") is True and p.get("write") is True,
+                    perms=perms)
         self.sessions[s.id] = s
         self._save()
         self._emit("session.created", {"session": s.to_dict()})
@@ -627,12 +811,19 @@ class Runner:
         sdk = load_sdk()
 
         async def can_use_tool(tool_name, tool_input, ctx):
+            verdict, why = perm_decide(perm_load(s.perms, s.chat), tool_name, tool_input, s.cwd, s.chat)
+            if verdict == "deny":  # the owner's «never» wins over everything, chat freedoms included
+                self._auto(s, tool_name, tool_input, "deny", why)
+                return sdk.PermissionResultDeny(message="Denied by the owner's rule %s." % why)
             if s.chat and chat_free(tool_name, tool_input):
                 return sdk.PermissionResultAllow()
             if s.chat and tool_name == "AskUserQuestion":
                 return sdk.PermissionResultDeny(message="Nobody answers questions here: ask in your reply instead.")
             if tool_name != "AskUserQuestion" and tool_name in s.always and not s.chat:
                 log("auto-allow", s.id, tool_name)
+                return sdk.PermissionResultAllow()
+            if verdict == "allow":
+                self._auto(s, tool_name, tool_input, "allow", why)
                 return sdk.PermissionResultAllow()
             req = "r-" + uuid.uuid4().hex[:8]
             fut = asyncio.get_running_loop().create_future()
@@ -656,6 +847,13 @@ class Runner:
                 s.pending.pop(req, None)
 
         return can_use_tool
+
+    def _auto(self, s, tool, inp, verdict, why):
+        """A decision taken by the owner's rules: kept on the session (shown in the console) and logged."""
+        log("rule", s.id, verdict, tool, why)
+        s.auto = (s.auto + [{"tool": tool, "what": perm_what(tool, inp), "verdict": verdict, "rule": why,
+                              "ts": time.time()}])[-20:]
+        self._changed(s)
 
     def _helper_settings(self, deny=None, sandbox=None):
         cmd = shlex.join([sys.executable, os.path.abspath(__file__), "key", "--file",

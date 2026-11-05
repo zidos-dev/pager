@@ -9,6 +9,7 @@ cd tests/webapp
 PORT=19301 python3 check_defects.py      # D1–D5: пилюля, ошибка списка, Esc, ширина листов, обновление квоты
 PORT=19301 python3 check_perm.py         # лист 🔐 разрешений
 PORT=19301 python3 check_perm_rows.py    # группа «Нужно разрешение» наверху списка
+PORT=19317 python3 check_perms.py        # лист «Права», права бота, «Везде» в запросе, строки правил в ленте (PW_BROWSER=webkit)
 PORT=19301 python3 check_own_answer.py   # «Свой ответ» в листе вопроса
 PORT=19301 python3 check_multi.py        # множественный выбор в листе вопроса
 PORT=19301 python3 check_sheet_steps.py  # лист стоит между шагами многовопросного вопроса (1→2→review)

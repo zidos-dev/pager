@@ -71,6 +71,8 @@ folder or site and model (DeepSeek, OpenRouter, GLM, Kimi, Claude or Codex), set
   (`claude auth login`, your Claude subscription), with Opus, Sonnet or Haiku as buttons.
   Protocol: [`docs/sdk-protocol.md`](docs/sdk-protocol.md). Works even without Claude Code — see
   [Without Claude Code](docs/manual-install.md#without-claude-code-sdk-only).
+- **Permissions and auto-approvals** — rules in Claude Code's own syntax (`Bash(git status:*)`, `Edit(src/**)`,
+  `WebFetch(domain:docs.python.org)`) decide before you are asked; denied always wins. See [Permissions](#permissions).
 - **Questions as buttons** — `AskUserQuestion` prompts (single/multi choice, "your own answer", review/submit)
   are answered with buttons in the chat or the mini-app.
 - **Files both ways** — send a document/photo/voice to a session (saved to `~/tg-inbox`), get files a session
@@ -157,6 +159,7 @@ mini-app (the robot button: «Bots»); remove them there too.
 - **Context.** The folder the bot answers from (a git repository is pulled before answers), an optional site it may open,
   the group it answers in. A new bot starts with an empty folder `~/zidos-pager-knowledge/<bot>`, never your home.
 - **Model.** Every bot has its own provider and key; one bot's key is never visible to another.
+- **Permissions.** What the bot may do without asking you, see [Permissions](#permissions).
 
 Each bot runs as its own pair of services (`zidos-pager-bot@<bot>`, `zidos-pager-bot-sdk@<bot>`; on a Mac
 `dev.zidos.pager.bot.<bot>`, `dev.zidos.pager.sdk.<bot>`). Settings live in `~/.config/zidos-pager/bots/<bot>/`. Write to a bot in
@@ -167,6 +170,27 @@ Updating an older install: run `python3 setup.py` once more, it installs the bot
 bot deletes its settings and state, not its folder in `~/zidos-pager-knowledge`.
 
 > Upgrading from cc-tgbot (the legacy name): run the installer with `--update`; the wizard does this itself. It moves `~/.config/cc-tgbot`, `~/.local/share/cc-tgbot` and `~/.local/state/cc-tgbot` to `zidos-pager` and leaves a link at the legacy place, so paths in your old env files keep working, then replaces the `cc-tgbot*` services or `com.cctgbot.*` LaunchAgents with the new ones. The legacy `CC_TGBOT_ENV` and `CC_TGBOT_STATE` variables still work.
+
+## Permissions
+
+The lock button in the mini-app opens «Permissions»: when to ask, what is allowed without asking and what is always
+denied. Rules use Claude Code's syntax, so a line from your `settings.json` works as is.
+
+- **Modes.** *Ask* — every action waits for your button. *Edits* — edits of files inside the session's folder go
+  through, the rest is asked. *Everything* — everything goes, except what is denied (not offered to group bots).
+- **Rules.** A deny rule always wins, then allow rules, then the mode. A shell command is allowed only if every part of
+  it (`&&`, `;`, `|`) is covered by an allow rule; commands with `$(…)`, backticks or redirections are always asked.
+  A deny rule matches any part. `AskUserQuestion` is never answered by a rule.
+- **«♾ Everywhere».** A permission request in Telegram or in the mini-app offers the rule it would take, for example
+  «♾ Everywhere: Bash(npm test:*)»; one press allows the call and adds the rule.
+- **Where it applies.** SDK sessions follow the rules at once (each decision is shown as a quiet line in the session's
+  feed). Terminal sessions the bot starts get them through `claude --settings` on their next start; sessions started
+  outside the bot keep asking with buttons.
+- **Group bots.** Each bot has its own rules in its card under «Bots» (*Ask* or *Edits* only: people in the group are
+  not you); whatever the rules do not cover still comes to you as a question.
+
+Files: `~/.config/zidos-pager/perms.json` (your sessions and the group bot) and
+`~/.config/zidos-pager/bots/<bot>/perms.json`, mode 0600, read on every decision.
 
 ## Configuration
 

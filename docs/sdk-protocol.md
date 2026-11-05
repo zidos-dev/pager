@@ -52,6 +52,8 @@ Error codes: `bad_request`, `not_found`, `busy`, `closed`, `no_key`,
   "detail": "",
   "budget_usd": 1.0,
   "always": ["Write"],
+  "perms": "/home/me/.config/zidos-pager/perms.json",
+  "auto": [{"tool": "Bash", "what": "git status", "verdict": "allow", "rule": "Bash(git status:*)", "ts": 1760510040.0}],
   "cost_usd": 0.0123,
   "created": 1760510000.0,
   "updated": 1760510042.0,
@@ -114,7 +116,7 @@ States:
 | `runner.info`       | —                                                         | `{"version", "sdk_version", "key": true/false}` (`key`: the key file is readable; never the value) |
 | `session.list`      | —                                                         | `{"sessions": [<session>]}`  |
 | `session.get`       | `id`                                                      | `{"session": <session>}`     |
-| `session.start`     | `cwd`, `prompt`, optional `model`, `budget_usd`           | `{"session": <session>}`     |
+| `session.start`     | `cwd`, `prompt`, optional `model`, `budget_usd`, `perms`  | `{"session": <session>}`     |
 | `session.send`      | `id`, `text`                                              | `{"session": <session>}`     |
 | `session.answer`    | `id`, `req`, `decision`, optional `answers`, `message`    | `{"ok": true}`               |
 | `session.interrupt` | `id`                                                      | `{"ok": true}`               |
@@ -127,6 +129,11 @@ Rules:
 - `session.start`: `cwd` must be an existing directory. Defaults come from the
   runner config (`CC_SDK_MODEL`, `CC_SDK_BUDGET`; `0` = no budget limit). The reply comes right after
   the session task is created; the turn runs in the background.
+  `perms` (optional) is an absolute path to the owner's `perms.json`
+  (`{"sessions": {"mode", "allow", "deny"}, "chat": {...}}`, rules in Claude Code syntax). The runner reads it
+  on every permission request (the `chat` section for chat sessions, `sessions` otherwise): a deny rule
+  denies, an allow rule or the mode (`edits`: edits inside `cwd`; `all`: everything, never for chat) allows,
+  anything else is asked as before. Each such decision is appended to the session's `auto` (last 20).
 - `session.send`:
   - `idle`: a new turn in the same client (`client.query(text)`).
   - `working`/`blocked`: error `busy` (the bot tells the owner to wait or

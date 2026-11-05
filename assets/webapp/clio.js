@@ -439,7 +439,7 @@
     var root=D.createElement("div"); root.className="lab-ask-root"+(q.permission?" permission":""); root.dataset.state="open";
     var rows=q.opts.map(function(o,k){
       return '<button type="button" class="lab-ask-opt'+(o.deny?" perm-deny":"")+(o.selected?" perm-selected":"")+'"'+(q.permission?' title="'+esc(o.label)+'" aria-label="'+esc(o.label)+'"':'')+' data-k="'+k+'" style="--i:'+k+'" aria-pressed="'+(q.multi&&o.marked)+'">'
-        +'<span class="lab-ask-mk">'+(q.multi?'<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3.2 8.4l3 3 6.6-6.8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>':(q.permission?o.i:k+1))+'</span>'
+        +'<span class="lab-ask-mk">'+(q.multi?'<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3.2 8.4l3 3 6.6-6.8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>':(q.permission&&q.prompt.kind!=="sdk"?o.i:k+1))+'</span>'
         +'<span class="lab-ask-tx"><span class="lab-ask-t">'+esc(q.permission?o.short:o.label)+'</span>'+(o.desc?'<span class="lab-ask-d">'+esc(o.desc)+'</span>':'')+'</span></button>';
     }).join("");
     if(q.review) rows=q.answers.map(function(a){return '<div class="lab-ask-ans">'+esc(a)+'</div>';}).join("");

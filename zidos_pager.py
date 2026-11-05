@@ -4,6 +4,7 @@
 Standard library only (cryptography is optional, for Web Push). Config: ~/.config/zidos-pager/env (KEY=VALUE).
 """
 import base64
+import contextlib
 import email.parser
 import email.policy
 import fnmatch
@@ -29,6 +30,8 @@ import urllib.request
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import sdk_runner
+
 try:  # Web Push (RFC 8291/8292) — the only dependency outside the stdlib; without it push is simply disabled
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import ec
@@ -44,6 +47,8 @@ except ImportError:  # pragma: no cover
 LANGS = ("en", "ru")
 LANG = "en"
 _RU = {
+    "♾ Everywhere: %s": "♾ Везде: %s",
+    "♾ Rule added: %s": "♾ Правило добавлено: %s",
     "\n"
     "\n"
     "…full text in the attachment.":
@@ -2464,7 +2469,7 @@ def tmux_perm_view(p):
     return {"kind": "tmux", "req": None, "path": "", **p}
 
 
-def sdk_perm_view(req):
+def sdk_perm_view(req, cwd):
     """A pending SDK permission request in the shape the mini-app gets."""
     tool = str(req.get("tool") or "?")
     head, body = sdk_input_parts(tool, req.get("input"))
@@ -2472,8 +2477,9 @@ def sdk_perm_view(req):
     if req.get("can_always"):
         opts.append({"n": 2, "label": _t("Always %s in this session") % short(tool, 30)})
     opts.append({"n": 3, "label": _t("Deny")})
+    rule = sdk_runner.perm_suggest(tool, req.get("input"), cwd) if req.get("can_always") else None
     return {"kind": "sdk", "req": str(req.get("req") or ""), "title": tool, "summary": "", "body": body,
-            "path": head, "note": "", "question": "", "options": opts, "selected": 1}
+            "path": head, "note": "", "question": "", "options": opts, "selected": 1, "everywhere": rule}
 
 
 def perm_markup(sid, perm):
@@ -2869,7 +2875,8 @@ def sdk_session_dict(x):
             "sessionId": str(x.get("session_id") or ""), "link": "", "updated": num(x.get("updated")),
             "created": num(x.get("created")), "pid": None, "busy": None, "name_source": "sdk", "task": raw,
             "kind": "sdk", "source": "sdk", "sdk_state": st, "cost_usd": cost, "budget_usd": budget,
-            "pending": pend, "always": [str(t) for t in (x.get("always") or []) if isinstance(t, str)]}
+            "pending": pend, "always": [str(t) for t in (x.get("always") or []) if isinstance(t, str)],
+            "auto": (x.get("auto") or [])[-20:]}
 
 
 def usd(v):
@@ -3598,6 +3605,96 @@ def env_read(path):
     return out
 
 
+_PERMS_LOCK = threading.RLock()
+
+
+def perms_path(cfg):
+    return os.path.join(os.path.dirname(cfg.env_path), "perms.json")
+
+
+def perms_clean(section, chat):
+    """-> (normalized section or error object, error code, rule index)."""
+    if not isinstance(section, dict) or section.get("mode", "ask") not in sdk_runner.PERM_MODES:
+        return {"error": "mode"}, "mode", None
+    mode = section.get("mode", "ask")
+    if chat and mode == "all":
+        return {"error": "mode"}, "mode", None
+    clean = {"mode": mode, "allow": [], "deny": []}
+    for name in ("allow", "deny"):
+        rules = section.get(name, [])
+        if not isinstance(rules, list) or len(rules) > 100:
+            return {"error": "rule", "list": name, "index": None}, "rule", None
+        for i, rule in enumerate(rules):
+            if not isinstance(rule, str) or len(rule) > 300:
+                return {"error": "rule", "list": name, "index": i}, "rule", i
+            rule = rule.strip()
+            if not rule:
+                continue
+            if not sdk_runner.perm_rule_parse(rule):
+                return {"error": "rule", "list": name, "index": i}, "rule", i
+            if rule not in clean[name]:
+                clean[name].append(rule)
+    return clean, None, None
+
+
+def perms_read(path, strict=False):
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        data = {}
+    except (OSError, ValueError):
+        if strict:
+            raise
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    result = {}
+    for name in ("sessions", "chat"):
+        sec = data.get(name)
+        sec = sec if isinstance(sec, dict) else {}
+        mode = sec.get("mode", "ask")
+        if mode not in sdk_runner.PERM_MODES or (name == "chat" and mode == "all"):
+            mode = "ask"
+        # like the runner: a bad rule is dropped alone, the good ones (deny above all) stay and survive the next write
+        clean = {"mode": mode}
+        for lst in ("allow", "deny"):
+            rules = sec.get(lst)
+            good = [r.strip() for r in (rules if isinstance(rules, list) else [])
+                    if isinstance(r, str) and len(r) <= 300 and r.strip() and sdk_runner.perm_rule_parse(r.strip())]
+            clean[lst] = list(dict.fromkeys(good))[:100]
+        result[name] = clean
+    return result
+
+
+@contextlib.contextmanager
+def perms_lock(path):
+    """The console and a group bot's process may write the same file: a lock file besides the thread lock."""
+    with _PERMS_LOCK:
+        try:
+            import fcntl
+        except ImportError:  # shortcut: no flock on Windows; the in-process lock still holds there
+            yield
+            return
+        os.makedirs(os.path.dirname(path) or ".", mode=0o700, exist_ok=True)
+        with open(path + ".lock", "a") as lk:
+            fcntl.flock(lk, fcntl.LOCK_EX)
+            yield
+
+
+def perms_write(path, data):
+    directory = os.path.dirname(path) or "."
+    os.makedirs(directory, mode=0o700, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=directory)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+        os.replace(tmp, path)  # mkstemp made it 0600
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+
+
 def env_update(path, updates):
     """Sets NAME=value lines (None removes one) and keeps everything else: written whole, mode 0600."""
     try:
@@ -3791,7 +3888,8 @@ def bots_get(cfg, slug):
             "model": sdk.get("CC_SDK_MODEL", ""), "engine": engine, "about": bots_read(cdir + "/about.md"),
             "brief": bots_read(cdir + "/brief.md"), "persona": persona if isinstance(persona, dict) else {},
             "keys": [k for k, p in MODEL_PRESETS.items() if p["var"] and keys.get(p["var"])], "base": sdk.get("CC_SDK_BASE_URL", ""),
-            "active": bots_service("active", slug), "error": bots_read(cdir + "/error.txt").strip()}
+            "active": bots_service("active", slug), "error": bots_read(cdir + "/error.txt").strip(),
+            "perms": perms_read(cdir + "/perms.json")["chat"]}
 
 
 def bots_list(cfg):
@@ -3849,6 +3947,11 @@ def bots_save(cfg, body):
         return {"ok": False, "error": "slug"}
     if not os.path.isfile(cdir + "/env"):
         return {"ok": False, "error": "missing"}
+    perms = None
+    if "perms" in body:
+        perms, error, _ = perms_clean(body["perms"], chat=True)
+        if error:
+            return {"ok": False, "error": "perms"}
     env_up, sdk_up, keys_up, files = {}, {}, {}, {}
     if "cwd" in body:
         cwd = os.path.expanduser(str(body.get("cwd") or "").strip())
@@ -3890,6 +3993,15 @@ def bots_save(cfg, body):
         if err:
             return {"ok": False, "error": err}
     # everything validated: write
+    if perms is not None:
+        try:
+            path = cdir + "/perms.json"
+            with perms_lock(path):
+                policy = perms_read(path, strict=True)
+                policy["chat"] = perms
+                perms_write(path, policy)
+        except (OSError, ValueError):
+            return {"ok": False, "error": "perms"}
     if keys_up:
         env_update(cdir + "/keys.env", keys_up)
     if sdk_up:
@@ -5435,12 +5547,35 @@ class Bot:
     def sdk_perm_head(self, rec):
         return _t("🔐 %s: needs your permission — %s") % (rec["name"], rec["tool"])
 
+    def sdk_perm_cwd(self, sid):
+        return (self.known.get(sid) or {}).get("cwd") or (self.sdk.get(sid) or {}).get("cwd", "")
+
+    def sdk_everywhere(self, sid, req, rule):
+        """A durable grant needs a still-open request and the rule the owner saw."""
+        session = self.sdk.get(sid) or {}
+        cur = next((r for r in session.get("pending", []) if r.get("kind") == "perm" and str(r.get("req")) == req), None)
+        if not cur or not rule or sdk_perm_view(cur, session.get("cwd", ""))["everywhere"] != rule:
+            return False
+        path = perms_path(self.cfg)
+        with perms_lock(path):
+            policy = perms_read(path, strict=True)
+            if rule not in policy["sessions"]["allow"]:
+                policy["sessions"]["allow"].append(rule)
+                section, error, _ = perms_clean(policy["sessions"], chat=False)
+                if error:
+                    raise ValueError("rule")
+                policy["sessions"] = section
+                perms_write(path, policy)
+        return True
+
     def sdk_perm_markup(self, chat, rec):
         def b(text, action):
             return {"text": text, "callback_data": "pr:" + self.qkey(chat, rec["sid"], rec["req"], action)}
         rows = [[b(_t("✅ Allow"), "allow")]]
         if rec.get("can_always"):
             rows.append([b(_t("♾ Always %s in this session") % short(rec["tool"], 30), "always")])
+            if rec.get("rule"):
+                rows.append([b(_t("♾ Everywhere: %s") % short(rec["rule"], 40), "everywhere")])
         rows.append([b(_t("✖ Deny"), "deny")])
         return {"inline_keyboard": rows}
 
@@ -5457,7 +5592,8 @@ class Bot:
                 continue  # a permission request blocks the work: shown whether or not the session is subscribed to
             rec = {"chat": chat, "sid": sid, "req": str(req["req"]), "tool": str(req.get("tool") or "?"),
                    "desc": sdk_input_text(req.get("tool"), req.get("input")), "can_always": bool(req.get("can_always")),
-                   "name": short(self.session_name(sid), 60), "mid": None, "closed": False}
+                   "name": short(self.session_name(sid), 60), "mid": None, "closed": False,
+                   "rule": sdk_perm_view(req, self.sdk_perm_cwd(sid))["everywhere"]}
             html = "<b>%s</b>\n%s" % (esc(self.sdk_perm_head(rec)), sdk_perm_html(req.get("tool"), req.get("input")))
             plain = self.sdk_perm_head(rec) + "\n" + rec["desc"]
             if self.topics_enabled:
@@ -5505,7 +5641,8 @@ class Bot:
             return
         _, sid, req, action = ent
         rec = self.sdk_perms().get("%s:%s" % (chat, req))
-        if not rec or action not in ("allow", "always", "deny"):
+        if (not rec or action not in ("allow", "always", "deny", "everywhere")
+                or (action == "everywhere" and not (rec.get("can_always") and rec.get("rule")))):
             self.popup(chat, _t("This button is outdated."))
             return
         with self._sdk_lock:
@@ -5523,12 +5660,23 @@ class Bot:
                 self.popup(chat, _t("Processing…"))
             return
         try:
-            res = self.sdk.call("session.answer", {"id": sid, "req": req, "decision": action}, timeout=10.0)
+            if action == "everywhere" and not self.sdk_everywhere(sid, req, rec["rule"]):
+                self.sdk_end_perm(rec, _t("Already decided"))
+                rec.pop("deciding", None)
+                return
+            res = self.sdk.call("session.answer", {"id": sid, "req": req,
+                                                   "decision": "allow" if action == "everywhere" else action}, timeout=10.0)
+        except (OSError, ValueError):
+            rec.pop("deciding", None)
+            self.popup(chat, _t("Could not save the file"), sid=sid, alert=True)
+            return
         except SdkError as e:
             rec.pop("deciding", None)
             self.popup(chat, "⚠️ " + sdk_err_text(e), sid=sid, alert=True)
             return
-        self.sdk_end_perm(rec, _t("Already decided") if res.get("already") else self.sdk_decision_note(action, rec["tool"]))
+        note = (_t("♾ Rule added: %s") % rec["rule"] if action == "everywhere"
+                else self.sdk_decision_note(action, rec["tool"]))
+        self.sdk_end_perm(rec, _t("Already decided") if res.get("already") else note)
         rec.pop("deciding", None)
 
     def sdk_close_perm(self, sid, req, decision):
@@ -5962,6 +6110,7 @@ class Bot:
                 log("responder send failed: %s" % e.code)
         try:
             x = self.sdk.call("session.start", {"cwd": self.cfg.responder_cwd, "chat": True, "model": self.responder_model(rec),
+                                                "perms": perms_path(self.cfg),
                                                 "write": kind == "owner", "prompt": self.responder_prompt(rec, True)}, timeout=15.0)
             st["sid"] = st["sid_" + kind] = (x.get("session") or {}).get("id")
             st["n_" + kind] = 1
@@ -7676,7 +7825,8 @@ class Bot:
         try:
             if sdk:  # started in the SDK runner (API key); the runner names the session
                 try:
-                    x = self.sdk.call("session.start", {"cwd": cwd, "prompt": text}, timeout=15.0).get("session")
+                    x = self.sdk.call("session.start", {"cwd": cwd, "prompt": text, "perms": perms_path(self.cfg)},
+                                      timeout=15.0).get("session")
                 except (SdkError, AttributeError) as e:
                     self.panel_flash(chat, "⚠️ " + (sdk_err_text(e) if isinstance(e, SdkError)
                                                     else _t("The SDK runner is not responding.")))
@@ -7689,7 +7839,12 @@ class Bot:
             else:
                 # leading space so that text like "-x ..." is not parsed as a claude flag
                 prompt = " " + text if text.startswith("-") else text
-                rc, out = self.run([self.cfg.claude_bin, "--bg", "--agent", "claude", "--model", "opus", prompt],
+                policy = perms_read(perms_path(self.cfg))["sessions"]
+                permissions = {k: policy[k] for k in ("allow", "deny") if policy[k]}
+                if policy["mode"] != "ask":
+                    permissions["defaultMode"] = {"edits": "acceptEdits", "all": "bypassPermissions"}[policy["mode"]]
+                settings = ["--settings", json.dumps({"permissions": permissions})] if permissions else []
+                rc, out = self.run([self.cfg.claude_bin, "--bg", "--agent", "claude", "--model", "opus"] + settings + [prompt],
                                    timeout=90, cwd=cwd)
                 m = re.search(r"backgrounded · ([0-9a-f]{8})(?: · (.+))?", out or "")
                 if rc != 0 or not m:
@@ -8273,6 +8428,7 @@ class Bot:
                 "ago": ago_short(info["updated"], now), "updated": info["updated"],
                 "kind": info.get("kind") or "claude", "source": info.get("source") or "claude",
                 "herdr": is_herdr(sid), "sdk": is_sdk(sid),
+                **({"auto": info.get("auto", [])[-20:]} if is_sdk(sid) else {}),
                 "perm": perm, "perm_title": self.perm_title(sid) if perm else "",
                 "perm_body": (short(self.perm_body(sid), 200) or None) if perm else None,
                 "wait_question": {"question": short(parts[0]["question"], 240), "multi": bool(parts[0]["multi"]),
@@ -8987,7 +9143,7 @@ class Bot:
         """The current permission request as the mini-app object, or None."""
         if is_sdk(sid):
             pend = self.perm_pending(sid)
-            return sdk_perm_view(pend[0]) if pend else None
+            return sdk_perm_view(pend[0], self.sdk_perm_cwd(sid)) if pend else None
         if is_herdr(sid) or state != "blocked" or not self.is_live(sid):
             return None
         ent = self._perm_cache.get(sid)
@@ -9209,7 +9365,7 @@ class Bot:
 
     def api_perm_sdk(self, sid, opt, req):
         """Not under api_lock: the runner call may take a while."""
-        if opt not in (1, 2, 3):
+        if opt not in (1, 2, 3, 4):
             return 400, {"ok": False, "code": "bad", "error": _t("No such option")}
         pend = self.perm_pending(sid)
         req = str(req) if req else (str(pend[0]["req"]) if pend else None)
@@ -9225,18 +9381,28 @@ class Bot:
             cur = next((r for r in pend if str(r["req"]) == req), None) if req else None
             if cur is None:
                 return 200, {"ok": False, "code": "closed"}
-        if opt == 2 and not cur.get("can_always"):
+        if opt in (2, 4) and not cur.get("can_always"):
             return 400, {"ok": False, "code": "bad", "error": _t("No such option")}
-        decision = {1: "allow", 2: "always", 3: "deny"}[opt]
         try:
+            rule = sdk_perm_view(cur, self.sdk_perm_cwd(sid))["everywhere"] if opt == 4 else None
+        except SdkError as e:
+            return 200, {"ok": False, "code": "error", "error": sdk_err_text(e)}
+        if opt == 4 and not rule:
+            return 400, {"ok": False, "code": "bad", "error": _t("No such option")}
+        decision = {1: "allow", 2: "always", 3: "deny", 4: "allow"}[opt]
+        try:
+            if opt == 4 and not self.sdk_everywhere(sid, req, rule):
+                return 200, {"ok": False, "code": "closed"}
             res = self.sdk.call("session.answer", {"id": sid, "req": req, "decision": decision}, timeout=8.0)
+        except (OSError, ValueError):
+            return 500, {"ok": False, "code": "error", "error": _t("Could not save the file")}
         except SdkError as e:
             return 200, {"ok": False, "code": "error", "error": sdk_err_text(e)}
         self._drop_pending(sid, req)
         if res.get("already"):
             return 200, {"ok": True, "already": True}
         rest = [r for r in pend if str(r["req"]) != req]
-        return 200, {"ok": True, "perm": sdk_perm_view(rest[0]) if rest else None}
+        return 200, {"ok": True, "perm": sdk_perm_view(rest[0], self.sdk_perm_cwd(sid)) if rest else None}
 
     def api_command(self, uid, sid, text):
         """A slash command into a live session (same path as /rename). -> (HTTP code, object)."""
@@ -9402,6 +9568,26 @@ class Bot:
             return (200, {"commands": slash_commands()}) if method == "GET" else (405, {"error": "method"})
         if parts == ["api", "model"]:
             return self.api_model_get() if method == "GET" else self.api_model_save(body)
+        if parts == ["api", "perms"]:
+            path = perms_path(self.cfg)
+            if method == "GET":
+                return 200, {**perms_read(path), "group_on": self.cfg.responder_chat is not None}
+            if method != "POST":
+                return 405, {"error": "method"}
+            target = body.get("target")
+            if target not in ("sessions", "chat"):
+                return 200, {"ok": False, "error": "target"}
+            section, error, _ = perms_clean(body, target == "chat")
+            if error:
+                return 200, {"ok": False, **section}
+            try:
+                with perms_lock(path):
+                    policy = perms_read(path, strict=True)
+                    policy[target] = section
+                    perms_write(path, policy)
+            except (OSError, ValueError):
+                return 500, {"ok": False, "error": _t("Could not save the file")}
+            return 200, {"ok": True, **policy}
         if parts[:2] == ["api", "bots"] and len(parts) <= 3:
             return self.api_bots(method, parts[2] if len(parts) == 3 else "", body)
         if parts == ["api", "archive_done"]:
@@ -10174,6 +10360,14 @@ class WebServer:
 
             def do_POST(self):
                 self._handle("POST")
+
+            def do_PUT(self):
+                self.close_connection = True  # the body is never read: it must not be parsed as the next request
+                if urllib.parse.urlsplit(self.path).path == "/api/perms":
+                    return self._handle(self.command)
+                self.send_error(501)
+
+            do_DELETE = do_PATCH = do_OPTIONS = do_TRACE = do_CONNECT = do_PUT
 
             def do_HEAD(self):  # the mini-app's update check; only static files answer HEAD
                 path = urllib.parse.urlsplit(self.path).path
