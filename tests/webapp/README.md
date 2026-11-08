@@ -26,6 +26,7 @@ PORT=19305 python3 check_owner_files.py  # файлы владельца в ле
 PORT=19301 python3 check_attach.py       # файлы прикрепляются к черновику, уходят одним /upload с подписью
 PORT=19301 python3 check_nav_one.py      # сессия открывается/закрывается одним морфом, без слайда продукта под ним
 PORT=19301 python3 check_compose_low.py  # поле сессии у низа на iPhone (safe area один раз), с клавиатурой без строки квоты
+PORT=19301 python3 check_list_keep.py    # выход из сессии (и тап по полю перед выходом) не прокручивает список
 node check_header_lifecycle.cjs; node check_own_answer_state.cjs   # без браузера
 ```
 

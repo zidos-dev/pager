@@ -1463,7 +1463,7 @@ let sess = null, lastHist = "", followUntil = 0;  // после отправки
 const scroller = () => view === "session" ? $("s-body") : null;
 // низ ленты держим, только пока пользователь сам внизу: флаг меняет его прокрутка, а не замер при перерисовке (дефект 08.11)
 let stick = true, progUntil = 0;
-const toBottom = () => { stick = true; progUntil = Date.now() + 1200; const b = scroller(); if (b) b.scrollTo({top: b.scrollHeight, behavior: "smooth"}); else window.scrollTo({top: document.body.scrollHeight, behavior: "smooth"}); };
+const toBottom = () => { stick = true; progUntil = Date.now() + 1200; const b = scroller(); if (b) b.scrollTo({top: b.scrollHeight, behavior: "smooth"}); };  // вне сессии окно — это список: отложенный вызов после выхода его не трогает (дефект 08.11 20:30)
 {
   const b = $("s-body");
   b.addEventListener("scroll", () => { if (Date.now() >= progUntil) stick = b.scrollHeight - b.scrollTop - b.clientHeight < 24; }, {passive: true});  // своя плавная прокрутка вниз флаг не сбрасывает
