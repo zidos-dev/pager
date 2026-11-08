@@ -738,6 +738,13 @@ class Config:
         self.stopfail_queue = os.path.expanduser(get("CC_STOPFAIL_QUEUE", os.path.join(
             home, ".local/state/claude-stopfailure/queue.jsonl")))
         self.rate_file = get("CC_RATE_FILE", os.path.join(home, ".claude/abtop-rate-limits.json"))
+        # other quotas/statuses: rows written by the owner's own script; the refresh command runs at most once per interval
+        self.status_file = get("CC_STATUS_FILE", "")
+        self.status_refresh = (get("CC_STATUS_REFRESH") or "").strip()
+        try:
+            self.status_min_interval = max(30.0, float(get("CC_STATUS_MIN_INTERVAL", "300")))
+        except ValueError:
+            self.status_min_interval = 300.0
         try:
             self.topic_ttl_hours = float(get("CC_TOPIC_TTL_HOURS", "24"))
         except ValueError:
@@ -3888,7 +3895,7 @@ def bots_get(cfg, slug):
             "groups": [{"id": int(k), "title": str(v)} for k, v in groups.items() if re.fullmatch(r"-?\d+", k)],
             "cwd": cwd, "git": bool(cwd) and os.path.exists(os.path.join(cwd, ".git")),
             "site": sdk.get("CC_CHAT_SITE", ""), "provider": bots_provider(sdk, engine),
-            "model": sdk.get("CC_SDK_MODEL", ""), "engine": engine, "about": bots_read(cdir + "/about.md"),
+            "model": env.get("CC_CODEX_MODEL", "") if engine == "codex" else sdk.get("CC_SDK_MODEL", ""), "engine": engine, "about": bots_read(cdir + "/about.md"),
             "brief": bots_read(cdir + "/brief.md"), "persona": persona if isinstance(persona, dict) else {},
             "keys": [k for k, p in MODEL_PRESETS.items() if p["var"] and keys.get(p["var"])], "base": sdk.get("CC_SDK_BASE_URL", ""),
             "active": bots_service("active", slug), "error": bots_read(cdir + "/error.txt").strip(),
@@ -4163,9 +4170,11 @@ def bots_problem(cdir, error, started):
 def bots_model_changes(cfg, slug, body):
     """True only when the body really changes the model (the mini-app sends provider on every save)."""
     cdir = bots_dirs(cfg, slug)[0]
-    sdk = read_env_file(cdir + "/sdk.env")
-    cur = bots_provider(sdk, "codex" if read_env_file(cdir + "/env").get("CC_RESPONDER_ENGINE") == "codex" else "sdk")
+    sdk, env = read_env_file(cdir + "/sdk.env"), read_env_file(cdir + "/env")
+    cur = bots_provider(sdk, "codex" if env.get("CC_RESPONDER_ENGINE") == "codex" else "sdk")
     pid, model, base = (str(body.get(k) or "").strip() for k in ("provider", "model", "base"))
+    if (pid or cur) == "codex" and "model" in body and model != env.get("CC_CODEX_MODEL", ""):
+        return True  # Codex: an empty name is a change too (back to the default of ~/.codex/config.toml)
     return bool(str(body.get("key") or "").strip() or (pid and pid != cur) or (model and model != sdk.get("CC_SDK_MODEL", ""))
                 or (base and (pid or cur) == "custom" and base != sdk.get("CC_SDK_BASE_URL", "")))
 
@@ -4185,7 +4194,10 @@ def bots_model(cfg, slug, body, env_up, sdk_up, keys_up):
                 return "codex"
         except (OSError, subprocess.SubprocessError):
             return "codex"
-        env_up["CC_RESPONDER_ENGINE"] = "codex"
+        model = str(body.get("model") or "").strip()
+        if model and not _MODEL_NAME.fullmatch(model):
+            return "model"
+        env_up.update({"CC_RESPONDER_ENGINE": "codex", "CC_CODEX_MODEL": model or None})  # empty: ~/.codex/config.toml
         return None
     model = str(body.get("model") or (sdk.get("CC_SDK_MODEL") if pid == cur else "") or preset["model"]).strip()
     base = str(body.get("base") or (sdk.get("CC_SDK_BASE_URL") if pid == cur else "") or "").strip() if pid == "custom" else preset["base"]
@@ -4324,6 +4336,8 @@ class Bot:
         self._sdk_logged = 0.0
         self._sdk_ready = (0.0, False)  # (checked at, runner alive and has a key)
         self._sdk_lock = threading.Lock()
+        self._status_lock = threading.Lock()
+        self._status_at = 0.0  # when the refresh command last ran
         self.stt = SttClient(cfg.stt_socket, cfg.stt_mode)
         self._stt_logged = 0.0
         self._stt_ready = (0.0, False)  # (checked at, runner alive and has a ready engine)
@@ -7916,12 +7930,13 @@ class Bot:
             return
         self.spawn(self.do_new, chat, cwd, text)
 
-    def do_new(self, chat, cwd, text, sdk=False):
+    def do_new(self, chat, cwd, text, sdk=False, model=""):
         sdk = sdk or self.claude_missing()  # without Claude Code every new session is an SDK one
         try:
             if sdk:  # started in the SDK runner (API key); the runner names the session
                 try:
-                    x = self.sdk.call("session.start", {"cwd": cwd, "prompt": text, "perms": perms_path(self.cfg)},
+                    x = self.sdk.call("session.start", {"cwd": cwd, "prompt": text, "perms": perms_path(self.cfg),
+                                                        **({"model": model} if model else {})},
                                       timeout=15.0).get("session")
                 except (SdkError, AttributeError) as e:
                     self.panel_flash(chat, "⚠️ " + (sdk_err_text(e) if isinstance(e, SdkError)
@@ -7940,7 +7955,7 @@ class Bot:
                 if policy["mode"] != "ask":
                     permissions["defaultMode"] = {"edits": "acceptEdits", "all": "bypassPermissions"}[policy["mode"]]
                 settings = ["--settings", json.dumps({"permissions": permissions})] if permissions else []
-                rc, out = self.run([self.cfg.claude_bin, "--bg", "--agent", "claude", "--model", "opus"] + settings + [prompt],
+                rc, out = self.run([self.cfg.claude_bin, "--bg", "--agent", "claude", "--model", model or "opus"] + settings + [prompt],
                                    timeout=90, cwd=cwd)
                 m = re.search(r"backgrounded · ([0-9a-f]{8})(?: · (.+))?", out or "")
                 if rc != 0 or not m:
@@ -8496,6 +8511,45 @@ class Bot:
         return {"h5": pct(five), "d7": pct(d.get("seven_day")),
                 "stale": bool(upd and now - upd > STALE_QUOTA), "updated": upd,
                 "h5_reset": datetime.fromtimestamp(rs).strftime("%H:%M") if isinstance(rs, (int, float)) and rs else None}
+
+    def api_status(self, refreshed=False):
+        """Rows of CC_STATUS_FILE (validated) + the Claude quota; next_at = when a refresh will run the command again."""
+        cfg, now = self.cfg, self.clock()
+        rows, upd = [], None
+        try:
+            with open(cfg.status_file, encoding="utf-8") as f:
+                raw = json.load(f)
+            upd = os.path.getmtime(cfg.status_file)
+        except (OSError, ValueError, TypeError):
+            raw = []
+        for r in raw if isinstance(raw, list) else []:
+            if not isinstance(r, dict) or not isinstance(r.get("title"), str) or not r["title"].strip():
+                continue
+            pct, rs = r.get("pct"), r.get("reset")
+            rows.append({"id": str(r.get("id") or len(rows))[:40], "title": r["title"].strip()[:60],
+                         "sub": str(r.get("sub") or "")[:80],
+                         "pct": max(0.0, min(100.0, float(pct))) if isinstance(pct, (int, float)) else None,
+                         "reset": fmt_reset(rs, now) if isinstance(rs, (int, float)) and rs > 0 else None,
+                         "hot": bool(r.get("hot"))})
+            if len(rows) == 20:
+                break
+        can = bool(cfg.status_refresh)
+        return {"rows": rows, "updated": upd, "claude": self.api_quota(), "can_refresh": can, "refreshed": refreshed,
+                "next_at": self._status_at + cfg.status_min_interval if can and self._status_at else None}
+
+    def api_status_refresh(self):
+        cfg = self.cfg
+        if not cfg.status_refresh:
+            return self.api_status()
+        with self._status_lock:  # two taps at once run the command once
+            now = self.clock()
+            if self._status_at and now - self._status_at < cfg.status_min_interval:
+                return self.api_status()
+            self._status_at = now
+            rc, out = self.run(["sh", "-c", cfg.status_refresh], timeout=60)
+            if rc != 0:
+                log("status refresh: rc=%s %s" % (rc, (out or "")[-200:]))
+        return self.api_status(refreshed=True)
 
     def api_row(self, uid, sid, now):
         info = self.session_info(sid)
@@ -9557,8 +9611,7 @@ class Bot:
         env = env_read(self.cfg.sdk_env)
         keys = self.model_keys()
         base, model = env.get("CC_SDK_BASE_URL", ""), env.get("CC_SDK_MODEL", "")
-        pid = "claude_login" if env.get("CC_SDK_AUTH") == "login" else next(
-            (k for k, p in MODEL_PRESETS.items() if p["base"] == base and p["base"] is not None and k != "custom"), "custom")
+        pid = self.sdk_provider(env)
         try:
             busy = sum(x.get("state") == "working" for x in (self.sdk.sessions() or [])) if self.sdk else 0
         except (HerdrError, AttributeError):
@@ -9630,13 +9683,30 @@ class Bot:
         """GET /api/bots, POST /api/bots/add|save|persona|remove: the same functions as the `bots` command (slow: no api_lock)."""
         if method == "GET" and not action:
             return 200, {"bots": bots_list(self.cfg)["bots"],
-                         "presets": [{"id": k, "title": p["title"], "model": p["model"]} for k, p in MODEL_PRESETS.items()]}
+                         "presets": [{"id": k, "title": p["title"], "model": p["model"], "models": MODEL_CHOICES.get(k, [])}
+                                     for k, p in MODEL_PRESETS.items()]}
         if method != "POST" or action not in BOTS_ACTIONS:
             return 405, {"error": "method"}
         return 200, BOTS_ACTIONS[action](self.cfg, body)
 
     def api_dirs(self):
-        return {"dirs": [tilde(d) for d in self.recent_dirs(cached=True)]}
+        """Folders and the models a new session can take: Claude Code's own, or the SDK runner's provider (one base URL)."""
+        models = {"claude": [] if self.claude_missing() else list(MODEL_CHOICES["claude_login"]), "sdk": None}
+        if self.sdk_ready():
+            env = env_read(self.cfg.sdk_env)
+            pid = self.sdk_provider(env)
+            model = env.get("CC_SDK_MODEL") or "sonnet"
+            title = "Claude Code" if pid == "claude_login" else MODEL_PRESETS[pid]["title"] or urllib.parse.urlsplit(
+                env.get("CC_SDK_BASE_URL", "")).hostname or ""
+            models["sdk"] = {"provider": pid, "title": title, "model": model,
+                             "models": MODEL_CHOICES.get(pid) or [model]}
+        return {"dirs": [tilde(d) for d in self.recent_dirs(cached=True)], "models": models}
+
+    @staticmethod
+    def sdk_provider(env):
+        return "claude_login" if env.get("CC_SDK_AUTH") == "login" else next(
+            (k for k, p in MODEL_PRESETS.items() if p["base"] == env.get("CC_SDK_BASE_URL", "") and p["base"] is not None
+             and k != "custom"), "custom")
 
     def api_new(self, uid, body):
         text = str(body.get("text") or "").strip()
@@ -9646,9 +9716,12 @@ class Bot:
         if not os.path.isdir(cwd):
             return 400, {"ok": False, "error": _t("Folder not found")}
         sdk = body.get("sdk") is True
+        model = str(body.get("model") or "").strip()  # this session only; empty: the default
+        if model and not (_MODEL_NAME.fullmatch(model) if sdk or self.claude_missing() else model in MODEL_CHOICES["claude_login"]):
+            return 400, {"ok": False, "error": "model"}
         if sdk and not self.sdk_ready(True):
             return 400, {"ok": False, "error": _t("The SDK runner is not available")}
-        sid = self.do_new(uid, cwd, text, *((True,) if sdk else ()))
+        sid = self.do_new(uid, cwd, text, sdk, model)
         if not sid:
             return 502, {"ok": False, "error": _t("Could not create the session")}
         return 200, {"ok": True, "id": sid}
@@ -9662,6 +9735,10 @@ class Bot:
             return (200, self.api_sessions(uid)) if method == "GET" else (405, {"error": "method"})
         if parts == ["api", "commands"]:
             return (200, {"commands": slash_commands()}) if method == "GET" else (405, {"error": "method"})
+        if parts == ["api", "quota"]:
+            return (200, self.api_status()) if method == "GET" else (405, {"error": "method"})
+        if parts == ["api", "quota", "refresh"]:
+            return (200, self.api_status_refresh()) if method == "POST" else (405, {"error": "method"})
         if parts == ["api", "model"]:
             return self.api_model_get() if method == "GET" else self.api_model_save(body)
         if parts == ["api", "perms"]:

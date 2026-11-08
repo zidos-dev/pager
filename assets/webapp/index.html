@@ -192,6 +192,10 @@ html.list-scrolled .lbar{opacity:1}html.list-scrolled .top h1{opacity:0}html.loc
 .sum{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:4px;color:var(--muted);font-size:14px}
 .sum b{color:var(--ink);font-weight:600}
 .quota{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:6px 10px;align-items:center;margin-top:10px;font-size:13px;color:var(--muted)}
+.qr{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;min-height:56px;padding:8px 14px;border-radius:14px;background:var(--soft)}
+.qr .qp{font-size:17px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap}
+.qr .qp.hot{color:color-mix(in srgb,var(--danger) 80%,var(--ink))}  /* 17px на --soft: чистый --danger в светлой теме даёт 3.8 < 4.5 */
+#q-refresh{width:100%;margin-top:14px}
 .qbar{height:6px;border-radius:3px;background:var(--soft);overflow:hidden}
 .qbar i{display:block;height:100%;border-radius:3px;background:var(--ink);opacity:.75}
 .qbar i.hot{background:var(--danger);opacity:1}
@@ -282,7 +286,15 @@ html.list-scrolled .lbar{opacity:1}html.list-scrolled .top h1{opacity:0}html.loc
 .file .fa{display:flex;gap:6px;flex-wrap:wrap}
 .file .fa button{font-size:13px;font-weight:500;color:var(--link);padding:2px 0;min-height:28px}
 .clip{flex:none;width:44px;height:44px;color:var(--ink);border-radius:50%;background:var(--panel);font-size:18px;display:grid;place-items:center}.qlab{align-self:flex-end;font-size:12px;color:var(--muted);margin-top:-2px}
-.sheet{position:fixed;inset:auto 0 0 0;width:100%;max-width:720px;margin:0 auto;z-index:30;will-change:transform;background:var(--panel);border-radius:20px 20px 0 0;padding:14px 14px calc(env(safe-area-inset-bottom,0px) + 14px);max-height:78vh;overflow:auto;box-shadow:0 -12px 40px rgba(0,0,0,.25)}
+.sheet{position:fixed;inset:auto 0 0 0;width:100%;max-width:720px;margin:0 auto;z-index:30;will-change:transform;background:var(--panel);border-radius:20px 20px 0 0;padding:14px 14px calc(env(safe-area-inset-bottom,0px) + 14px);max-height:92dvh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 -12px 40px rgba(0,0,0,.25)}
+/* шапка листа (ручка, ✕) стоит, прокручивается тело: содержимое не режется скруглённым верхом (владелец 08.11 20:27) */
+.sheet{padding-bottom:0}
+.sheet .sb{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;margin:0 -14px;padding:0 14px calc(env(safe-area-inset-bottom,0px) + 14px);scrollbar-width:none}
+.sheet .sb::-webkit-scrollbar{display:none}
+.sheet .sb h3,.sheet .sb .b-top{position:sticky;top:0;z-index:2;background:var(--panel)}
+.sheet .sb .b-top h3{position:static}
+.sheet .sb h3::after,.sheet .sb .b-top::after{content:"";position:absolute;left:0;right:0;top:100%;height:14px;background:linear-gradient(var(--panel),color-mix(in srgb,var(--panel) 0%,transparent));pointer-events:none}
+.sheet .sb .b-top h3::after{content:none}
 .sheet h3{margin:0 0 10px;font-size:17px;font-weight:600}
 .shade{position:fixed;inset:0;z-index:29;background:transparent}
 .cmdl{display:grid;gap:6px}
@@ -321,8 +333,22 @@ textarea.field{min-height:120px;resize:vertical}
 .dirs .chip{background:var(--soft)}
 .dirs .chip[aria-pressed="true"]{background:var(--action);color:var(--action-ink)}
 #model-sheet{max-height:92dvh;overflow-y:auto;overscroll-behavior:contain}
-#m-list .chip{min-height:44px;padding:0 16px;font-size:15px}
-#m-list .chip[aria-pressed="true"]{background:var(--ink);color:var(--panel)}
+/* выбор провайдер → модель: свёрнутая строка с текущим, по тапу строки на месте; выбранное инверсией */
+.mpk{display:grid;gap:6px;margin-top:8px}
+#n-model{scroll-margin-bottom:calc(env(safe-area-inset-bottom,0px) + 96px)}
+.pv-list{display:grid;gap:6px;animation:pv-in .22s cubic-bezier(.32,.72,0,1)}
+@keyframes pv-in{from{opacity:0}}
+.pv-now,.pv-r{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;width:100%;min-height:56px;padding:8px 14px;border-radius:14px;background:var(--soft);color:var(--ink);text-align:left;transition:background-color .15s ease-out,color .15s ease-out}
+.pv-r{min-height:52px}
+.pv-r[aria-checked="true"]{background:var(--ink);color:var(--panel)}
+.pv-r[aria-checked="true"] .bm{color:inherit;opacity:.72}
+.mpk .bn{display:block;font-size:16px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mpk .bm{display:block;color:var(--muted);font-size:13.5px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pv-ch{color:var(--muted);transition:transform .22s cubic-bezier(.32,.72,0,1)}
+.pv-now[aria-expanded="true"] .pv-ch{transform:rotate(90deg)}
+.mpk button:focus-visible{outline:2px solid var(--link);outline-offset:2px}
+.pv-now:active,.pv-r:not([aria-checked="true"]):active{background:color-mix(in srgb,var(--soft) 80%,var(--ink))}  /* тон нажатия, как у .card */
+@media (prefers-reduced-motion:reduce){.pv-list{animation:none}.pv-ch{transition:none}}
 #m-form{display:grid;gap:6px;margin-top:14px}
 #m-form .field{min-height:44px}
 .m-l{color:var(--muted);font-size:14.5px;margin-top:6px}
@@ -390,6 +416,7 @@ textarea.field{min-height:120px;resize:vertical}
 .b-empty{display:grid;gap:4px;padding:6px 0 2px}
 .b-empty p{margin:0;color:var(--muted);font-size:15px;line-height:1.4}
 .b-form{display:grid;gap:6px;margin-top:10px}
+#b-vlist,#b-vadd,#b-vedit{animation:pv-in .22s cubic-bezier(.32,.72,0,1)}  /* вид листа «Боты» проявляется при смене (display:none → блок перезапускает анимацию) */
 .b-form .field{min-height:44px}
 .b-form textarea.field{min-height:96px;resize:vertical}
 .b-h{margin:14px 0 0;font-size:13px;font-weight:600;color:var(--muted);letter-spacing:.3px;text-transform:uppercase}
@@ -403,15 +430,18 @@ textarea.field{min-height:120px;resize:vertical}
 /* права: сегмент режима (выбранный — белая подложка без тени, переезжает), списки правил строками на тоне */
 #perms-sheet{max-height:92dvh;overflow-y:auto;overscroll-behavior:contain}
 #perms-sheet button:focus-visible,#perms-sheet .field:focus-visible{outline:2px solid var(--link);outline-offset:2px}
-#perms-sheet > .sx{position:sticky;top:0;float:right;margin:-4px -4px 0 0;z-index:2;background:var(--panel)}  /* лист длиннее окна: крестик не уезжает при прокрутке */
+.sheet > .sx{z-index:3}  /* над закреплённым заголовком тела листа */
 #p-target{margin-top:4px;clear:both}
 #p-target .chip{min-height:44px;padding:0 16px;font-size:15px}
 #p-target .chip[aria-pressed="true"]{background:var(--ink);color:var(--panel)}
 #p-save{width:100%;margin-top:14px;min-height:48px}
 .pm-seg{position:relative;display:grid;grid-auto-flow:column;grid-auto-columns:1fr;background:var(--soft);border-radius:999px;padding:3px;margin-top:8px}
 .pm-seg button{position:relative;z-index:1;min-height:44px;padding:0 8px;border-radius:999px;font-size:15px;font-weight:500;color:var(--muted);transition:color .2s ease-out;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pm-seg button[aria-checked="true"]{color:var(--ink)}
-.pm-th{position:absolute;top:3px;bottom:3px;left:3px;border-radius:999px;background:var(--panel);transition:transform .32s cubic-bezier(.2,.9,.25,1)}
+.pm-seg button[aria-checked="true"]{color:var(--seg-on-ink,var(--ink))}
+.pm-th{position:absolute;top:3px;bottom:3px;left:3px;border-radius:999px;background:var(--seg-on,var(--panel));transition:transform .32s cubic-bezier(.2,.9,.25,1)}
+/* тёмная тема: выбранный сегмент — инверсия (светлый на тёмной дорожке), как выбранная капсула; тёмный на тёмном не читался (08.11 20:27) */
+@media (prefers-color-scheme: dark){ :root:not(.in-tg){--seg-on:var(--ink);--seg-on-ink:var(--panel)} }
+:root.tg-dark{--seg-on:var(--ink);--seg-on-ink:var(--panel)}
 #p-block.swap{animation:pmIn .2s cubic-bezier(.2,.9,.25,1) both}  /* смена «чьи права»: правила проявляются, а не подменяются за кадр */
 @keyframes pmIn{from{opacity:0}to{opacity:1}}
 .pm-l{display:grid;gap:6px;margin-top:8px}
@@ -420,7 +450,7 @@ textarea.field{min-height:120px;resize:vertical}
 .pm-r code{flex:1;min-width:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13.5px;overflow-wrap:anywhere;padding:8px 0}
 .pm-r button{flex:none;width:44px;height:44px;border-radius:50%;display:grid;place-items:center;color:var(--muted)}
 .pm-r.bad{background:color-mix(in srgb,var(--danger) 14%,var(--soft))}
-.pm-none{margin:6px 0 0;color:var(--muted);font-size:14.5px}
+.pm-none{display:flex;align-items:center;min-height:44px;margin:8px 0 0;padding:0 12px;border-radius:12px;background:color-mix(in srgb,var(--soft) 55%,var(--panel));color:var(--muted);font-size:14.5px}  /* пустой список — место строки правила, а не голый текст */
 .pm-in{margin-top:6px;min-height:44px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:15px}
 .pm-add{display:flex;gap:6px;margin-top:6px}
 .pm-add .btn{flex:1;min-height:44px}
@@ -481,7 +511,8 @@ textarea.field{min-height:120px;resize:vertical}
   <div class="navbar" data-nav hidden><button class="back" type="button" data-back><svg width="26" height="26"><use href="#i-back"/></svg><span data-i18n="sessions">Sessions</span></button><span class="nt" data-i18n="newSession">New session</span></div>
   <header class="head"><h2 data-i18n="newSession">New session</h2><div class="state" data-i18n="newIntro">Describe a task — Claude Code will start a background session.</div></header>
   <section class="block"><label for="n-text" class="state" style="display:block;margin:0 0 8px" data-i18n="task">Task</label><textarea class="field" id="n-text" placeholder="For example: check last night's nginx logs and tell me if there were any 5xx" data-i18n-attr="placeholder:taskPh"></textarea>
-    <div class="state" style="margin-top:12px" data-i18n="folder">Folder</div><div class="dirs" id="n-dirs"></div></section>
+    <div class="state" style="margin-top:12px" data-i18n="folder">Folder</div><div class="dirs" id="n-dirs"></div>
+    <div class="state" style="margin-top:16px" id="n-model-l" data-i18n="modelTitle" hidden>Model</div><div class="mpk" id="n-model" hidden></div></section>
 </main>
 
 <main id="gate-screen" class="screen" hidden><section class="gate">
@@ -520,12 +551,12 @@ textarea.field{min-height:120px;resize:vertical}
   <h3 data-i18n="modelTitle">Model</h3>
   <p class="b-h" data-i18n="mySessions">My sessions</p>
   <p class="state" id="m-now" aria-live="polite"></p>
-  <div class="dirs" id="m-list" role="radiogroup" aria-label="Provider" data-i18n-attr="aria-label:modelProvider"></div>
+  <div class="mpk" id="m-list"></div>
   <form id="m-form" novalidate>
     <label class="m-l" id="m-base-l" for="m-base" hidden data-i18n="modelBase">Address</label>
     <input class="field" id="m-base" inputmode="url" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="https://" hidden>
     <label class="m-l" id="m-model-l" for="m-model" data-i18n="modelName">Model name</label>
-    <div class="dirs" id="m-models" role="radiogroup" aria-labelledby="m-model-l" hidden></div>
+    <div class="mpk" id="m-models" role="radiogroup" aria-labelledby="m-model-l" hidden></div>
     <input class="field" id="m-model" autocapitalize="off" autocomplete="off" spellcheck="false">
     <label class="m-l" id="m-key-l" for="m-key" data-i18n="modelKey">API key</label>
     <input class="field" id="m-key" type="password" autocapitalize="off" autocomplete="off" spellcheck="false">
@@ -543,6 +574,12 @@ textarea.field{min-height:120px;resize:vertical}
     <p class="m-err" id="g-err" role="alert" hidden></p>
     <button class="btn" id="g-save" type="submit" data-i18n="groupSave">Save</button>
   </form>
+</section>
+<section class="sheet" id="quota-sheet" hidden aria-label="Quotas" data-i18n-attr="aria-label:qTitle"><span class="grab"></span><button class="sx" type="button" aria-label="Close" data-i18n-attr="aria-label:close" data-close-sheet><svg width="18" height="18" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+  <h3 data-i18n="qTitle">Quotas</h3>
+  <div class="mpk" id="q-rows" aria-live="polite"></div>
+  <p class="state" id="q-at"></p>
+  <button class="btn" id="q-refresh" type="button" hidden data-i18n="qRefresh">Refresh</button>
 </section>
 <section class="sheet" id="perms-sheet" hidden aria-label="Permissions" data-i18n-attr="aria-label:pmTitle"><span class="grab"></span><button class="sx" type="button" aria-label="Close" data-i18n-attr="aria-label:close" data-close-sheet><svg width="18" height="18" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
   <h3 data-i18n="pmTitle">Permissions</h3>
@@ -562,8 +599,8 @@ textarea.field{min-height:120px;resize:vertical}
     <button class="btn pri" type="button" id="b-add" data-i18n="botsAdd">Add a bot</button>
   </div>
   <form id="b-vadd" class="b-form" novalidate hidden>
-    <button class="b-back" type="button" data-b-back data-i18n="botsBack">Bots</button>
-    <h3 data-i18n="botsAddTitle">New bot</h3>
+    <div class="b-top"><button class="b-back" type="button" data-b-back data-i18n="botsBack">Bots</button>
+    <h3 data-i18n="botsAddTitle">New bot</h3></div>
     <label class="m-l" for="b-token" data-i18n="botsToken">Bot token</label>
     <input class="field" id="b-token" type="password" autocapitalize="off" autocomplete="off" spellcheck="false">
     <p class="state" data-i18n="botsTokenHint">Open @BotFather in Telegram, send /newbot and paste the token it gives you.</p>
@@ -571,8 +608,8 @@ textarea.field{min-height:120px;resize:vertical}
     <button class="btn pri" id="b-add-go" type="submit" data-i18n="botsAddGo">Add</button>
   </form>
   <form id="b-vedit" class="b-form" novalidate hidden>
-    <button class="b-back" type="button" data-b-back data-i18n="botsBack">Bots</button>
-    <h3 id="b-title"></h3>
+    <div class="b-top"><button class="b-back" type="button" data-b-back data-i18n="botsBack">Bots</button>
+    <h3 id="b-title"></h3></div>
     <p class="state" id="b-sub"></p>
     <p class="b-h" data-i18n="botsPersona">Personality</p>
     <label class="m-l" for="b-about" data-i18n="botsAbout">About the project</label>
@@ -597,10 +634,11 @@ textarea.field{min-height:120px;resize:vertical}
     <p class="b-h" data-i18n="pmTitle">Permissions</p>
     <div id="b-perms"></div>
     <p class="b-h" data-i18n="modelTitle">Model</p>
-    <div class="dirs" id="b-prov" role="radiogroup" aria-label="Provider" data-i18n-attr="aria-label:modelProvider"></div>
+    <div class="mpk" id="b-prov"></div>
     <label class="m-l" id="b-base-l" for="b-base" hidden data-i18n="modelBase">Address</label>
     <input class="field" id="b-base" inputmode="url" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="https://" hidden>
     <label class="m-l" id="b-model-l" for="b-model" data-i18n="modelName">Model name</label>
+    <div class="mpk" id="b-models" role="radiogroup" aria-labelledby="b-model-l" hidden></div>
     <input class="field" id="b-model" autocapitalize="off" autocomplete="off" spellcheck="false">
     <label class="m-l" id="b-key-l" for="b-key" data-i18n="modelKey">API key</label>
     <input class="field" id="b-key" type="password" autocapitalize="off" autocomplete="off" spellcheck="false">
@@ -629,6 +667,12 @@ const STR = {
  "en": {
   "sessions": "Sessions",
   "modelTitle": "Model",
+  "qTitle": "Quotas",
+  "qRefresh": "Refresh",
+  "qAt": "Data as of {t}",
+  "qNext": "Data as of {t}, the next refresh is possible at {n}",
+  "qEmpty": "No quota data yet",
+  "qErr": "Could not load quotas",
   "botsTitle": "Bots",
   "botsBack": "Bots",
   "botsAdd": "Add a bot",
@@ -689,6 +733,11 @@ const STR = {
   "modelSave": "Check and connect",
   "modelChecking": "Checking…",
   "modelCustom": "Other",
+  "pvLogin": "Server sign-in, no key",
+  "pvNeedKey": "Needs a key",
+  "pvCustom": "Your own address",
+  "pvCodex": "Codex sign-in on the server",
+  "pvDefault": "Default",
   "modelNow": "Now: {n}",
   "modelNoneYet": "No model connected yet",
   "modelLoadErr": "Could not load the settings. Close the sheet and open it again.",
@@ -784,7 +833,7 @@ const STR = {
   "pmAllD": "Everything goes without a question, except what is denied below.",
   "pmAllow": "Allowed without asking",
   "pmDeny": "Always denied",
-  "pmNone": "No rules yet",
+  "pmNone": "None yet — add a rule in the field below",
   "pmEmpty": "Type a rule first, for example Bash(git status:*).",
   "pmAddL": "New rule, as in Claude Code",
   "pmAddAllow": "Allow",
@@ -929,6 +978,12 @@ const STR = {
  "ru": {
   "sessions": "Сессии",
   "modelTitle": "Модель",
+  "qTitle": "Квоты",
+  "qRefresh": "Обновить",
+  "qAt": "Данные на {t}",
+  "qNext": "Данные на {t}, обновить можно в {n}",
+  "qEmpty": "Данных о квотах пока нет",
+  "qErr": "Не удалось загрузить квоты",
   "botsTitle": "Боты",
   "botsBack": "Боты",
   "botsAdd": "Добавить бота",
@@ -989,6 +1044,11 @@ const STR = {
   "modelSave": "Проверить и подключить",
   "modelChecking": "Проверяю…",
   "modelCustom": "Другой",
+  "pvLogin": "Вход на сервере, без ключа",
+  "pvNeedKey": "Нужен ключ",
+  "pvCustom": "Свой адрес",
+  "pvCodex": "Вход Codex на сервере",
+  "pvDefault": "По умолчанию",
   "modelNow": "Сейчас: {n}",
   "modelNoneYet": "Модель ещё не подключена",
   "modelLoadErr": "Настройки не загрузились. Закройте лист и откройте снова.",
@@ -1084,7 +1144,7 @@ const STR = {
   "pmAllD": "Всё без вопросов, кроме запрещённого ниже.",
   "pmAllow": "Разрешено без вопроса",
   "pmDeny": "Запрещено всегда",
-  "pmNone": "Правил пока нет",
+  "pmNone": "Пока пусто — правило добавляется полем ниже",
   "pmEmpty": "Сначала впишите правило, например Bash(git status:*).",
   "pmAddL": "Новое правило, как в Claude Code",
   "pmAddAllow": "Разрешить",
@@ -1264,7 +1324,7 @@ function setLang(l){
 const tgRaw = window.Telegram && window.Telegram.WebApp;
 const initData = (tgRaw && tgRaw.initData) || "";
 const tg = initData ? tgRaw : null;  // вне Telegram (PWA, браузер) — свои кнопки и своя тема
-if (tg) document.documentElement.classList.add("in-tg");
+if (tg){ document.documentElement.classList.add("in-tg"); const sch = () => document.documentElement.classList.toggle("tg-dark", tg.colorScheme === "dark"); sch(); try{ tg.onEvent("themeChanged", sch); }catch(e){} }
 const STANDALONE = !tg;
 /* iPhone: при показанной кнопке «назад» Telegram свайп от края забирает себе — снимок прошлой страницы едет поверх,
    а потом у нас ещё проигрывается сворачивание (владелец 20.10: «свайп на айфоне просто открывает предыдущую страницу»).
@@ -1632,7 +1692,7 @@ function renderSession(){
         if (mm) media.push(mm); else if (ln.trim()) rest.push(ln.trim());
       }
       const vis = media.filter(mm => mm[3] === "image" || mm[3] === "video"), docs = media.filter(mm => !vis.includes(mm));
-      const one = mm => mm[3] === "video" ? `<video class="pv" data-pv="${esc(mm[1])}" ${vis.length > 1 ? "muted playsinline preload=\"metadata\"" : "controls playsinline preload=\"metadata\""}></video>` : `<img class="pv" alt="" data-pv="${esc(mm[1])}">`;
+      const one = mm => mm[3] === "video" ? `<video class="mp" data-pv="${esc(mm[1])}" ${vis.length > 1 ? "muted playsinline preload=\"metadata\"" : "controls playsinline preload=\"metadata\""}></video>` : `<img class="mp" alt="" data-pv="${esc(mm[1])}">`;
       // несколько фото — компактный альбом, как в Telegram; больше 9 — плитка «+N»
       const grid = vis.length > 1 ? `<div class="album${vis.length === 3 ? " a3" : vis.length >= 5 ? " c3" : ""}">${vis.slice(0, 9).map(one).join("")}${vis.length > 9 ? `<div class="more">+${vis.length - 9}</div>` : ""}</div>` : vis.map(one).join("");
       const dl = docs.map(mm => `<div class="me" style="margin-top:4px"><svg class="ic" aria-hidden="true"><use href="#i-clip"/></svg>${esc(mm[1].split("/").pop())} · ${esc(mm[2])}</div>`).join("");
@@ -1643,8 +1703,8 @@ function renderSession(){
     if (m.role === "output") return `<div class="out">${esc(m.text)}</div>`;
     if (m.role === "note") return `<div class="note">${esc(m.text)}</div>`;
       const media = (m.files || []).filter(f => f.kind === "image" || f.kind === "video").map(f => f.kind === "video"
-      ? `<video class="pv" data-pv="${esc(f.path)}" controls playsinline preload="metadata"></video>`
-      : `<img class="pv" alt="${esc(f.name)}" data-pv="${esc(f.path)}">`).join("");
+      ? `<video class="mp" data-pv="${esc(f.path)}" controls playsinline preload="metadata"></video>`
+      : `<img class="mp" alt="${esc(f.name)}" data-pv="${esc(f.path)}">`).join("");
     const files = (m.files || []).map(f => `<div class="file"><svg class="fi" aria-hidden="true"><use href="#i-file"/></svg><span class="fn">${esc(f.name)} <span style="font-weight:400;color:var(--muted)">${fmtSize(f.size)}</span></span><span class="fa"><button type="button" data-dl="${esc(f.path)}" data-name="${esc(f.name)}">${t("download")}</button><button type="button" data-tg="${esc(f.path)}">${t("toTelegram")}</button></span></div>`).join("");
     if (m.thinking) return `<article class="msg thinking"><div class="thk">${t("thinking")}</div>${m.html || esc(m.text || "")}</article>`;  // ответ не попал в лог — видна только сводка рассуждения
     return `<article class="msg">${m.html || esc(m.text || "")}${media}${files ? `<div class="files">${files}</div>` : ""}</article>`;
@@ -2079,15 +2139,18 @@ $("sub-back").addEventListener("click", () => { curSub = null; pop(); });
 
 /* команды и экран */
 let cmds = null;
-const SHEETS = ["cmd-sheet", "scr-sheet", "sub-sheet", "act-sheet", "model-sheet", "bots-sheet", "perms-sheet"];
+const SHEETS = ["cmd-sheet", "scr-sheet", "sub-sheet", "act-sheet", "model-sheet", "bots-sheet", "perms-sheet", "quota-sheet"];
 const sheetAnim = {};
+SHEETS.forEach(id => { const el = $(id), sb = document.createElement("div"); sb.className = "sb";  // тело листа — свой скроллер под стоящей шапкой
+  [...el.children].filter(c => !c.matches(".grab,.sx")).forEach(c => sb.appendChild(c)); el.appendChild(sb); });
+const sheetBody = el => el.querySelector(":scope > .sb");
 function paintSheet(el, y){ const h = el.offsetHeight || 1; el.style.transform = y ? `translate3d(0,${y}px,0)` : ""; $("scrim").style.opacity = String(Math.max(0, 1 - y / h).toFixed(3)); }
 function sheet(id, open, v){
   const el = $(id);
   if (sheetAnim[id]) sheetAnim[id].stop();
   if (open){
     SHEETS.filter(x => x !== id && !$(x).hidden).forEach(x => sheet(x, false));
-    el.hidden = false; $("shade").hidden = false; $("scrim").classList.add("on");
+    el.hidden = false; sheetBody(el).scrollTop = 0; $("shade").hidden = false; $("scrim").classList.add("on");
     const h = el.offsetHeight; paintSheet(el, h);
     sheetAnim[id] = spring(h, 0, {response: 0.34, damping: 0.9, onUpdate: y => paintSheet(el, y), onDone: () => { el.style.transform = ""; }});
   } else {
@@ -2103,12 +2166,30 @@ function closeSheets(){ SHEETS.forEach(id => sheet(id, false)); }
 
 /* лист «Модель» */
 let mdl = null, mdlPick = "";
+const PV_CH = '<svg class="pv-ch" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const pvRow = (attr, title, sub, on) => `<button class="pv-r" type="button" role="radio" aria-checked="${on}" ${attr}><span><span class="bn">${esc(title)}</span>${sub ? `<span class="bm">${esc(sub)}</span>` : ""}</span>${on ? '<svg width="20" height="20" aria-hidden="true"><use href="#i-check"/></svg>' : ""}</button>`;
+function pvPaint(host, items, pick, open, now){  // свёрнуто: одна строка «провайдер · текущая модель»; открыто: строки провайдеров на месте
+  const cur = items.find(x => x.id === pick) || {};
+  let row = host.querySelector(":scope > .pv-now");  // строка остаётся тем же узлом: шеврон поворачивается, а не подменяется
+  if (!row){ host.innerHTML = `<button class="pv-now" type="button" data-pv><span><span class="bn"></span><span class="bm"></span></span>${PV_CH}</button>`; row = host.firstElementChild; }
+  row.setAttribute("aria-expanded", String(open));
+  row.querySelector(".bn").textContent = cur.title || "—"; row.querySelector(".bm").textContent = now || cur.sub || "";
+  const list = host.querySelector(":scope > .pv-list");
+  if (!open){ if (list) list.remove(); return; }
+  const html = items.map(x => pvRow(`data-p="${esc(x.id)}"`, x.title, x.sub, x.id === pick)).join("");
+  if (list) list.innerHTML = html;  // перерисовка открытого списка без повторного появления
+  else row.insertAdjacentHTML("afterend", `<div class="pv-list" role="radiogroup" aria-label="${esc(t("modelProvider"))}">${html}</div>`);
+}
+function pvNow(host, text){ const el = host.querySelector(".pv-now .bm"); if (el) el.textContent = text; }
+const pvModels = (list, cur) => list.map(m => pvRow(`data-m="${esc(m)}"`, m[0].toUpperCase() + m.slice(1), "", m === cur)).join("");
+let mOpen = false, bOpen = false;
 const mPreset = () => (mdl.presets.find(p => p.id === mdlPick) || {});
 function mErr(text){ $("m-err").textContent = text || ""; $("m-err").hidden = !text; }
 function mModels(){  // a known family: the models as chips; the field stays for any other name
   const p = mPreset(), cur = $("m-model").value.trim(), list = p.models || [];
   $("m-models").hidden = !list.length;
-  $("m-models").innerHTML = list.map(m => `<button class="chip" type="button" role="radio" aria-checked="${m === cur}" aria-pressed="${m === cur}" data-m="${esc(m)}">${esc(m[0].toUpperCase() + m.slice(1))}</button>`).join("");
+  $("m-models").innerHTML = pvModels(list, cur);
+  pvNow($("m-list"), cur || $("m-model").placeholder);
 }
 let gPick = "";
 function gPaint(){
@@ -2125,7 +2206,7 @@ function gPaint(){
 function mPaint(){
   gPaint();
   const p = mPreset(), codex = mdlPick === "codex", custom = mdlPick === "custom", login = !!p.login;
-  $("m-list").innerHTML = mdl.presets.map(x => `<button class="chip" type="button" role="radio" aria-checked="${x.id === mdlPick}" aria-pressed="${x.id === mdlPick}" data-p="${x.id}">${esc(x.title || t("modelCustom"))}</button>`).join("");
+  pvPaint($("m-list"), mdl.presets.map(x => ({id: x.id, title: x.title || t("modelCustom"), sub: x.login ? t("pvLogin") : x.stored ? t("modelKeyStored") : x.id === "custom" ? t("pvCustom") : t("pvNeedKey")})), mdlPick, mOpen);
   $("m-base").hidden = $("m-base-l").hidden = !custom;
   ["m-key", "m-key-l"].forEach(id => { $(id).hidden = codex || login; });
   $("m-model").value = mdlPick === mdl.provider && mdl.model ? mdl.model : (p.model || "");
@@ -2138,7 +2219,7 @@ function mPaint(){
 }
 async function openModel(){
   try{  // data first: the sheet's height is measured when it opens and must not jump after
-    mdl = await api("model"); mdlPick = mdl.provider; gPick = ""; if (mdl.base) $("m-base").value = mdl.base;
+    mdl = await api("model"); mdlPick = mdl.provider; gPick = ""; mOpen = false; if (mdl.base) $("m-base").value = mdl.base;
     mNow(); $("m-form").hidden = false; mPaint();
   }catch(e){ $("m-now").textContent = t("modelLoadErr"); $("m-list").innerHTML = ""; $("m-form").hidden = true; }
   sheet("model-sheet", true);
@@ -2150,7 +2231,7 @@ function mNow(){
   $("m-now").textContent = lines.join(". ").replace(/\.\./g, ".");
 }
 $("model-btn").addEventListener("click", openModel);
-$("m-list").addEventListener("click", e => { const b = e.target.closest("[data-p]"); if (b){ mdlPick = b.dataset.p; mPaint(); } });
+$("m-list").addEventListener("click", e => { if (e.target.closest("[data-pv]")){ mOpen = !mOpen; mPaint(); return; } const b = e.target.closest("[data-p]"); if (b){ mdlPick = b.dataset.p; mOpen = false; mPaint(); } });
 $("g-list").addEventListener("click", e => { const b = e.target.closest("[data-g]"); if (b){ gPick = b.dataset.g; gPaint(); } });
 $("g-form").addEventListener("submit", async e => {
   e.preventDefault();
@@ -2232,6 +2313,33 @@ async function openPerms(){
 }
 $("perms-btn").addEventListener("click", openPerms);
 if (location.hash === "#perms") openPerms();  // deep link for the design gate
+
+/* лист «Квоты»: Claude + строки CC_STATUS_FILE; «Обновить» сервер пускает не чаще мин. интервала, иначе отдаёт кэш */
+const hm = ts => new Date(ts * 1000).toLocaleTimeString(LOC(), {hour: "2-digit", minute: "2-digit"});
+function quotaPaint(q){
+  const c = q.claude || {}, rows = [];
+  const pct = v => v == null ? "" : Math.round(v) + " %";
+  if (c.h5 != null) rows.push({title: "Claude", sub: t("h5") + (c.h5_reset ? " · " + t("until", {t: c.h5_reset}) : ""), pct: c.h5});
+  if (c.d7 != null) rows.push({title: "Claude", sub: t("d7"), pct: c.d7});
+  (q.rows || []).forEach(r => rows.push({title: r.title, sub: [r.sub, r.reset ? t("until", {t: r.reset}) : ""].filter(Boolean).join(" · "), pct: r.pct, hot: r.hot}));
+  listHTML($("q-rows"), rows.map(r => `<div class="qr"><span><span class="bn">${esc(r.title)}</span>${r.sub ? `<span class="bm">${esc(r.sub)}</span>` : ""}</span><span class="qp${r.hot || r.pct >= 85 ? " hot" : ""}">${pct(r.pct)}</span></div>`).join(""));
+  const upd = Math.max(q.updated || 0, c.updated || 0);
+  $("q-at").textContent = !rows.length ? t("qEmpty") : q.next_at && q.next_at > Date.now() / 1000 && upd ? t("qNext", {t: hm(upd), n: hm(q.next_at)}) : upd ? t("qAt", {t: hm(upd)}) : "";
+  $("q-refresh").hidden = !q.can_refresh;
+}
+async function openQuota(){
+  try{ quotaPaint(await api("quota")); }catch(e){ listHTML($("q-rows"), ""); $("q-at").textContent = t("qErr"); $("q-refresh").hidden = true; }
+  sheet("quota-sheet", true);
+}
+// плитки квоты рисует layers.js (#lab-q) поверх скрытого #quota: тап по любой из них открывает лист
+document.addEventListener("click", e => { if (e.target.closest("#lab-q, #quota")) openQuota(); });
+document.addEventListener("keydown", e => { if ((e.key === "Enter" || e.key === " ") && e.target.closest && e.target.closest("#lab-q")){ e.preventDefault(); openQuota(); } });
+$("q-refresh").addEventListener("click", async () => {
+  const b = $("q-refresh"); b.disabled = true;
+  try{ quotaPaint(await api("quota/refresh", {})); }catch(e){ $("q-at").textContent = t("qErr"); }
+  b.disabled = false;
+});
+if (location.hash === "#quota") openQuota();  // deep link for the design gate
 $("p-target").addEventListener("click", e => { const b = e.target.closest("[data-t]"); if (b && b.dataset.t !== pmTarget){ pmTarget = b.dataset.t; pTargetPaint(); pSwap(); } });
 $("p-form").addEventListener("submit", async e => {
   e.preventDefault();
@@ -2254,7 +2362,7 @@ const BERR_ZONE = {token: "add", exists: "add", slug: "add", cwd: "ctx", site: "
 function bErr(zone, code){ const el = $("b-err-" + zone); el.textContent = code ? bErrText(code) : ""; el.hidden = !code; }
 function bErrClear(){ ["add", "persona", "ctx", "model", "save"].forEach(z => bErr(z)); $("b-ok").hidden = true; }
 function bShowErr(code, fallback){ const z = BERR_ZONE[code] || fallback || "save"; bErr(z, code); const el = $("b-err-" + z); if (el.scrollIntoView) el.scrollIntoView({block: "nearest"}); }
-function bView(v){ ["list", "add", "edit"].forEach(x => { $("b-v" + x).hidden = x !== v; }); }
+function bView(v){ ["list", "add", "edit"].forEach(x => { $("b-v" + x).hidden = x !== v; }); sheetBody($("bots-sheet")).scrollTop = 0; }
 function bStatus(b){ return b.error ? ["bad", t("botsBad")] : b.active ? ["on", t("botsOn")] : ["", t("botsOff")]; }
 function bPaintList(){
   const l = $("b-list");
@@ -2277,16 +2385,23 @@ function bGroupsPaint(){
 }
 function bModelPaint(keepModel){
   const p = bPreset(), codex = botPick === "codex", custom = botPick === "custom";
-  $("b-prov").innerHTML = bots.presets.map(x => `<button class="chip" type="button" role="radio" aria-checked="${x.id === botPick}" aria-pressed="${x.id === botPick}" data-p="${x.id}">${esc(x.title || t("modelCustom"))}</button>`).join("");
   $("b-base").hidden = $("b-base-l").hidden = !custom;
-  ["b-model", "b-model-l", "b-key", "b-key-l"].forEach(id => { $(id).hidden = codex; });
+  ["b-key", "b-key-l"].forEach(id => { $(id).hidden = codex; });
   if (!keepModel) $("b-model").value = botPick === bot.provider && bot.model ? bot.model : (p.model || "");
+  $("b-model").placeholder = codex ? t("modelCodexDefault") : "";
+  pvPaint($("b-prov"), bots.presets.map(x => ({id: x.id, title: x.title || t("modelCustom"), sub: x.id === "codex" ? t("pvCodex") : (bot.keys || []).includes(x.id) ? t("modelKeyStored") : x.id === "custom" ? t("pvCustom") : t("pvNeedKey")})), botPick, bOpen);
+  bModels();
   $("b-key").value = ""; $("b-key").placeholder = (bot.keys || []).includes(botPick) ? t("botsKeyStored") : "";
   const note = codex ? t("modelCodexNote") : botPick === "kimi" ? t("modelKimiNote") : "";
   $("b-note").textContent = note; $("b-note").hidden = !note;
 }
+function bModels(){
+  const list = bPreset().models || [], cur = $("b-model").value.trim();
+  $("b-models").hidden = !list.length; $("b-models").innerHTML = pvModels(list, cur);
+  pvNow($("b-prov"), cur || $("b-model").placeholder);
+}
 function bEdit(b){
-  bot = b; botPick = b.provider; botChat = b.chat == null ? null : b.chat; botPersonaDesc = (b.persona && b.persona.description) || "";
+  bot = b; bOpen = false; botPick = b.provider; botChat = b.chat == null ? null : b.chat; botPersonaDesc = (b.persona && b.persona.description) || "";
   bErrClear(); $("b-sure").hidden = true; $("b-del").hidden = false;
   $("b-title").textContent = (b.name || b.username); $("b-sub").textContent = "@" + b.username + " · " + bStatus(b)[1] + (b.error ? ": " + b.error : "");
   $("b-about").value = b.about || ""; $("b-brief").value = b.brief || "";
@@ -2296,6 +2411,7 @@ function bEdit(b){
 }
 $("bots-btn").addEventListener("click", openBots);
 if (location.hash === "#bots") openBots();  // deep link for the design gate
+if (location.hash === "#model") openModel();  // the same for the model sheet
 $("b-add").addEventListener("click", () => { $("b-token").value = ""; bErr("add"); bView("add"); $("b-token").focus(); });
 document.querySelectorAll("[data-b-back]").forEach(b => b.addEventListener("click", async () => { bView("list"); await bLoad(); }));
 $("b-list").addEventListener("click", e => { const b = e.target.closest("[data-i]"); if (b) bEdit(bots.bots[+b.dataset.i]); });
@@ -2312,7 +2428,9 @@ $("b-vadd").addEventListener("submit", async e => {
   }catch(err){ bErr("add", "net"); }
   finally{ go.disabled = false; go.textContent = t("botsAddGo"); }
 });
-$("b-prov").addEventListener("click", e => { const b = e.target.closest("[data-p]"); if (b){ botPick = b.dataset.p; bModelPaint(); } });
+$("b-prov").addEventListener("click", e => { if (e.target.closest("[data-pv]")){ bOpen = !bOpen; bModelPaint(true); return; } const b = e.target.closest("[data-p]"); if (b){ botPick = b.dataset.p; bOpen = false; bModelPaint(); } });
+$("b-models").addEventListener("click", e => { const b = e.target.closest("[data-m]"); if (b){ $("b-model").value = b.dataset.m; bModels(); } });
+$("b-model").addEventListener("input", bModels);
 $("b-groups").addEventListener("click", async e => {
   if (e.target.closest("[data-grefresh]")){ const ok = await bLoad(); const fresh = bots && bots.bots.find(x => x.slug === bot.slug); if (ok && fresh){ bot.groups = fresh.groups; bGroupsPaint(); } return; }
   const b = e.target.closest("[data-g]"); if (!b) return;
@@ -2336,7 +2454,8 @@ $("b-vedit").addEventListener("submit", async e => {
   try{
     const body = {slug: bot.slug, about: $("b-about").value.trim(), brief: $("b-brief").value, persona: {name: $("b-name").value.trim(), short: $("b-short").value.trim(), description: botPersonaDesc},
       cwd: $("b-cwd").value.trim(), site: $("b-site").value.trim(), chat: botChat, provider: botPick, perms: pmBot.get()};
-    if (botPick !== "codex"){ body.model = $("b-model").value.trim(); const k = $("b-key").value.trim(); if (k) body.key = k; }
+    body.model = $("b-model").value.trim();  // Codex: пусто = модель из ~/.codex/config.toml
+    if (botPick !== "codex"){ const k = $("b-key").value.trim(); if (k) body.key = k; }
     if (botPick === "custom") body.base = $("b-base").value.trim();
     const r = await api("bots/save", body);
     if (!r.ok){ bShowErr(r.error || "net"); return; }
@@ -2360,8 +2479,9 @@ document.querySelectorAll("[data-close-sheet]").forEach(b => b.addEventListener(
 ["a-watch", "a-rename", "a-arch", "a-stop"].forEach(id => $(id).addEventListener("click", () => sheet("act-sheet", false), true));
 SHEETS.forEach(id => {
   const el = $(id); let y0 = 0, on = false, dy = 0, tr = null;
-  el.addEventListener("touchstart", e => { if (el.scrollTop > 0) return; y0 = e.touches[0].clientY; on = true; dy = 0; tr = tracker(); tr.add(0); if (sheetAnim[id]) sheetAnim[id].stop(); }, {passive: true});
-  el.addEventListener("touchmove", e => { if (!on) return; dy = e.touches[0].clientY - y0; if (dy < 0 && el.scrollTop > 0){ on = false; return; } const y = dy < 0 ? rubber(dy, el.offsetHeight) : dy; tr.add(y); paintSheet(el, y); }, {passive: true});
+  const sb = sheetBody(el);
+  el.addEventListener("touchstart", e => { if (sb.scrollTop > 0) return; y0 = e.touches[0].clientY; on = true; dy = 0; tr = tracker(); tr.add(0); if (sheetAnim[id]) sheetAnim[id].stop(); }, {passive: true});
+  el.addEventListener("touchmove", e => { if (!on) return; dy = e.touches[0].clientY - y0; if (dy < 0 && sb.scrollTop > 0){ on = false; return; } const y = dy < 0 ? rubber(dy, el.offsetHeight) : dy; tr.add(y); paintSheet(el, y); }, {passive: true});
   el.addEventListener("touchend", () => { if (!on) return; on = false; const v = tr.v(), h = el.offsetHeight, landing = Math.max(0, dy) + project(v);
     if (landing > h * 0.4 && v > -100) sheet(id, false, v);
     else sheetAnim[id] = spring(Math.max(0, dy), 0, {v, response: 0.32, damping: 0.9, onUpdate: y => paintSheet(el, y), onDone: () => { el.style.transform = ""; }}); });
@@ -2411,10 +2531,19 @@ $("a-arch").addEventListener("click", () => {
 });
 
 /* новая сессия */
-let dir = null;
-async function openNew(){
-  push("new"); $("n-text").value = ""; dir = null;
-  try{ const r = await api("dirs"); const ds = r.dirs || []; dir = ds[0] || null;
+let dir = null, nItems = [], nPick = "", nOpen = false;
+function nPaint(){ const on = nItems.length > 1; $("n-model").hidden = $("n-model-l").hidden = !on; if (on) pvPaint($("n-model"), nItems, nPick, nOpen); }
+function nModels(m){  // Claude Code (TUI) и модели SDK-провайдера; провайдера здесь не меняют: адрес у раннера один
+  const c = (m && m.claude) || [], s = m && m.sdk, cc = "Claude Code";
+  nItems = [{id: "", title: t("pvDefault"), sub: c.length ? cc : s ? s.title : ""}].concat(c.map(x => ({id: "c:" + x, title: x[0].toUpperCase() + x.slice(1), sub: cc})),
+    s ? (s.models || []).map(x => ({id: "s:" + x, title: x, sub: s.title + (x === s.model ? " · " + t("pvDefault").toLowerCase() : "")})) : []);
+  nPick = ""; nOpen = false; nPaint();
+}
+$("n-model").addEventListener("click", e => { if (e.target.closest("[data-pv]")){ nOpen = !nOpen; nPaint();
+    if (nOpen) $("n-model").scrollIntoView({block: "end", behavior: RM ? "auto" : "smooth"}); return; }  /* раскрытый список не прячется под «Запустить» */ const b = e.target.closest("[data-p]"); if (b){ nPick = b.dataset.p; nOpen = false; nPaint(); haptic(); } });
+async function openNew(instant){
+  if (instant) show("new"); else push("new");  // диплинк при загрузке: экран сразу, без перехода от невиданного списка $("n-text").value = ""; dir = null; nModels(null);
+  try{ const r = await api("dirs"); const ds = r.dirs || []; dir = ds[0] || null; nModels(r.models);
     $("n-dirs").innerHTML = ds.map((d, i) => `<button class="chip" type="button" data-d="${esc(d)}" aria-pressed="${i === 0}">${d === "~" ? t("homeDir") : esc(d)}</button>`).join(""); }catch(e){}
   mainButton();  // без автофокуса: клавиатура не выезжает посреди перехода
 }
@@ -2424,7 +2553,8 @@ let launching = false;
 async function launch(){
   const text = $("n-text").value.trim(); if (!text || launching) return;
   launching = true; $("fab").disabled = true; try{ tg && tg.MainButton.showProgress(); }catch(e){}
-  try{ const r = await api("new", {text, cwd: dir}); if (r.ok){ haptic("ok"); toast(t("launched")); await loadList(); if (r.id){ settleNav("new"); show("list"); openSession(r.id); } else pop(); } else toast(r.error || t("notStarted")); }
+  try{ const body = {text, cwd: dir}; if (nPick){ body.model = nPick.slice(2); if (nPick[0] === "s") body.sdk = true; }
+    const r = await api("new", body); if (r.ok){ haptic("ok"); toast(t("launched")); await loadList(); if (r.id){ settleNav("new"); show("list"); openSession(r.id); } else pop(); } else toast(r.error || t("notStarted")); }
   catch(e){ toast(t("launchFail")); }
   finally{ launching = false; try{ tg && tg.MainButton.hideProgress(); }catch(e){} mainButton(); }
 }
@@ -2641,6 +2771,7 @@ async function boot(){
   try{ if (sessionStorage.getItem("cc-att")){ sessionStorage.removeItem("cc-att"); toast(t("attLost")); } }catch(e){}
   show("list"); await loadList();
   const sid = hash.get("s"); if (sid) openSession(sid);
+  if (hash.has("new")) openNew(true);  // deep link for the design gate: after boot's show("list"), not before it
   if (STANDALONE && "serviceWorker" in navigator){ try{ await navigator.serviceWorker.register("/app/sw.js", {scope: "/app/"}); }catch(e){} }
   pushState();
 }

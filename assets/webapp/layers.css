@@ -263,6 +263,10 @@ html[data-lab-theme="dark"] .lq,html[data-lab-theme="dark"] .lab-sq{--lq-warn:#f
 @media (prefers-color-scheme:dark){html:not([data-lab-theme="light"]) .lq,html:not([data-lab-theme="light"]) .lab-sq{--lq-warn:#f0b44c;--lq-ok:#d2fb4a;--lq-ok-t:#d2fb4a}}
 .lab-sq{--lq-warn:#b06f0a;--lq-ok:#8ec21f;--lq-ok-t:#587f0b}
 .lqt{position:relative;min-width:0;background:var(--panel);border-radius:var(--r);padding:13px 16px;display:flex;flex-direction:column;gap:2px}
+#lab-q{cursor:pointer;-webkit-tap-highlight-color:transparent;border-radius:var(--r)}
+#lab-q:focus-visible{outline:2px solid var(--link);outline-offset:3px}
+.lqt{transition:background-color .15s ease-out}
+#lab-q:active .lqt{background:color-mix(in srgb,var(--panel) 80%,var(--ink))}  /* тон нажатия, как у .card (ΔL* ≥15): плитки открывают лист квот */
 .lql{font-size:13px;color:var(--muted)}
 .lqv{display:flex;align-items:baseline;gap:2px;margin-top:1px}
 .lqt .lqn{font-size:32px;font-weight:600;letter-spacing:-1px;color:var(--ink)}

@@ -9,6 +9,26 @@ R = json.load(open(DATA))
 DATA_LOCK = threading.Lock()
 
 
+# lists of the model sheet: the shape of the real api_model (presets with models; empty list = one preset model)
+MODEL = {"provider": "deepseek", "model": "deepseek-flash", "base": "", "busy": 0, "group": {"on": False}, "presets": [
+    {"id": "claude_login", "title": "Claude Code", "model": "sonnet", "stored": False, "login": True, "models": ["opus", "sonnet", "haiku"]},
+    {"id": "deepseek", "title": "DeepSeek", "model": "deepseek-flash", "stored": True, "models": []},
+    {"id": "glm", "title": "GLM", "model": "glm-5.3", "stored": True, "models": []},
+    {"id": "kimi", "title": "Kimi", "model": "kimi-for-coding", "stored": False, "models": []},
+    {"id": "openrouter", "title": "OpenRouter", "model": "x", "stored": False, "models": []},
+    {"id": "anthropic", "title": "Claude API", "model": "sonnet", "stored": False, "models": ["opus", "sonnet", "haiku"]},
+    {"id": "custom", "title": "", "model": "", "stored": False, "models": []}]}
+
+# the shape of the real api_status: Claude from the demo quota + rows of CC_STATUS_FILE
+def quota_status(refreshed):
+    now = time.time()
+    return {"claude": R["sessions"]["quota"], "can_refresh": True, "refreshed": refreshed, "updated": now - 240,
+            "next_at": now + 60 if refreshed else None, "rows": [
+                {"id": "codex", "title": "Codex", "sub": "week", "pct": 41.0, "reset": "Thu 09:00", "hot": False},
+                {"id": "glm", "title": "GLM", "sub": "5 h", "pct": 88.0, "reset": "23:10", "hot": True},
+                {"id": "gemini", "title": "Gemini", "sub": "day", "pct": 12.0, "reset": None, "hot": False},
+                {"id": "mem", "title": "Shared memory", "sub": "12 480 notes · indexed 2 min ago", "pct": None, "reset": None, "hot": False}]}
+
 def read_data():
     with open(DATA) as source:
         return json.load(source)
@@ -30,7 +50,7 @@ BOTS = {"bots": [], "presets": []}
 
 def bots_reset():
     """Synthetic /api/bots* state (README, "Several bots"): one active bot with a group, one without a group and with an API error."""
-    BOTS["presets"] = [{"id": "anthropic", "title": "Claude", "model": "claude-sonnet-4-5"}, {"id": "kimi", "title": "Kimi", "model": "kimi-k2"},
+    BOTS["presets"] = [{"id": "anthropic", "title": "Claude", "model": "claude-sonnet-4-5", "models": ["opus", "sonnet", "haiku"]}, {"id": "kimi", "title": "Kimi", "model": "kimi-k2"},
                        {"id": "codex", "title": "Codex", "model": ""}, {"id": "custom", "title": "", "model": ""}]
     BOTS["bots"] = [
         {"slug": "shop_helper_bot", "username": "shop_helper_bot", "name": "Shop Helper", "chat": -1001, "chat_title": "Shop team", "groups": [{"id": -1001, "title": "Shop team"}, {"id": -1002, "title": "Support"}],
@@ -108,12 +128,17 @@ class H(http.server.BaseHTTPRequestHandler):
         parts = urllib.parse.urlparse(self.path).path.strip("/").split("/")
         if parts == ["api", "perms"]:
             return self.perms_post(raw)
+        if parts == ["api", "quota", "refresh"]:
+            return self.j(quota_status(True))
         if len(parts) == 3 and parts[:2] == ["api", "bots"]:
             return self.bots_post(parts[2], raw)
         # Server-side receipts also cover WebKit's unobservable background fetches.
         if len(parts) == 4 and parts[:2] == ["api", "session"] and parts[3] == "send" and os.environ.get("SEND_LOG"):
             with DATA_LOCK, open(os.environ["SEND_LOG"], "a") as log:
                 log.write(json.dumps({"sid": parts[2], "body": raw.decode("utf-8", errors="replace")}) + "\n")
+        if parts == ["api", "new"] and os.environ.get("SEND_LOG"):
+            with DATA_LOCK, open(os.environ["SEND_LOG"], "a") as log:
+                log.write(json.dumps({"new": json.loads(raw or b"{}")}) + "\n")
         if len(parts) == 4 and parts[:2] == ["api", "session"] and parts[3] == "answer":
             return self.answer(parts[2], raw)
         if len(parts) == 4 and parts[:2] == ["api", "session"] and parts[3] == "send":  # сервер отвечает после вставки в tmux (1–2 с)
@@ -334,8 +359,11 @@ class H(http.server.BaseHTTPRequestHandler):
             return self.j(read_data()["sessions"])
         if p == "/api/bots": return self.j(BOTS)
         if p == "/api/perms": return self.j(PERMS)
+        if p == "/api/model": return self.j(MODEL)
+        if p == "/api/quota": return self.j(quota_status(False))
         if p == "/api/commands": return self.j(R["commands"])
-        if p == "/api/dirs": return self.j(R["dirs"])
+        if p == "/api/dirs":  # models as the real api_dirs: Claude Code (TUI) + the SDK runner's provider
+            return self.j({"models": {"claude": ["opus", "sonnet", "haiku"], "sdk": {"provider": "glm", "title": "GLM", "model": "glm-5.3", "models": ["glm-5.3"]}}, **R["dirs"]})
         if p == "/api/file": return self.j({"url": "/f/x"})
         if p.startswith("/api/session/"):
             current = read_data()

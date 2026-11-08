@@ -281,6 +281,19 @@ class RegistryTests(BotsCase):
             r = self.save(provider="codex")
         self.assertEqual((r["bot"]["engine"], r["bot"]["provider"]), ("codex", "codex"))
 
+    def test_codex_model_is_saved_and_shown(self):  # 08.11 20:27: the Codex bot had no model choice in its card
+        self.add()
+        with mock.patch.object(cc.subprocess, "run", return_value=mock.Mock(returncode=0)):
+            r = self.save(provider="codex", model="gpt-6.1-sol")
+            self.assertEqual((r["bot"]["engine"], r["bot"]["model"]), ("codex", "gpt-6.1-sol"))
+            self.assertEqual(cc.read_env_file(self.cdir + "/env")["CC_CODEX_MODEL"], "gpt-6.1-sol")
+            r = self.save(provider="codex", model="gpt-6.2")  # the same provider, another model: still a change
+            self.assertEqual(r["bot"]["model"], "gpt-6.2")
+            self.assertEqual(self.save(provider="codex", model="bad name!")["error"], "model")
+            r = self.save(provider="codex", model="")  # empty: the default of ~/.codex/config.toml
+        self.assertNotIn("CC_CODEX_MODEL", cc.read_env_file(self.cdir + "/env"))
+        self.assertEqual(r["bot"]["model"], "")
+
     def test_remove_stops_services_and_deletes_dirs(self):
         self.add()
         self.assertEqual(cc.bots_remove(self.cfg, {"slug": "../etc"})["error"], "slug")
@@ -430,7 +443,8 @@ class HttpTests(unittest.TestCase):
     def test_routes_are_thin_wrappers(self):
         w = self.w
         st, obj, _ = w.req("GET", "/api/bots")
-        self.assertEqual((st, obj), (200, {"bots": [], "presets": [{"id": k, "title": p["title"], "model": p["model"]} for k, p in cc.MODEL_PRESETS.items()]}))
+        self.assertEqual((st, obj), (200, {"bots": [], "presets": [{"id": k, "title": p["title"], "model": p["model"], "models": cc.MODEL_CHOICES.get(k, [])}
+                                                    for k, p in cc.MODEL_PRESETS.items()]}))
         self.assertNotIn("stored", obj["presets"][0])
         for action in ("add", "save", "persona", "remove"):
             st, obj, _ = w.req("POST", "/api/bots/" + action, {"slug": "x"})

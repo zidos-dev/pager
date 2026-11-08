@@ -906,7 +906,7 @@
   function build(){
     var q=document.getElementById("quota"),sq=document.getElementById("s-quota");
     if(!q||!sq)return false;
-    var root=el("div","lq");root.id="lab-q";root.hidden=true;q.parentNode.insertBefore(root,q.nextSibling);
+    var root=el("div","lq");root.id="lab-q";root.hidden=true;root.setAttribute("role","button");root.tabIndex=0;root.setAttribute("aria-label",/ru/i.test(de.lang||"")?"Квоты":"Quotas");q.parentNode.insertBefore(root,q.nextSibling);
     var l=el("div","squota lab-sq");l.id="lab-sq";l.hidden=true;sq.parentNode.insertBefore(l,sq.nextSibling);
     line={root:l,ctrs:{},xs:{}};
     root.appendChild(el("div","lqstale")).hidden=true;

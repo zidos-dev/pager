@@ -3273,6 +3273,55 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual((q["h5"], q["d7"], q["stale"]), (59.0, 43.0, False))
         self.assertRegex(q["h5_reset"], r"^\d\d:\d\d$")
 
+    def _status_env(self, interval=300):
+        e = self.e
+        e.cfg.status_file = os.path.join(e.tmp.name, "status.json")
+        e.cfg.status_refresh = "make-status"
+        e.cfg.status_min_interval = interval
+        calls = []
+        orig = e.bot.run
+
+        def run(args, timeout=30, cwd=None, input_text=None):
+            if args[-1:] == ["make-status"]:
+                calls.append(e.t["v"])
+                with open(e.cfg.status_file, "w") as f:
+                    json.dump([{"id": "codex", "title": "Codex", "sub": "неделя", "pct": 140, "reset": BASE + 3600, "hot": True},
+                               {"id": "mem", "title": "Память", "sub": "1203 записи", "pct": None, "reset": None},
+                               "мусор", {"title": 5}], f)
+                return 0, ""
+            return orig(args, timeout, cwd, input_text)
+        e.bot.run = run
+        return calls
+
+    def test_quota_refresh_runs_command_once_within_interval(self):
+        calls = self._status_env()
+        st, obj, _ = self.w.req("POST", "/api/quota/refresh", {})
+        self.assertEqual((st, obj["refreshed"], len(calls)), (200, True, 1))
+        rows = obj["rows"]
+        self.assertEqual([r["id"] for r in rows], ["codex", "mem"])  # строки без названия отброшены
+        self.assertEqual(rows[0]["pct"], 100.0)
+        self.assertRegex(rows[0]["reset"], r"^\d\d:\d\d$")
+        self.assertIsNone(rows[1]["pct"])
+        self.assertEqual(obj["next_at"], BASE + 300)
+        self.assertIn("claude", obj)
+        self.e.t["v"] = BASE + 120  # повторный клик внутри интервала: кэш, команду не зовём
+        st, obj, _ = self.w.req("POST", "/api/quota/refresh", {})
+        self.assertEqual((obj["refreshed"], len(calls), len(obj["rows"])), (False, 1, 2))
+        self.e.t["v"] = BASE + 301
+        st, obj, _ = self.w.req("POST", "/api/quota/refresh", {})
+        self.assertEqual((obj["refreshed"], len(calls)), (True, 2))
+
+    def test_quota_get_reads_cache_without_command(self):
+        calls = self._status_env()
+        st, obj, _ = self.w.req("GET", "/api/quota")
+        self.assertEqual((st, obj["rows"], obj["can_refresh"], calls), (200, [], True, []))
+
+    def test_quota_refresh_without_command_is_cache_only(self):
+        self.e.cfg.status_refresh = ""
+        self.e.cfg.status_file = os.path.join(self.e.tmp.name, "none.json")
+        st, obj, _ = self.w.req("POST", "/api/quota/refresh", {})
+        self.assertEqual((st, obj["refreshed"], obj["can_refresh"], obj["rows"]), (200, False, False, []))
+
     def test_quota_nulls_when_no_file(self):
         self.e.cfg.rate_file = os.path.join(self.e.tmp.name, "nope.json")
         st, obj, _ = self.w.req("GET", "/api/sessions")
@@ -7511,6 +7560,35 @@ class SdkTests(unittest.TestCase):
         fake.key = True
         code, res = e.bot.api_new(1, {"text": "t", "cwd": e.tmp.name, "sdk": True})
         self.assertEqual((code, res["id"]), (200, "s-aabbccdd"))
+
+    def test_api_new_model_per_session(self):  # 08.11 20:28 owner: «Почему нет выбора модели в экране нового чата?»
+        fake = FakeSdk(self)
+        e = sdk_env(self, fake, watch=False)
+        code, res = e.bot.api_new(1, {"text": "t", "cwd": e.tmp.name, "sdk": True, "model": "glm-5.3"})
+        self.assertEqual(code, 200)
+        self.assertEqual(fake.calls("session.start")[-1]["model"], "glm-5.3")
+        code, res = e.bot.api_new(1, {"text": "t", "cwd": e.tmp.name, "sdk": True, "model": "bad name!"})
+        self.assertEqual((code, res["error"]), (400, "model"))
+        e.bot.api_new(1, {"text": "t", "cwd": e.tmp.name, "sdk": True})
+        self.assertNotIn("model", fake.calls("session.start")[-1])  # no choice: the runner's default
+
+    def test_api_new_model_claude_code(self):
+        e = Env(self)
+        code, _ = e.bot.api_new(1, {"text": "t", "cwd": "/tmp", "model": "sonnet"})
+        self.assertEqual(code, 200)
+        cmd = [r for r in e.runs if "--bg" in r[0]][-1][0]
+        self.assertEqual(cmd[1:6], ["--bg", "--agent", "claude", "--model", "sonnet"])
+        code, res = e.bot.api_new(1, {"text": "t", "cwd": "/tmp", "model": "glm-5.3"})  # Claude Code takes its own models only
+        self.assertEqual((code, res["error"]), (400, "model"))
+        e.bot.api_new(1, {"text": "t", "cwd": "/tmp"})
+        self.assertEqual([r for r in e.runs if "--bg" in r[0]][-1][0][4:6], ["--model", "opus"])
+
+    def test_api_dirs_lists_models(self):
+        fake = FakeSdk(self)
+        e = sdk_env(self, fake, watch=False)
+        m = e.bot.api_dirs()["models"]
+        self.assertEqual(m["claude"], ([] if e.bot.claude_missing() else ["opus", "sonnet", "haiku"]))
+        self.assertIn(m["sdk"]["model"], m["sdk"]["models"])
 
 
 class SdkReviewTests(unittest.TestCase):
