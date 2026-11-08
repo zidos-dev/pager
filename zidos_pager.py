@@ -3884,7 +3884,7 @@ def bots_get(cfg, slug):
     cwd = env.get("CC_RESPONDER_CWD", "")
     engine = "codex" if env.get("CC_RESPONDER_ENGINE") == "codex" else "sdk"
     return {"slug": slug, "username": slug, "name": env.get("CC_RESPONDER_NAME", ""), "chat": chat,
-            "chat_title": str(groups.get(str(chat), "")) if chat is not None else "",
+            "chat_title": str(groups.get(str(chat)) or chat) if chat is not None else "",  # an unnamed group shows its id
             "groups": [{"id": int(k), "title": str(v)} for k, v in groups.items() if re.fullmatch(r"-?\d+", k)],
             "cwd": cwd, "git": bool(cwd) and os.path.exists(os.path.join(cwd, ".git")),
             "site": sdk.get("CC_CHAT_SITE", ""), "provider": bots_provider(sdk, engine),
@@ -3923,24 +3923,115 @@ def bots_add(cfg, body):
         tg.call("getUpdates", {"timeout": 0, "limit": 1, "allowed_updates": []})
     except TGError as e:
         return {"ok": False, "error": "busy" if "HTTP 409" in str(e) else "net"}
+    bots_files(cfg, slug, token, me)
+    bots_write(cdir + "/error.txt", bots_problem(cdir, bots_privacy(me), bots_service("start", slug)))
+    return {"ok": True, "slug": slug, "username": slug, "name": bots_clean(me.get("first_name"), 64)}
+
+
+def bots_files(cfg, slug, token, me, env_extra=None):
+    """A new bot's registry dir and state dir (bots_add and bots_adopt): env, sdk.env and empty keys/about/brief."""
+    cdir, sdir = bots_dirs(cfg, slug)
     for d in (cdir, sdir):
         os.makedirs(d, mode=0o700, exist_ok=True)
         os.chmod(d, 0o700)
     kdir = os.path.join(cfg.home, "zidos-pager-knowledge", slug)  # an empty project folder until the owner picks one, never the home
-    os.makedirs(kdir, mode=0o700, exist_ok=True)
+    if not (env_extra or {}).get("CC_RESPONDER_CWD"):
+        os.makedirs(kdir, mode=0o700, exist_ok=True)
     sock = sdir + "/sdk.sock"
     env = {"TG_BOT_TOKEN": token, "TG_ALLOWED_USERS": ",".join(str(i) for i in sorted(cfg.allowed)) or None,
            "CC_ROLE": "responder", "CC_LANG": cfg.lang, "TG_API_BASE": cfg.api_base, "CC_RESPONDER_CHAT": None, "CC_RESPONDER_CWD": kdir,
            "CC_RESPONDER_NAME": bots_clean(me.get("first_name"), 64) or None, "CC_RESPONDER_BRIEF": cdir + "/brief.md",
            "CC_RESPONDER_RATE": "30", "CC_RESPONDER_ENGINE": "sdk", "ZIDOS_PAGER_STATE": sdir + "/state.json",
            "CC_RESPONDER_LOG": sdir + "/responder.jsonl", "CC_SDK_SOCKET": sock, "CC_SDK_ENV": cdir + "/sdk.env"}
+    env.update({k: v for k, v in (env_extra or {}).items() if v})
     env_update(cdir + "/env", env)
     env_update(cdir + "/sdk.env", {"CC_SDK_SOCKET": sock, "CC_SDK_STATE": sdir + "/sdk-state",
                                    "CC_SDK_KEY_FILE": cdir + "/keys.env", "CC_SDK_KEY_VAR": "ANTHROPIC_API_KEY"})
     for name in ("keys.env", "about.md", "brief.md"):
         bots_write(os.path.join(cdir, name), "")
+    return cdir, sdir
+
+
+ADOPT_ENV = ("CC_RESPONDER_TOKEN", "CC_RESPONDER_CHAT", "CC_RESPONDER_CWD", "CC_RESPONDER_BRIEF", "CC_RESPONDER_ENGINE",
+             "CC_RESPONDER_NAME", "CC_RESPONDER_RATE", "CC_CODEX_MODEL")
+
+
+def bots_adopt(cfg):
+    """08.11 owner: «Почему нельзя бота прям в боте настраивать?» The group bot of the main env (CC_RESPONDER_TOKEN, set up
+    before bots/ existed) becomes an ordinary registry bot once, with its own card, model and rights. -> slug or None."""
+    if cfg.role != "console" or not cfg.responder_token:
+        return None
+    tg = TG(cfg.responder_token, cfg.api_base)
+    try:
+        me = tg.get_me() or {}
+    except TGError as e:
+        log("adopt: getMe failed: %s" % str(e).replace(cfg.responder_token, "***"))
+        return None
+    slug = str(me.get("username") or "").lower()
+    if not BOT_SLUG.fullmatch(slug):
+        log("adopt: no usable username")
+        return None
+    cdir, sdir = bots_dirs(cfg, slug)
+    if os.path.exists(cdir + "/.adopting"):  # stopped half way last time: start over
+        for d in (cdir, sdir):
+            shutil.rmtree(d, ignore_errors=True)
+    if not os.path.exists(cdir):  # else the owner already added the same bot in «Bots»: keep that one
+        os.makedirs(cdir, mode=0o700, exist_ok=True)
+        bots_write(cdir + "/.adopting", "")
+        bots_adopt_copy(cfg, slug, me, tg)
+        os.remove(cdir + "/.adopting")
+    backup = "%s.bak-adopt-%s" % (cfg.env_path, time.strftime("%Y%m%d-%H%M%S"))
+    shutil.copy2(cfg.env_path, backup)
+    os.chmod(backup, 0o600)
+    env_update(cfg.env_path, {k: None for k in ADOPT_ENV})  # the commit point: the console stops polling this token
     bots_write(cdir + "/error.txt", bots_problem(cdir, bots_privacy(me), bots_service("start", slug)))
-    return {"ok": True, "slug": slug, "username": slug, "name": bots_clean(me.get("first_name"), 64)}
+    log("adopt: the env group bot is now bots/%s" % slug)
+    return slug
+
+
+def bots_adopt_copy(cfg, slug, me, tg):
+    chat = cfg.responder_chat
+    extra = {"CC_RESPONDER_CHAT": str(chat) if chat is not None else None, "CC_RESPONDER_CWD": cfg.responder_cwd or None,
+             "CC_RESPONDER_RATE": str(cfg.responder_rate), "CC_RESPONDER_ENGINE": cfg.responder_engine,
+             "CC_CODEX_MODEL": cfg.codex_model or None, "CC_RESPONDER_NAME": bots_clean(cfg.responder_name, 64) or None}
+    cdir, sdir = bots_files(cfg, slug, cfg.responder_token, me, extra)
+    if cfg.responder_brief:
+        bots_write(cdir + "/brief.md", bots_read(cfg.responder_brief))
+    perms_write(cdir + "/perms.json", {"chat": perms_read(perms_path(cfg))["chat"]})
+    # the model the group answered on: the console's sdk.env at this moment, the key under its provider's own name
+    main = env_read(cfg.sdk_env)
+    keys = {**env_read(os.path.expanduser(main.get("CC_SDK_KEY_FILE", ""))),
+            **env_read(os.path.join(os.path.dirname(cfg.sdk_env), "model-keys.env"))}
+    pid = "claude_login" if main.get("CC_SDK_AUTH") == "login" else bots_provider(main, "sdk")
+    var = (MODEL_PRESETS.get(pid) or {}).get("var") or "ANTHROPIC_API_KEY"
+    key = keys.get(main.get("CC_SDK_KEY_VAR") or var, "")
+    env_update(cdir + "/sdk.env", {"CC_SDK_KEY_VAR": var, **{k: main.get(k) for k in (
+        "CC_SDK_MODEL", "CC_SDK_BASE_URL", "CC_SDK_AUTH", "CC_SDK_BUDGET")}})
+    if key:
+        env_update(cdir + "/keys.env", {var: key})
+    try:
+        old = json.loads(bots_read(cfg.state_path) or "{}")
+    except ValueError:
+        old = {}
+    st = {k: old[k] for k in ("groups", "chat_tail", "resp_mids", "backlog", "bl_seq") if k in old}
+    if old.get("chat_offset"):  # the console's getUpdates position on this token: no update is answered twice
+        st["offset"] = old["chat_offset"]
+    groups = st.setdefault("groups", {})
+    if chat is not None and not groups.get(str(chat)):
+        try:
+            got = tg.call("getChat", {"chat_id": chat})
+            groups[str(chat)] = str(got.get("title") if isinstance(got, dict) and got.get("title") else chat)
+        except TGError:
+            groups[str(chat)] = str(chat)
+    bots_write(sdir + "/state.json", json.dumps(st, ensure_ascii=False))
+    if os.path.isfile(cfg.responder_log):
+        shutil.copy2(cfg.responder_log, sdir + "/responder.jsonl")
+    for name in ("relay.json", "relay.jsonl"):  # a relay still waiting for answers keeps waiting in the bot
+        if os.path.isfile(os.path.join(os.path.dirname(cfg.responder_log), name)):
+            shutil.copy2(os.path.join(os.path.dirname(cfg.responder_log), name), os.path.join(sdir, name))
+    reports = os.path.join(os.path.dirname(cfg.responder_log), "reports")
+    if os.path.isdir(reports):
+        shutil.copytree(reports, sdir + "/reports", dirs_exist_ok=True)
 
 
 def bots_save(cfg, body):
@@ -9535,22 +9626,10 @@ class Bot:
         rc, _ = self.run(["systemctl", "--user", "restart", "zidos-pager-sdk"], timeout=30)
         return 200, {"ok": True, "restarted": rc == 0}
 
-    def bots_builtin(self):
-        """The group bot from the main env (CC_RESPONDER_TOKEN): set up before bots/ existed, so the sheet shows it too.
-        Its model and rights live in the «Model» and «Permissions» sheets; the token never leaves the server."""
-        cfg = self.cfg
-        if not cfg.responder_token:
-            return []
-        gid = cfg.responder_chat
-        model = "Codex" if cfg.responder_engine == "codex" else env_read(cfg.sdk_env).get("CC_SDK_MODEL", "")
-        return [{"slug": "", "builtin": True, "username": self.chat_username or "", "name": cfg.responder_name,
-                 "chat": gid, "chat_title": str((self.store.data.get("groups") or {}).get(str(gid), "")) if gid is not None else "",
-                 "cwd": cfg.responder_cwd, "model": model, "engine": cfg.responder_engine, "active": True, "error": ""}]
-
     def api_bots(self, method, action, body):
         """GET /api/bots, POST /api/bots/add|save|persona|remove: the same functions as the `bots` command (slow: no api_lock)."""
         if method == "GET" and not action:
-            return 200, {"bots": self.bots_builtin() + bots_list(self.cfg)["bots"],
+            return 200, {"bots": bots_list(self.cfg)["bots"],
                          "presets": [{"id": k, "title": p["title"], "model": p["model"]} for k, p in MODEL_PRESETS.items()]}
         if method != "POST" or action not in BOTS_ACTIONS:
             return 405, {"error": "method"}
@@ -10444,8 +10523,22 @@ def relay_main(cfg, argv):
     ap.add_argument("--to", required=True)
     ap.add_argument("--reply", type=int)
     ap.add_argument("--until")
+    ap.add_argument("--bot")
     ap.add_argument("file")
     a = ap.parse_args(argv)
+    if not cfg.responder_token:  # the group bot lives in bots/ (adopted from this env 08.11): relay through it
+        root = os.path.join(cfg.home, ".config/zidos-pager/bots")
+        try:
+            slugs = sorted(x for x in os.listdir(root) if read_env_file(os.path.join(root, x, "env")).get("CC_RESPONDER_CHAT"))
+        except OSError:
+            slugs = []
+        slug = a.bot or (slugs[0] if len(slugs) == 1 else None)
+        if slug in slugs:
+            cfg = Config(env_path=os.path.join(root, slug, "env"), environ={"HOME": cfg.home, "PATH": os.environ.get("PATH", "")})
+            cfg.responder_token = cfg.token
+        elif slugs:
+            print("relay: choose the bot with --bot: %s" % ", ".join(slugs), file=sys.stderr)
+            return 2
     if not (cfg.responder_token and cfg.responder_chat is not None):
         print("relay: CC_RESPONDER_TOKEN / CC_RESPONDER_CHAT are not set", file=sys.stderr)
         return 2
@@ -10484,6 +10577,13 @@ def relay_main(cfg, argv):
 def main():
     migrate_legacy_paths(os.environ.get("HOME", os.path.expanduser("~")))
     cfg = Config()
+    try:
+        adopted = not sys.argv[1:] and bots_adopt(cfg)
+    except Exception as e:  # never a restart loop of the console: the env is untouched, the next start tries again
+        log("adopt failed: %s" % type(e).__name__)
+        adopted = None
+    if adopted:
+        cfg = Config()  # the main env no longer has the group bot
     set_lang(cfg.lang)
     if sys.argv[1:2] == ["relay"]:
         return relay_main(cfg, sys.argv[2:])

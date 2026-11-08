@@ -3191,22 +3191,18 @@ class ModelSheetTests(unittest.TestCase):
         self.save(provider="glm", key="sk-secret-123")
         self.assertNotIn("CC_SDK_AUTH", cc.env_read(self.e.bot.cfg.sdk_env))  # a key provider switches login off again
 
-    def test_the_group_bot_from_env_is_listed_in_bots(self):
-        """08.11 owner: «мои боты не отображаются» — the env responder (CC_RESPONDER_TOKEN) is a bot too, no bots/ registry."""
+    def test_bots_lists_only_the_registry_and_an_unnamed_group_shows_its_id(self):
+        """08.11: the env group bot is adopted into bots/ at start (tests/test_bots.py AdoptTests), «Bots» reads bots/ only;
+        IMG_5562 «группа не выбрана» while the chat was set: a group without a stored title shows its id."""
         cfg, bot = self.e.bot.cfg, self.e.bot
         cfg.home = self.e.tmp.name
-        cfg.responder_token, cfg.responder_chat, cfg.responder_engine = "9:secret-token", -100500, "codex"
-        cfg.responder_cwd = "/srv/proj"
-        bot.chat_username = "my_group_bot"
-        bot.store.data["groups"] = {"-100500": "Team"}
-        got = bot.api_dispatch(1, "GET", "/api/bots", None)[1]
-        self.assertEqual(len(got["bots"]), 1)
-        b = got["bots"][0]
-        self.assertTrue(b["builtin"])
-        self.assertEqual((b["username"], b["chat_title"], b["cwd"], b["model"]), ("my_group_bot", "Team", "/srv/proj", "Codex"))
-        self.assertNotIn("secret-token", json.dumps(got))
-        cfg.responder_token = None
+        cfg.responder_token, cfg.responder_chat = "9:secret-token", -100500
         self.assertEqual(bot.api_dispatch(1, "GET", "/api/bots", None)[1]["bots"], [])
+        cdir = os.path.join(cfg.home, ".config/zidos-pager/bots/my_group_bot")
+        cc.bots_write(cdir + "/env", "CC_RESPONDER_CHAT=-100500\nCC_RESPONDER_ENGINE=codex\n")
+        with mock.patch.object(cc, "bots_service", return_value=True):
+            got = bot.api_dispatch(1, "GET", "/api/bots", None)[1]["bots"]
+        self.assertEqual([(b["slug"], b["chat"], b["chat_title"], b["engine"]) for b in got], [("my_group_bot", -100500, "-100500", "codex")])
 
     def test_codex_model_is_chosen_or_left_default(self):
         self.assertTrue(self.save(provider="codex", model="gpt-6.1-sol")[1]["ok"])

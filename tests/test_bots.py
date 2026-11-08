@@ -569,3 +569,153 @@ class PersonaNoModelTests(BotsCase):
         self.add()
         r = cc.bots_persona(self.cfg, {"slug": "demo_bot", "about": "A coffee shop"})
         self.assertEqual(r, {"ok": False, "error": "persona_nomodel"})
+
+
+class AdoptTests(BotsCase):
+    """08.11 owner: «Почему нельзя бота прям в боте настраивать?» — the group bot of the main env becomes a registry bot."""
+
+    def main_setup(self, engine="codex"):
+        t = self.home
+        os.makedirs(t + "/proj")
+        cc.bots_write(t + "/brief.md", "Be kind.")
+        cc.bots_write(t + "/keys/api.env", "ANTHROPIC_API_KEY_1=%s\n" % KEY)
+        cc.bots_write(t + "/sdk.env", "CC_SDK_KEY_FILE=%s/keys/api.env\nCC_SDK_KEY_VAR=ANTHROPIC_API_KEY_1\n"
+                                      "CC_SDK_MODEL=sonnet\nCC_SDK_BUDGET=0\n" % t)
+        cc.bots_write(t + "/perms.json", json.dumps({"sessions": {"mode": "all"}, "chat": {"mode": "edits", "allow": ["Read"]}}))
+        log = t + "/st/responder.jsonl"
+        cc.bots_write(log, '{"q": "hi"}\n{"who": "Анна", "from": 5}\n')
+        cc.bots_write(t + "/st/relay.json", '{"mids": [1], "until": 9999999999}')
+        cc.bots_write(t + "/st/reports/r1.md", "report")
+        cc.bots_write(self.cfg.state_path, json.dumps({"offset": 7, "chat_offset": 70, "chat_tail": [{"who": "A", "text": "x"}], "resp_mids": [3],
+                                                       "backlog": [{"id": "b1", "status": "open"}], "bl_seq": 1,
+                                                       "responder": {"sid": "s1"}}))
+        env = cc.read_env_file(self.cfg.env_path)
+        cc.env_update(self.cfg.env_path, {
+            "CC_SDK_ENV": t + "/sdk.env", "CC_RESPONDER_TOKEN": TOKEN, "CC_RESPONDER_CHAT": "-100500",
+            "CC_RESPONDER_CWD": t + "/proj", "CC_RESPONDER_BRIEF": t + "/brief.md", "CC_RESPONDER_ENGINE": engine,
+            "CC_CODEX_MODEL": "gpt-6.1-sol", "CC_RESPONDER_RATE": "12", "CC_RESPONDER_LOG": log})
+        self.assertEqual(env["TG_BOT_TOKEN"], "T")
+        return cc.Config(env_path=self.cfg.env_path, environ={"HOME": t})
+
+    def test_env_group_bot_moves_into_the_registry_once(self):
+        cfg = self.main_setup()
+        with mock.patch("sys.stderr", new_callable=io.StringIO) as err:
+            self.assertEqual(cc.bots_adopt(cfg), "demo_bot")
+        self.assertNotIn(TOKEN, err.getvalue())
+        self.assertNotIn(KEY, err.getvalue())
+        self.assertEqual(self.svc, [("start", "demo_bot")])
+        env = cc.env_read(self.cdir + "/env")
+        self.assertEqual((env["TG_BOT_TOKEN"], env["CC_ROLE"], env["CC_RESPONDER_CHAT"], env["CC_RESPONDER_CWD"]),
+                         (TOKEN, "responder", "-100500", self.home + "/proj"))
+        self.assertEqual((env["CC_RESPONDER_ENGINE"], env["CC_CODEX_MODEL"], env["CC_RESPONDER_RATE"]), ("codex", "gpt-6.1-sol", "12"))
+        self.assertEqual(env["CC_RESPONDER_BRIEF"], self.cdir + "/brief.md")
+        self.assertEqual(cc.bots_read(self.cdir + "/brief.md"), "Be kind.")
+        self.assertEqual(cc.perms_read(self.cdir + "/perms.json")["chat"], {"mode": "edits", "allow": ["Read"], "deny": []})
+        sdk = cc.env_read(self.cdir + "/sdk.env")
+        self.assertEqual((sdk["CC_SDK_MODEL"], sdk["CC_SDK_BUDGET"], sdk["CC_SDK_KEY_VAR"]), ("sonnet", "0", "ANTHROPIC_API_KEY"))
+        self.assertEqual(cc.env_read(self.cdir + "/keys.env"), {"ANTHROPIC_API_KEY": KEY})
+        self.assertEqual(mode(self.cdir + "/keys.env"), 0o600)
+        with open(self.sdir + "/state.json") as f:
+            st = json.load(f)
+        self.assertEqual((st["chat_tail"], st["resp_mids"], st["bl_seq"]), ([{"who": "A", "text": "x"}], [3], 1))
+        self.assertEqual(st["groups"], {"-100500": "-100500"})  # getChat gave no title here: the id, never «no group»
+        self.assertNotIn("responder", st)  # its session belongs to the console's runner
+        self.assertEqual(st["offset"], 70)  # the console's position on this token, not the console's own «offset»
+        self.assertEqual(cc.bots_read(self.sdir + "/responder.jsonl"), '{"q": "hi"}\n{"who": "Анна", "from": 5}\n')
+        self.assertIn('"mids": [1]', cc.bots_read(self.sdir + "/relay.json"))
+        self.assertEqual(cc.bots_read(self.sdir + "/reports/r1.md"), "report")
+        main = cc.env_read(cfg.env_path)
+        self.assertFalse([k for k in main if k in cc.ADOPT_ENV], main)
+        self.assertEqual(main["TG_BOT_TOKEN"], "T")
+        backups = [x for x in os.listdir(os.path.dirname(cfg.env_path)) if x.startswith("env.bak-adopt-")]
+        self.assertEqual(len(backups), 1)
+        b = cc.bots_get(cc.Config(env_path=cfg.env_path, environ={"HOME": self.home}), "demo_bot")
+        self.assertEqual((b["chat"], b["chat_title"], b["engine"], b["provider"]), (-100500, "-100500", "codex", "codex"))
+        # second start: nothing to adopt
+        self.svc.clear()
+        self.assertIsNone(cc.bots_adopt(cc.Config(env_path=cfg.env_path, environ={"HOME": self.home})))
+        self.assertEqual(self.svc, [])
+
+    def test_a_half_done_adoption_is_redone(self):
+        cfg = self.main_setup()
+        os.makedirs(self.cdir)
+        cc.bots_write(self.cdir + "/.adopting", "")
+        cc.bots_write(self.cdir + "/brief.md", "partial")
+        self.assertEqual(cc.bots_adopt(cfg), "demo_bot")
+        self.assertEqual(cc.bots_read(self.cdir + "/brief.md"), "Be kind.")
+        self.assertFalse(os.path.exists(self.cdir + "/.adopting"))
+
+    def test_the_same_bot_already_added_only_clears_the_env(self):
+        cfg = self.main_setup()
+        self.add()
+        cc.bots_write(self.cdir + "/brief.md", "mine")
+        self.svc.clear()
+        self.assertEqual(cc.bots_adopt(cfg), "demo_bot")
+        self.assertEqual(cc.bots_read(self.cdir + "/brief.md"), "mine")
+        self.assertNotIn("CC_RESPONDER_TOKEN", cc.env_read(cfg.env_path))
+
+    def test_telegram_down_leaves_everything(self):
+        cfg = self.main_setup()
+        with mock.patch.object(FakeBotTG, "get_me", side_effect=cc.TGError("getMe: HTTP 502")):
+            self.assertIsNone(cc.bots_adopt(cfg))
+        self.assertFalse(os.path.exists(self.cdir))
+        self.assertIn("CC_RESPONDER_TOKEN", cc.env_read(cfg.env_path))
+
+    def test_only_the_console_adopts(self):
+        cfg = self.main_setup()
+        cfg.role = "responder"
+        self.assertIsNone(cc.bots_adopt(cfg))
+        self.assertFalse(os.path.exists(self.cdir))
+
+
+class AdoptMainTests(BotsCase):
+    def test_main_adopts_before_the_console_starts_and_rereads_the_env(self):
+        cfgs, seen = [], []
+        def config():
+            cfgs.append(mock.Mock(lang="en", token="T", allowed={1}))
+            return cfgs[-1]
+        bot = mock.Mock()
+        with mock.patch.object(cc, "Config", side_effect=config), mock.patch.object(cc, "migrate_legacy_paths"), \
+                mock.patch.object(cc, "bots_adopt", side_effect=lambda c: seen.append(c) or "demo_bot"), \
+                mock.patch.object(cc, "Bot", side_effect=lambda c: seen.append(c) or bot), mock.patch.object(sys, "argv", ["zp"]):
+            self.assertEqual(cc.main(), 0)
+        self.assertEqual(seen, [cfgs[0], cfgs[1]])  # adopt on the first read, the console on the env without the group bot
+        with mock.patch.object(cc, "bots_adopt") as adopt, mock.patch.object(sys, "argv", ["zp", "bots", "list"]), \
+                mock.patch.object(cc, "bots_main", return_value=0), mock.patch.object(cc, "migrate_legacy_paths"):
+            cc.main()
+        adopt.assert_not_called()  # the `bots` command never moves anything
+
+
+class AdoptRelayTests(BotsCase):
+    main_setup = AdoptTests.main_setup
+
+    def test_relay_goes_through_the_adopted_bot(self):
+        """`zidos_pager.py relay` (the owner's messages to the group, used 08.11) read the token from the main env."""
+        cfg = self.main_setup()
+        cc.bots_adopt(cfg)
+        msg = os.path.join(self.home, "msg.txt")
+        cc.bots_write(msg, "Привет")
+        sent = []
+        def send_one(tg, chat, text, **kw):
+            sent.append((TOKEN in tg.url, chat))
+            return {"message_id": 42}
+        with mock.patch.object(FakeBotTG, "send_one", send_one):
+            self.assertEqual(cc.relay_main(cc.Config(env_path=cfg.env_path, environ={"HOME": self.home}), ["--to", "Анна", msg]), 0)
+        self.assertEqual(sent, [(True, -100500)])
+        with open(self.sdir + "/relay.json") as f:
+            self.assertEqual(json.load(f)["mids"], [1, 42])
+
+
+class AdoptFailTests(BotsCase):
+    main_setup = AdoptTests.main_setup
+
+    def test_a_failed_adoption_keeps_the_env_and_the_console_starts(self):
+        cfg = self.main_setup()
+        bot = mock.Mock()
+        with mock.patch.object(cc, "bots_adopt_copy", side_effect=OSError("disk")), \
+                mock.patch.object(cc, "Config", return_value=cfg), mock.patch.object(cc, "migrate_legacy_paths"), \
+                mock.patch.object(cc, "Bot", return_value=bot), mock.patch.object(sys, "argv", ["zp"]):
+            self.assertEqual(cc.main(), 0)
+        bot.run_forever.assert_called_once()
+        self.assertEqual(cc.env_read(cfg.env_path)["CC_RESPONDER_TOKEN"], TOKEN)
+        self.assertTrue(os.path.exists(self.cdir + "/.adopting"))  # the next start redoes it

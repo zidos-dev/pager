@@ -659,7 +659,6 @@ const STR = {
   "botsDelAsk": "Delete {n}? Its settings and history are removed.",
   "botsDelYes": "Yes, delete",
   "botsNoGroup": "group not chosen",
-  "botsBuiltin": "The group bot from the server settings: its model is in «Model», its rights in «Permissions».",
   "botsOn": "working",
   "botsOff": "stopped",
   "botsBad": "error",
@@ -960,7 +959,6 @@ const STR = {
   "botsDelAsk": "Удалить {n}? Настройки и история будут стёрты.",
   "botsDelYes": "Да, удалить",
   "botsNoGroup": "группа не выбрана",
-  "botsBuiltin": "Бот группы из настроек сервера: модель — в «Модель», права — в «Права».",
   "botsOn": "работает",
   "botsOff": "стоит",
   "botsBad": "ошибка",
@@ -2262,7 +2260,7 @@ function bPaintList(){
   const l = $("b-list");
   if (!bots.bots.length){ l.innerHTML = `<div class="b-empty"><p>${esc(t("botsEmpty"))}</p></div>`; return; }
   l.innerHTML = bots.bots.map((b, i) => { const [cls, w] = bStatus(b), nm = b.name || b.username;
-    return `<button class="brow" type="button" data-i="${i}"><span class="av" aria-hidden="true">${esc([...(nm || "?")][0])}</span><span><span class="bn">${esc(nm || "Bot")}${b.username && b.username !== nm ? ` <span style="color:var(--muted);font-weight:400">@${esc(b.username)}</span>` : ""}</span><span class="bm">${esc((b.chat_title || t("botsNoGroup")) + " · " + (b.model || "—"))}</span></span><span class="bst ${cls}">${esc(w)}</span></button>`; }).join("") + (bots.bots.some(b => b.builtin) ? `<p class="state" id="b-builtin">${esc(t("botsBuiltin"))}</p>` : "");
+    return `<button class="brow" type="button" data-i="${i}"><span class="av" aria-hidden="true">${esc([...(nm || "?")][0])}</span><span><span class="bn">${esc(nm || "Bot")}${b.username && b.username !== nm ? ` <span style="color:var(--muted);font-weight:400">@${esc(b.username)}</span>` : ""}</span><span class="bm">${esc((b.chat_title || t("botsNoGroup")) + " · " + (b.engine === "codex" ? "Codex" : b.model || "—"))}</span></span><span class="bst ${cls}">${esc(w)}</span></button>`; }).join("");
 }
 async function bLoad(){
   try{ bots = await api("bots"); $("b-load").textContent = ""; bPaintList(); $("b-add").hidden = false; return true; }
@@ -2300,7 +2298,7 @@ $("bots-btn").addEventListener("click", openBots);
 if (location.hash === "#bots") openBots();  // deep link for the design gate
 $("b-add").addEventListener("click", () => { $("b-token").value = ""; bErr("add"); bView("add"); $("b-token").focus(); });
 document.querySelectorAll("[data-b-back]").forEach(b => b.addEventListener("click", async () => { bView("list"); await bLoad(); }));
-$("b-list").addEventListener("click", e => { const b = e.target.closest("[data-i]"); if (!b) return; const x = bots.bots[+b.dataset.i]; if (x.builtin) openModel(); else bEdit(x); });  // the env group bot: model in «Model», rights in «Permissions»
+$("b-list").addEventListener("click", e => { const b = e.target.closest("[data-i]"); if (b) bEdit(bots.bots[+b.dataset.i]); });
 $("b-vadd").addEventListener("submit", async e => {
   e.preventDefault();
   const go = $("b-add-go"); if (go.disabled) return;
