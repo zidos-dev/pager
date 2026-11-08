@@ -91,8 +91,9 @@
 .task h4{font-size:15px;margin:8px 0 2px}.task code{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;background:var(--soft);border-radius:5px;padding:0 4px}
 .tmore{align-self:flex-start;color:var(--link);font-size:14px;font-weight:500;padding:6px 2px;min-height:36px}
 .squota b{font-weight:600;color:var(--ink)}.squota b.hot{color:var(--danger)}
-html,body{margin:0;background:var(--canvas);color:var(--ink);font:16px/1.35 var(--font);-webkit-font-smoothing:antialiased}
+html,body{margin:0;background:var(--canvas);color:var(--ink);font:16px/1.35 var(--font);-webkit-font-smoothing:antialiased;text-rendering:geometricPrecision}
 body{padding-bottom:0}
+button,input,textarea,select{text-rendering:inherit}
 #list-screen,#new-screen{padding-bottom:calc(env(safe-area-inset-bottom,0px) + 16px)}
 button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
 button:focus-visible{outline:2px solid var(--link);outline-offset:2px}
@@ -1460,7 +1461,14 @@ $("list").addEventListener("click", e => { if (e.target.closest("[data-retry-lis
 /* ---------- сессия ---------- */
 let sess = null, lastHist = "", followUntil = 0;  // после отправки 3 мин держим низ переписки
 const scroller = () => view === "session" ? $("s-body") : null;
-const toBottom = () => { const b = scroller(); if (b) b.scrollTo({top: b.scrollHeight, behavior: "smooth"}); else window.scrollTo({top: document.body.scrollHeight, behavior: "smooth"}); };
+// низ ленты держим, только пока пользователь сам внизу: флаг меняет его прокрутка, а не замер при перерисовке (дефект 08.11)
+let stick = true, progUntil = 0;
+const toBottom = () => { stick = true; progUntil = Date.now() + 1200; const b = scroller(); if (b) b.scrollTo({top: b.scrollHeight, behavior: "smooth"}); else window.scrollTo({top: document.body.scrollHeight, behavior: "smooth"}); };
+{
+  const b = $("s-body");
+  b.addEventListener("scroll", () => { if (Date.now() >= progUntil) stick = b.scrollHeight - b.scrollTop - b.clientHeight < 24; }, {passive: true});  // своя плавная прокрутка вниз флаг не сбрасывает
+  for (const e of ["wheel", "touchstart", "keydown"]) b.addEventListener(e, () => { progUntil = 0; }, {passive: true});  // палец или колесо перебивают её сразу
+}
 /* ---------- движение: пружина (прерываемая, с передачей скорости) ---------- */
 const RM = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
 function spring(from, to, o){
@@ -1658,9 +1666,8 @@ function renderSession(){
   const items = live ? hh.concat([{k: "live", html: live}]) : hh;
   const sig = items.map(i => i.k + "\u0001" + i.html).join("\u0002");
   if (sig !== lastHist){
-    const sb = $("s-body"); const atEnd = sb.scrollTop + sb.clientHeight >= sb.scrollHeight - 120;
     renderHist(items); lastHist = sig; setTimeout(hydrate, 0);
-    if (atEnd || Date.now() < followUntil) requestAnimationFrame(() => toBottom());
+    if (stick) requestAnimationFrame(() => toBottom());
   }
   $("s-meta").textContent = [s.cwd, s.id].filter(Boolean).join(" · ");
 }
@@ -1816,7 +1823,7 @@ async function openSession(id){
   stashDraft();
   permVersion++;
   ownAnswerVersion++;
-  current = id; sess = (data && data.sessions.find(s => s.id === id)) || {id, name: "…", group: "work"}; lastHist = "";
+  current = id; sess = (data && data.sessions.find(s => s.id === id)) || {id, name: "…", group: "work"}; lastHist = ""; stick = true;
   const own = ownAnswerRequests.get(id);
   if (own) sess = {...own.session};
   draftOut = false; $("s-text").value = drafts.get(id) || ""; setMode("send"); $("s-text").blur();
@@ -1937,7 +1944,7 @@ async function hydrate(){
     try{
       let url = c && Date.now() - c.at < 8 * 60000 ? c.url : null;
       if (!url){ url = new URL((await api("file?path=" + encodeURIComponent(p))).url, location.href).href; pvCache[p] = {url, at: Date.now()}; }
-      el.addEventListener("load", () => { if (Date.now() < followUntil) toBottom(); }, {once: true});
+      el.addEventListener("load", () => { if (stick) toBottom(); }, {once: true});
       el.src = url; el.dataset.done = "1";
       el.addEventListener("click", () => { if (el.tagName === "IMG") openLightbox(el.src, p, el); });
     }catch(e){
