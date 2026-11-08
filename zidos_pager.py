@@ -9535,10 +9535,22 @@ class Bot:
         rc, _ = self.run(["systemctl", "--user", "restart", "zidos-pager-sdk"], timeout=30)
         return 200, {"ok": True, "restarted": rc == 0}
 
+    def bots_builtin(self):
+        """The group bot from the main env (CC_RESPONDER_TOKEN): set up before bots/ existed, so the sheet shows it too.
+        Its model and rights live in the «Model» and «Permissions» sheets; the token never leaves the server."""
+        cfg = self.cfg
+        if not cfg.responder_token:
+            return []
+        gid = cfg.responder_chat
+        model = "Codex" if cfg.responder_engine == "codex" else env_read(cfg.sdk_env).get("CC_SDK_MODEL", "")
+        return [{"slug": "", "builtin": True, "username": self.chat_username or "", "name": cfg.responder_name,
+                 "chat": gid, "chat_title": str((self.store.data.get("groups") or {}).get(str(gid), "")) if gid is not None else "",
+                 "cwd": cfg.responder_cwd, "model": model, "engine": cfg.responder_engine, "active": True, "error": ""}]
+
     def api_bots(self, method, action, body):
         """GET /api/bots, POST /api/bots/add|save|persona|remove: the same functions as the `bots` command (slow: no api_lock)."""
         if method == "GET" and not action:
-            return 200, {"bots": bots_list(self.cfg)["bots"],
+            return 200, {"bots": self.bots_builtin() + bots_list(self.cfg)["bots"],
                          "presets": [{"id": k, "title": p["title"], "model": p["model"]} for k, p in MODEL_PRESETS.items()]}
         if method != "POST" or action not in BOTS_ACTIONS:
             return 405, {"error": "method"}

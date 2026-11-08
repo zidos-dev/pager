@@ -2,7 +2,7 @@
 автоматом улетает при загрузке фото»). Picking files only fills a preview row over the field (#s-attach, one .att per
 file — <img> for images — with a button.att-x); «Send» is active with text OR files; one POST /upload carries every
 file and the text as caption; success clears field and row, failure keeps both with a toast; text alone still goes
-through /send; leaving the session drops the draft files.
+through /send; leaving the session keeps the draft files and text with that session (08.11).
 
 Run externally with Playwright; APP_DIR selects checkout. Server receipts: UPLOAD_LOG / SEND_LOG of the stand.
 """
@@ -97,16 +97,35 @@ def case_fail(page, ctx, logs, files):
 
 
 def case_leave(page, ctx, logs, files):
+    # 08.11 owner: «после выхода из чата пропадают вложения и ломается верстка окна ввода» — the draft (files and text)
+    # stays with its session; back in it the field fits the restored text again; another session does not get it
+    def back():
+        page.locator("#session-screen [data-back]:visible, #session-screen .back:visible").first.click()
+        expect(page.locator("#session-screen")).to_be_hidden()
+        page.wait_for_timeout(500)
+
+    def enter(sid):
+        page.locator(f'.card[data-id="{sid}"]').click()
+        expect(page.locator("#session-screen")).to_be_visible()
+        page.wait_for_timeout(700)
+
     opened(page)
     attach(page, files)
-    page.locator("#session-screen [data-back]:visible, #session-screen .back:visible").first.click()
-    expect(page.locator("#session-screen")).to_be_hidden()
-    page.wait_for_timeout(500)
-    page.locator(f'.card[data-id="{SID}"]').click()
-    expect(page.locator("#session-screen")).to_be_visible()
-    page.wait_for_timeout(700)
-    check(page.locator("#s-attach .att").count() == 0, "draft files survived leaving the session")
+    page.locator("#s-text").fill("line one\nline two\nline three")
+    page.wait_for_timeout(200)
+    h0 = page.locator("#s-text").evaluate("t => t.clientHeight")
+    back()
+    enter("d4f6b8c0")
+    check(page.locator("#s-attach .att").count() == 0, "another session got this session's files")
+    check(page.locator("#s-text").input_value() == "", "another session got this session's text")
+    back()
+    enter(SID)
+    expect(page.locator("#s-attach .att")).to_have_count(2)
+    check(page.locator("#s-text").input_value() == "line one\nline two\nline three", "draft text lost")
+    fit = page.locator("#s-text").evaluate("t => [t.clientHeight, t.scrollHeight]")
+    check(fit[0] + 1 >= fit[1] and abs(fit[0] - h0) <= 2, f"restored draft is cut: height {fit[0]} < text {fit[1]} (typed {h0})")
     check(records(logs["upload"]) == [], "leaving sent the files")
+    expect(page.locator("#s-send")).to_be_enabled()
 
 
 def case_text(page, ctx, logs, files):

@@ -23,7 +23,7 @@ function setup() {
     $(id) { return elements[id] ||= {dataset: {}, style: {}, value: '', blur() {}, addEventListener() {}}; },
     t: key => key, esc: String, haptic: value => effects.push(['haptic', value]),
     toast: value => effects.push(['toast', value]),
-    push(value) { sandbox.view = value; }, setMode() {}, quotaLine() {}, autosize() {}, clearAtt() {}, MODES: {send: 'message'}, appReloading: false,
+    push(value) { sandbox.view = value; }, setMode() {}, quotaLine() {}, autosize() {}, clearAtt() {}, renderAtt() {}, atts: [], MODES: {send: 'message'}, appReloading: false,
     renderPermission() {},
     renderSession() { rendered.push(sandbox.sess.id); vm.runInContext('renderQuestion()', context); },
     view: 'session', current: 'a', sess: {id: 'a', question: q},

@@ -72,6 +72,27 @@ def flow(page, lang, theme):
     expect(sheet).to_be_hidden()
 
 
+def builtin(browser, lang, theme):
+    """08.11 owner: «мои боты не отображаются» — the group bot from the server env (no bots/ registry) is listed; tap -> «Model»."""
+    import json
+    one = {"bots": [{"slug": "", "builtin": True, "username": "my_group_bot", "name": "", "chat": -5, "chat_title": "Team",
+                     "cwd": "/srv/p", "model": "Codex", "engine": "codex", "active": True, "error": ""}], "presets": []}
+    ctx = browser.new_context(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True, color_scheme=theme,
+                              locale="ru-RU" if lang == "ru" else "en-US", service_workers="block")  # WebKit: SW fetches skip routes
+    page = ctx.new_page(); page.set_default_timeout(5000)
+    page.route("**/api/bots", lambda r: r.fulfill(status=200, content_type="application/json", body=json.dumps(one)))
+    page.goto(f"{URL}/app/", wait_until="load")
+    page.locator("#bots-btn").click()
+    rows = page.locator("#b-list .brow")
+    expect(rows).to_have_count(1)
+    check("my_group_bot" in rows.nth(0).inner_text() and "Team · Codex" in rows.nth(0).inner_text(), "builtin row")
+    expect(page.locator("#b-builtin")).to_be_visible()
+    rows.nth(0).click()
+    expect(page.locator("#model-sheet")).to_be_visible()
+    expect(page.locator("#bots-sheet")).to_be_hidden()
+    ctx.close()
+
+
 def main():
     env = dict(os.environ, PORT=str(PORT))
     server = subprocess.Popen([sys.executable, str(ROOT / "stand_server.py")], env=env, stdout=subprocess.DEVNULL)
@@ -87,6 +108,7 @@ def main():
                     page = ctx.new_page(); page.set_default_timeout(5000)
                     flow(page, lang, theme)
                     ctx.close()
+                    builtin(browser, lang, theme)
             browser.close()
     finally:
         server.terminate()
