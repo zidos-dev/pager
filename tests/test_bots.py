@@ -675,13 +675,13 @@ class AdoptMainTests(BotsCase):
             cfgs.append(mock.Mock(lang="en", token="T", allowed={1}))
             return cfgs[-1]
         bot = mock.Mock()
-        with mock.patch.object(cc, "Config", side_effect=config), mock.patch.object(cc, "migrate_legacy_paths"), \
+        with mock.patch.object(cc, "Config", side_effect=config), mock.patch.object(cc, "migrate_legacy_paths"), mock.patch.object(cc, "set_lang"), \
                 mock.patch.object(cc, "bots_adopt", side_effect=lambda c: seen.append(c) or "demo_bot"), \
                 mock.patch.object(cc, "Bot", side_effect=lambda c: seen.append(c) or bot), mock.patch.object(sys, "argv", ["zp"]):
             self.assertEqual(cc.main(), 0)
         self.assertEqual(seen, [cfgs[0], cfgs[1]])  # adopt on the first read, the console on the env without the group bot
         with mock.patch.object(cc, "bots_adopt") as adopt, mock.patch.object(sys, "argv", ["zp", "bots", "list"]), \
-                mock.patch.object(cc, "bots_main", return_value=0), mock.patch.object(cc, "migrate_legacy_paths"):
+                mock.patch.object(cc, "bots_main", return_value=0), mock.patch.object(cc, "migrate_legacy_paths"), mock.patch.object(cc, "set_lang"):
             cc.main()
         adopt.assert_not_called()  # the `bots` command never moves anything
 
@@ -713,7 +713,7 @@ class AdoptFailTests(BotsCase):
         cfg = self.main_setup()
         bot = mock.Mock()
         with mock.patch.object(cc, "bots_adopt_copy", side_effect=OSError("disk")), \
-                mock.patch.object(cc, "Config", return_value=cfg), mock.patch.object(cc, "migrate_legacy_paths"), \
+                mock.patch.object(cc, "Config", return_value=cfg), mock.patch.object(cc, "migrate_legacy_paths"), mock.patch.object(cc, "set_lang"), \
                 mock.patch.object(cc, "Bot", return_value=bot), mock.patch.object(sys, "argv", ["zp"]):
             self.assertEqual(cc.main(), 0)
         bot.run_forever.assert_called_once()
