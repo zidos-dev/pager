@@ -183,6 +183,8 @@ class H(http.server.BaseHTTPRequestHandler):
             if not perm:
                 return self.j({"ok": False, "code": "closed"})
             option = next((o for o in perm["options"] if o["n"] == body.get("option")), None) if isinstance(body, dict) else None
+            if option is None and isinstance(body, dict) and body.get("option") == 4 and perm.get("everywhere"):  # as the server: 4 = «Everywhere»
+                option = {"n": 4, "label": "everywhere"}
             valid = option and (body.get("req") == perm.get("req") if perm["kind"] == "sdk" else body.get("label") == option["label"])
             if not valid or scenario == "bad":
                 return self.j({"ok": False, "code": "bad", "error": "Synthetic invalid permission answer"}, 400)

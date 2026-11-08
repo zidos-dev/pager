@@ -399,8 +399,9 @@
   var ms=function(n,d){var v=parseFloat(tok(n));return isFinite(v)?v:d;};
   var clamp=function(v,a,b){return Math.max(a,Math.min(b,v));};
   var esc=function(s){return String(s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});};
-  var L=function(){return ru()?{cap:"Вопрос агента",pill:function(n){var m=n%10,h=n%100;return "Вопрос агента · "+n+(m===1&&h!==11?" вариант":(m>=2&&m<=4&&(h<12||h>14)?" варианта":" вариантов"));},done:"Готово"}
-      :{cap:"Agent question",pill:function(n){return "Agent question · "+n+(n===1?" option":" options");},done:"Done"};};
+  var holdReduce=function(){ try{ return matchMedia("(prefers-reduced-motion: reduce)").matches; }catch(e){ return false; } };
+  var L=function(){return ru()?{cap:"Вопрос агента",pill:function(n){var m=n%10,h=n%100;return "Вопрос агента · "+n+(m===1&&h!==11?" вариант":(m>=2&&m<=4&&(h<12||h>14)?" варианта":" вариантов"));},done:"Готово",hold:"Удерживайте — правило навсегда",hold2:"Нажмите дважды — правило навсегда",again:"Нажмите ещё раз — правило навсегда"}
+      :{cap:"Agent question",pill:function(n){return "Agent question · "+n+(n===1?" option":" options");},done:"Done",hold:"Hold — the rule stays for good",hold2:"Press twice — the rule stays for good",again:"Press again — the rule stays for good"};};
 
   /* ---------- чтение родного блока ---------- */
   function parse(){
@@ -409,7 +410,7 @@
     if(card){
       var p=JSON.parse(card.dataset.perm);
       return {permission:true,q:p.title,cap:card.dataset.cap,pill:card.dataset.pill,sid:card.dataset.session,prompt:p,multi:false,
-        opts:Array.prototype.map.call(card.querySelectorAll(".opt"),function(b){return {i:+b.dataset.i,label:b.dataset.label,short:b.querySelector(".perm-label").textContent,deny:b.classList.contains("perm-deny"),selected:b.classList.contains("perm-selected")};})};
+        opts:Array.prototype.map.call(card.querySelectorAll(".opt"),function(b){return {i:+b.dataset.i,label:b.dataset.label,short:b.querySelector(".perm-label").textContent,deny:b.classList.contains("perm-deny"),every:b.classList.contains("perm-every"),selected:b.classList.contains("perm-selected")};})};
     }
     var sb=el.querySelector('[data-a="submit"]');
     if(sb){ /* шаг «Ready to submit your answers?» многовопросного AskUserQuestion: родной блок вверху ленты не виден — лист показывает ответы и «Отправить» */
@@ -438,9 +439,9 @@
     teardown(true);
     var root=D.createElement("div"); root.className="lab-ask-root"+(q.permission?" permission":""); root.dataset.state="open";
     var rows=q.opts.map(function(o,k){
-      return '<button type="button" class="lab-ask-opt'+(o.deny?" perm-deny":"")+(o.selected?" perm-selected":"")+'"'+(q.permission?' title="'+esc(o.label)+'" aria-label="'+esc(o.label)+'"':'')+' data-k="'+k+'" style="--i:'+k+'" aria-pressed="'+(q.multi&&o.marked)+'">'
+      return '<button type="button" class="lab-ask-opt'+(o.deny?" perm-deny":"")+(o.every?" perm-every":"")+(o.selected?" perm-selected":"")+'"'+(q.permission?' title="'+esc(o.label)+'" aria-label="'+esc(o.label)+'"':'')+' data-k="'+k+'" style="--i:'+k+'" aria-pressed="'+(q.multi&&o.marked)+'">'
         +'<span class="lab-ask-mk">'+(q.multi?'<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3.2 8.4l3 3 6.6-6.8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>':(q.permission&&q.prompt.kind!=="sdk"?o.i:k+1))+'</span>'
-        +'<span class="lab-ask-tx"><span class="lab-ask-t">'+esc(q.permission?o.short:o.label)+'</span>'+(o.desc?'<span class="lab-ask-d">'+esc(o.desc)+'</span>':'')+'</span></button>';
+        +'<span class="lab-ask-tx"><span class="lab-ask-t">'+esc(q.permission?o.short:o.label)+'</span>'+(o.desc?'<span class="lab-ask-d">'+esc(o.desc)+'</span>':'')+(o.every?'<span class="lab-ask-d lab-hold-d">'+esc(holdReduce()?L().hold2:L().hold)+'</span>':'')+'</span>'+(o.every?'<span class="lab-hold-fill" aria-hidden="true"></span>':'')+'</button>';
     }).join("");
     if(q.review) rows=q.answers.map(function(a){return '<div class="lab-ask-ans">'+esc(a)+'</div>';}).join("");
     var cap=q.permission?q.cap:L().cap, pillText=q.permission?q.pill:(q.review?q.q:L().pill(q.opts.length));
@@ -551,8 +552,30 @@
     var sheet=S.sheet, pill=S.pill, hold=0, held=false;
     function cancelHold(){ clearTimeout(hold); }
     root.cancelHold=cancelHold;
+    /* «♾ Везде» — правило навсегда: удержание 0,8 с с заливкой (выбор владельца 05.11);
+       при уменьшенном движении и с клавиатуры — два нажатия. Подсказка долгим нажатием здесь не нужна: подпись под строкой. */
+    var eh={t:0,row:null,x:0,y:0,ok:false,armed:null,at:0};
+    function everyStop(){ clearTimeout(eh.t); if(eh.row){ var f=eh.row.querySelector(".lab-hold-fill"); if(f) f.classList.remove("go"); } eh.row=null; }
     sheet.addEventListener("pointerdown",function(e){
-      var row=e.target.closest(".lab-ask-opt"); if(!S.permission||!row||S.busy) return;
+      var row=e.target.closest(".lab-ask-opt.perm-every"); if(!row||!S.permission||S.busy||holdReduce()) return;
+      everyStop(); eh.row=row; eh.x=e.clientX; eh.y=e.clientY; eh.ok=false;
+      var f=row.querySelector(".lab-hold-fill"); if(f) f.classList.add("go");
+      eh.t=setTimeout(function(){ var k=+row.dataset.k; everyStop(); eh.ok=true; choose(k); },800);
+    },true);
+    sheet.addEventListener("pointermove",function(e){ if(eh.row&&Math.hypot(e.clientX-eh.x,e.clientY-eh.y)>8) everyStop(); });
+    ["pointerup","pointercancel","pointerleave"].forEach(function(ev){ sheet.addEventListener(ev,everyStop); });
+    sheet.addEventListener("click",function(e){
+      var row=e.target.closest(".lab-ask-opt.perm-every"); if(!row) return;
+      e.stopImmediatePropagation(); e.preventDefault();  // общий обработчик листа не должен выбрать по касанию
+      if(eh.ok){ eh.ok=false; return; }  // выбор уже сделан удержанием
+      if(!(holdReduce()||e.detail===0)) return;  // касание без удержания ничего не делает
+      var d=row.querySelector(".lab-hold-d"), f=row.querySelector(".lab-hold-fill");
+      if(eh.armed===row&&Date.now()-eh.at<3000){ eh.armed=null; if(f) f.classList.remove("on"); choose(+row.dataset.k); return; }
+      eh.armed=row; eh.at=Date.now(); if(f) f.classList.add("on"); if(d) d.textContent=L().again;
+      setTimeout(function(){ if(eh.armed===row){ eh.armed=null; if(f) f.classList.remove("on"); if(d) d.textContent=holdReduce()?L().hold2:L().hold; } },3000);
+    },true);
+    sheet.addEventListener("pointerdown",function(e){
+      var row=e.target.closest(".lab-ask-opt"); if(!S.permission||!row||S.busy||row.classList.contains("perm-every")) return;
       held=false; cancelHold();
       hold=setTimeout(function(){ held=true; var o=S.opts[+row.dataset.k]; if(o) $("s-question").dispatchEvent(new CustomEvent("perm:hint",{detail:o.label})); },500);
     });

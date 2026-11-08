@@ -42,7 +42,7 @@
   --gut:16px;  /* one screen edge for every block: titles, tiles, cards, feed, composer, sheet */
   --perm-danger:#d70015;
   --shadow:none;
-  --glass-bar:color-mix(in srgb,var(--canvas) 88%,transparent);
+  --glass-bar:color-mix(in srgb,var(--canvas) 72%,transparent);  /* шапки списка и сессии: ~72 % тона окна (вкус владельца; выбор «стекло» 05.11) */
   --glass-cap:color-mix(in srgb,var(--panel) 88%,transparent);
   --glass-fx:blur(20px) saturate(1.2);
 }
@@ -1682,7 +1682,7 @@ function renderPermission(p, el){
   const options = p.options.filter(o => !deny(o)).concat(p.options.filter(deny));
   el.innerHTML = `<div class="perm-card" data-session="${esc(sess.id)}" data-perm="${esc(JSON.stringify(p))}" data-cap="${esc(t("permTitle"))}" data-pill="${esc(t("permPill", {title: p.title}))}">
     <div class="q">${esc(p.title)}</div>${permDetails(p)}
-    <div class="opts">${options.map((o, k) => `<button class="opt${deny(o) ? " perm-deny" : ""}${o.n === p.selected ? " perm-selected" : ""}" type="button" data-a="perm" data-i="${o.n}" data-label="${esc(o.label)}" title="${esc(o.label)}" aria-label="${esc(o.label)}"><span class="mk">${p.kind === "sdk" ? k + 1 : o.n}</span><span class="perm-label">${esc(p.kind === "tmux" ? permShort(o.label) : o.label)}</span></button>`).join("")}</div></div>`;
+    <div class="opts">${options.map((o, k) => `<button class="opt${deny(o) ? " perm-deny" : ""}${o.everywhere ? " perm-every" : ""}${o.n === p.selected ? " perm-selected" : ""}" type="button" data-a="perm" data-i="${o.n}" data-label="${esc(o.label)}" title="${esc(o.label)}" aria-label="${esc(o.label)}"><span class="mk">${p.kind === "sdk" ? k + 1 : o.n}</span><span class="perm-label">${esc(p.kind === "tmux" ? permShort(o.label) : o.label)}</span></button>`).join("")}</div></div>`;
 }
 function permDetails(p){
   return ["summary", "path", "body", "note", "question"].map(k => p[k] ? `<${k === "body" ? "pre" : "div"} class="lab-perm-${k}">${esc(p[k])}</${k === "body" ? "pre" : "div"}>` : "").join("");

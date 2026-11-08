@@ -18,8 +18,8 @@ ROOT = Path(__file__).resolve().parent
 PORT = int(os.environ.get("PORT", "18991"))
 URL = f"http://127.0.0.1:{PORT}"
 SHOTS = os.environ.get("SHOTS")
-T = {"en": dict(all="Everything", edits="Edits", saved="Saved.", bad="Claude Code would not read this rule: bad rule", allowed="Allowed by rule Bash(git status:*): git status", everywhere="Everywhere: Bash(npm test:*)"),
-     "ru": dict(all="Всё", edits="Правки", saved="Сохранено.", bad="Claude Code не прочитает это правило: bad rule", allowed="Разрешено правилом Bash(git status:*): git status", everywhere="Везде: Bash(npm test:*)")}
+T = {"en": dict(hold="Hold — the rule stays for good", hold2="Press twice — the rule stays for good", again="Press again — the rule stays for good", all="Everything", edits="Edits", saved="Saved.", bad="Claude Code would not read this rule: bad rule", allowed="Allowed by rule Bash(git status:*): git status", everywhere="Everywhere: Bash(npm test:*)"),
+     "ru": dict(hold="Удерживайте — правило навсегда", hold2="Нажмите дважды — правило навсегда", again="Нажмите ещё раз — правило навсегда", all="Всё", edits="Правки", saved="Сохранено.", bad="Claude Code не прочитает это правило: bad rule", allowed="Разрешено правилом Bash(git status:*): git status", everywhere="Везде: Bash(npm test:*)")}
 
 
 def check(ok, message):
@@ -39,8 +39,34 @@ def layout(page, sel):
     check(page.locator(sel).bounding_box()["height"] <= 844 * .92 + 1, "sheet ceiling")
 
 
+def perm_bodies():
+    return [json.loads(x)["body"] for x in open(PERM_LOG)] if os.path.exists(PERM_LOG) else []
+
+
+def perm_posts():
+    return len(perm_bodies())
+
+
+def reduced(browser):
+    """Reduced motion: «Everywhere» takes two presses instead of a hold."""
+    stand_data(DATA)
+    ctx = browser.new_context(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True, locale="ru-RU", reduced_motion="reduce")
+    page = ctx.new_page(); page.set_default_timeout(5000)
+    page.goto(f"{URL}/app/", wait_until="load")
+    page.locator(f'.card[data-id="{SID}"]').click()
+    row = page.locator(".lab-ask-root .lab-ask-opt.perm-every")
+    expect(row).to_contain_text(T["ru"]["hold2"])
+    n0 = perm_posts()
+    row.click(); page.wait_for_timeout(400)
+    check(perm_posts() == n0 and T["ru"]["again"] in row.inner_text(), "first press arms")
+    row.click(); page.wait_for_timeout(800)
+    check([b["option"] for b in perm_bodies()[n0:]] == [4], "second press sends option 4")
+    ctx.close()
+
+
 def flow(page, lang, theme):
     s = T[lang]
+    stand_data(DATA)
     post("/api/perms", {"reset": True}); post("/api/bots/reset", {})
     page.goto(f"{URL}/app/?theme=tg-{theme}", wait_until="load")
     page.locator("#perms-btn").click()
@@ -105,6 +131,17 @@ def flow(page, lang, theme):
     expect(page.locator(".lab-ask-root .lab-ask-mk")).to_have_count(4)
     marks = page.locator(".lab-ask-root .lab-ask-mk").all_inner_texts()  # the sheet the owner sees (layers.js), not the hidden card
     check(marks == ["1", "2", "3", "4"], f"SDK options numbered by place in the sheet {marks}")
+    # «♾ Везде» — удержание (выбор владельца 05.11): касание ничего не шлёт, удержание 0,8 с — шлёт вариант 4
+    row = page.locator(".lab-ask-root .lab-ask-opt.perm-every")
+    expect(row).to_have_count(1)
+    check(s["hold"] in row.inner_text(), f"hold hint {row.inner_text()!r}")
+    n0 = perm_posts()
+    row.click(); page.wait_for_timeout(700)
+    check(perm_posts() == n0, "a tap on «Everywhere» sends nothing")
+    bb = row.bounding_box(); page.mouse.move(bb["x"] + 40, bb["y"] + bb["height"] / 2); page.mouse.down(); page.wait_for_timeout(1100); page.mouse.up()
+    page.wait_for_timeout(800)
+    posts = perm_bodies()[n0:]
+    check(len(posts) == 1 and posts[0]["option"] == 4, f"holding sends option 4 once {posts}")
     if SHOTS: page.screenshot(path=f"{SHOTS}/perms-feed-{lang}-{theme}-390.png")
 
 
@@ -123,8 +160,9 @@ def stand_data(path):
 
 def main():
     import tempfile
-    tmp = tempfile.mkdtemp(); data = os.path.join(tmp, "demo.json"); stand_data(data)
-    env = dict(os.environ, PORT=str(PORT), DATA_FILE=data)
+    global DATA, PERM_LOG
+    tmp = tempfile.mkdtemp(); DATA = os.path.join(tmp, "demo.json"); PERM_LOG = os.path.join(tmp, "perm.jsonl"); stand_data(DATA)
+    env = dict(os.environ, PORT=str(PORT), DATA_FILE=DATA, PERM_LOG=PERM_LOG)
     server = subprocess.Popen([sys.executable, str(ROOT / "stand_server.py")], env=env, stdout=subprocess.DEVNULL)
     try:
         for _ in range(50):
@@ -138,6 +176,7 @@ def main():
                     page = ctx.new_page(); page.set_default_timeout(5000)
                     flow(page, lang, theme)
                     ctx.close()
+            reduced(browser)
             browser.close()
     finally:
         server.terminate()
