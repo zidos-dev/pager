@@ -26,7 +26,7 @@ from urllib.parse import parse_qs, urlparse
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
-from zidos_pager import CLAUDE_LOGIN, MODEL_PRESETS, model_check  # noqa: E402  (stdlib-only module, no side effects)
+from zidos_pager import CLAUDE_LOGIN, LOGIN_ENGINES, MODEL_PRESETS, model_check  # noqa: E402  (stdlib-only module, no side effects)
 
 WEB = ROOT / "assets" / "wizard"
 FIXED = ["zidos_pager.py", "sdk_runner.py", "stt_runner.py", "LICENSE", "README*", "env.example", "deploy", "assets", "docs"]
@@ -432,8 +432,8 @@ class Wizard:
                 envs.append(q("CC_RESPONDER_NAME", b["name"]))
             if brief:
                 envs.append('"CC_RESPONDER_BRIEF=$HOME/.config/zidos-pager/brief.md"')
-            if m.get("provider") == "codex":
-                envs.append("CC_RESPONDER_ENGINE=codex")
+            if m.get("provider") in LOGIN_ENGINES:
+                envs.append("CC_RESPONDER_ENGINE=" + m["provider"])
             if os.environ.get("TG_API_BASE"):  # a test Telegram: the installed bot must use it too
                 envs.append(q("TG_API_BASE", self.api_base))
             for e in envs:

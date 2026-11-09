@@ -5,6 +5,7 @@ import os
 import shutil
 import stat
 import sys
+import tempfile
 import threading
 import unittest
 from unittest import mock
@@ -294,6 +295,33 @@ class RegistryTests(BotsCase):
         self.assertNotIn("CC_CODEX_MODEL", cc.read_env_file(self.cdir + "/env"))
         self.assertEqual(r["bot"]["model"], "")
 
+    def test_grok_and_gemini_need_their_login_file(self):  # no key, no `status` command: the CLI's login file is the proof
+        self.add()
+        for eng, var in (("grok", "CC_GROK_MODEL"), ("gemini", "CC_GEMINI_MODEL")):
+            with mock.patch.object(cc, "login_ok", return_value=False):
+                self.assertEqual(self.save(provider=eng)["error"], eng)
+            with mock.patch.object(cc, "login_ok", return_value=True):
+                r = self.save(provider=eng, model="m-1")
+                self.assertEqual((r["bot"]["engine"], r["bot"]["provider"], r["bot"]["model"]), (eng, eng, "m-1"))
+                self.assertEqual(cc.read_env_file(self.cdir + "/env")[var], "m-1")
+                self.assertEqual(self.save(provider=eng, model="bad name!")["error"], "model")
+                r = self.save(provider=eng, model="")  # empty: the CLI's own default
+            self.assertNotIn(var, cc.read_env_file(self.cdir + "/env"))
+            self.assertEqual(r["bot"]["model"], "")
+        with tempfile.TemporaryDirectory() as home, mock.patch.dict(os.environ, {"HOME": home}):
+            self.assertFalse(cc.login_ok("grok", None))
+            os.makedirs(os.path.join(home, ".grok"))
+            open(os.path.join(home, ".grok", "auth.json"), "w").close()
+            self.assertTrue(cc.login_ok("grok", None))
+            self.assertFalse(cc.login_ok("gemini", None))
+
+    def test_old_codex_env_works_without_migration(self):  # prod env files: only CC_RESPONDER_ENGINE=codex and CC_CODEX_MODEL
+        cc.bots_write(self.cdir + "/env", "CC_RESPONDER_ENGINE=codex\nCC_CODEX_MODEL=gpt-6.1-sol\nTG_BOT_TOKEN=1:x\n")
+        b = cc.bots_get(self.cfg, "demo_bot")
+        self.assertEqual((b["engine"], b["provider"], b["model"]), ("codex", "codex", "gpt-6.1-sol"))
+        self.assertEqual((cc.bots_engine({"CC_RESPONDER_ENGINE": "Codex"}), cc.bots_engine({"CC_RESPONDER_ENGINE": "nope"})), ("codex", "sdk"))
+        self.assertEqual(cc.engine_var("sdk"), "CC_CODEX_MODEL")
+
     def test_remove_stops_services_and_deletes_dirs(self):
         self.add()
         self.assertEqual(cc.bots_remove(self.cfg, {"slug": "../etc"})["error"], "slug")
@@ -381,8 +409,9 @@ class PersonaTests(BotsCase):
         self.assertEqual(self.persona(exc=OSError("net"))["error"], "persona_fail")
 
     def test_codex_engine(self):
-        cc.env_update(self.cdir + "/env", {"CC_RESPONDER_ENGINE": "codex"})
-        self.assertEqual(self.persona("{}"), {"ok": False, "error": "persona_codex"})
+        for eng in ("codex", "grok", "gemini"):
+            cc.env_update(self.cdir + "/env", {"CC_RESPONDER_ENGINE": eng})
+            self.assertEqual(self.persona("{}"), {"ok": False, "error": "persona_codex"})
 
     def test_request_shape(self):
         sent = {}
@@ -550,6 +579,59 @@ class ResponderRoleTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LoginBoxTests(unittest.TestCase):
+    def login_cmd(self, eng, real_rel, auth_rel):
+        with tempfile.TemporaryDirectory() as home:
+            real = os.path.join(home, real_rel)
+            os.makedirs(os.path.dirname(real))
+            open(real, "w").close()
+            os.chmod(real, 0o755)
+            auth = os.path.join(home, auth_rel)
+            os.makedirs(os.path.dirname(auth), exist_ok=True)
+            open(auth, "w").close()
+            with mock.patch.dict(os.environ, {"HOME": home}), mock.patch("shutil.which", side_effect=lambda x: "/usr/bin/bwrap" if x == "bwrap" else real):
+                return home, auth, cc.login_boxed(eng, "/tmp", "вопрос", "m1")
+
+    def test_grok_box_has_no_web_search_and_only_its_auth_file(self):
+        home, auth, cmd = self.login_cmd("grok", ".grok/downloads/grok-1/grok", ".grok/auth.json")
+        self.assertIn("--disable-web-search", cmd)
+        off = cmd[cmd.index("--disallowed-tools") + 1].split(",")
+        self.assertTrue({"run_terminal_command", "write", "search_replace", "spawn_subagent"} <= set(off))
+        self.assertEqual(cmd[cmd.index("--permission-mode") + 1], "plan")
+        self.assertEqual(cmd[cmd.index("-m") + 1], "m1")
+        self.assertEqual([cmd[i + 1] for i, c in enumerate(cmd) if c == "--bind"], [auth])
+        self.assertNotIn(os.path.join(home, ".grok"), [cmd[i + 1] for i, c in enumerate(cmd) if c in ("--ro-bind", "--bind")])  # never the whole directory
+        self.assertEqual(cc._grok_answer('{"type":"assistant"}\nnoise\n{"type":"result","result":"kumquat","is_error":false}\n'), "kumquat")
+        self.assertIsNone(cc._grok_answer('{"type":"result","result":"x","is_error":true}'))
+
+    def test_gemini_box_has_only_its_token_and_a_read_only_agent(self):
+        home, auth, cmd = self.login_cmd("gemini", "agyhome/agy", ".gemini/antigravity-cli/antigravity-oauth-token")
+        self.assertEqual([cmd[i + 1] for i, c in enumerate(cmd) if c == "--bind"], [auth])
+        self.assertNotIn(os.path.join(home, ".gemini"), [cmd[i + 1] for i, c in enumerate(cmd) if c in ("--ro-bind", "--bind")])
+        self.assertEqual((cmd[cmd.index("--mode") + 1], cmd[cmd.index("--agent") + 1], cmd[cmd.index("--model") + 1]), ("plan", "chatro", "m1"))
+        agent = cmd.index(os.path.join(home, ".gemini/antigravity-cli/agents/chatro.md"))
+        self.assertEqual(cmd[agent - 2], "--ro-bind")
+        self.assertIn("tools: [read_file, list_dir, grep_search]", cc.GEMINI_CHAT_AGENT)  # no web, no commands, no writes
+
+    def test_a_binary_in_local_bin_mounts_itself_not_the_owner_scripts_beside_it(self):
+        """agy lies bare in ~/.local/bin, grok is a symlink there: the box sees the binary or its package, never ~/.local/bin."""
+        home, auth, cmd = self.login_cmd("gemini", ".local/bin/agy", ".gemini/antigravity-cli/antigravity-oauth-token")
+        binds = [cmd[i + 1] for i, c in enumerate(cmd) if c in ("--ro-bind", "--bind")]
+        self.assertNotIn(os.path.join(home, ".local", "bin"), binds)
+        self.assertIn(os.path.join(home, ".local", "bin", "agy"), binds)
+        with tempfile.TemporaryDirectory() as home:
+            real = os.path.join(home, ".grok", "downloads", "grok-1")
+            os.makedirs(os.path.dirname(real)); open(real, "w").close()
+            link = os.path.join(home, ".local", "bin", "grok")
+            os.makedirs(os.path.dirname(link)); os.symlink(real, link)
+            open(os.path.join(home, ".grok", "auth.json"), "w").close()
+            with mock.patch.dict(os.environ, {"HOME": home}), mock.patch("shutil.which", side_effect=lambda x: "/usr/bin/bwrap" if x == "bwrap" else link):
+                cmd = cc.login_boxed("grok", "/tmp", "- a brief in a list")
+            binds = [cmd[i + 1] for i, c in enumerate(cmd) if c in ("--ro-bind", "--bind")]
+            self.assertNotIn(os.path.join(home, ".local", "bin"), binds)
+            self.assertEqual(cmd[cmd.index("-p") + 1], " - a brief in a list")  # a value, not a flag
 
 
 class ModelCheckTests(unittest.TestCase):

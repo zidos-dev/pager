@@ -763,8 +763,8 @@ class Config:
         except ValueError:
             self.responder_rate = 30
         self.responder_brief = os.path.expanduser(get("CC_RESPONDER_BRIEF") or "")
-        self.responder_engine = "codex" if (get("CC_RESPONDER_ENGINE") or "").strip().lower() == "codex" else "sdk"
-        self.codex_model = (get("CC_CODEX_MODEL") or "").strip()
+        self.responder_engine = bots_engine({"CC_RESPONDER_ENGINE": (get("CC_RESPONDER_ENGINE") or "").strip().lower()})
+        self.codex_model = (get(engine_var(self.responder_engine)) or "").strip()  # the model of the login engine (the name is kept for old clients)
         self.responder_name = get("CC_RESPONDER_NAME") or ""  # how the chat's thread calls the bot's own answers
         self.responder_token = get("CC_RESPONDER_TOKEN")  # a separate bot for the shared chat (optional)
         self.responder_log = get("CC_RESPONDER_LOG", os.path.join(home, ".local/state/zidos-pager/responder.jsonl"))
@@ -3572,30 +3572,126 @@ def quota_stop(ev):
     return bool(re.search(r"rate_limit|session limit|usage limit|hit your limit|credit balance", json.dumps(ev, default=str), re.I))
 
 
-def codex_boxed(cwd, prompt, model=""):
-    """Codex for the chat: its «read-only» sandbox still reads the whole home (bot tokens), so it runs in bwrap that
-    sees only the system, Codex itself and the chat clone. No bwrap -> OSError: the fallback fails closed."""
+def engine_quota(out):
+    """A failed sign-in engine ran out of its quota: Claude/Codex wording, or the Gemini and xAI API errors
+    (RESOURCE_EXHAUSTED, HTTP 429, «quota», «rate limit»). shortcut: generic markers, the CLIs' exact texts were not captured."""
+    return quota_stop(out) or bool(re.search(r"RESOURCE_EXHAUSTED|\b429\b|quota|rate.?limit", out, re.I))
+
+
+def _grok_answer(out):
+    """`--output-format streaming-messages-json`: the clean answer is the `result` of the last event (`text` of the plain
+    json glues the preamble to it)."""
+    for ln in reversed(out.strip().splitlines()):
+        try:
+            ev = json.loads(ln)
+        except ValueError:
+            continue
+        if isinstance(ev, dict) and ev.get("type") == "result":
+            return None if ev.get("is_error") else str(ev.get("result") or "")
+    return None
+
+
+GEMINI_CHAT_AGENT = """---
+name: chatro
+description: Answers questions about the files in the working directory
+mainAgent: true
+subagent: false
+tools: [read_file, list_dir, grep_search]
+---
+You answer questions about the files in the working directory. You can only read files.
+"""
+
+# Grok keeps only read_file / list_dir / grep: plan mode still runs its terminal and subagents (seen 09.11)
+GROK_OFF = ("run_terminal_command,write,search_replace,spawn_subagent,kill_command_or_subagent,get_command_or_subagent_output,"
+            "todo_write,scheduler_create,scheduler_delete,scheduler_list,monitor,search_tool,use_tool,workflow,enter_plan_mode,"
+            "exit_plan_mode,ask_user_question,send_feedback,image_gen,image_edit,image_to_video,reference_to_video")
+
+# «Sign-in on the server» engines: a CLI with its own login file, run in bwrap (see login_boxed). `home` is the CLI's
+# directory in ~, `auth` its login file (the only thing bound into the empty home), `pkg` how far above the binary is read-only
+# visible, `files` {path in ~: text} laid ro into the box, `status` the CLI's own login check (None: the file is enough), `var` the key of the model in the bot's env.
+def _arg(text):
+    """A prompt after -p: one starting with «-» (a brief in «- » or «---») is parsed as a flag by grok and agy; a space keeps it a value."""
+    return " " + text if text.startswith("-") else text
+
+
+LOGIN_ENGINES = {
+    "codex": {"title": "Codex", "bin": "codex", "bin_env": "CC_CODEX_BIN", "home": ".codex", "auth": ".codex/auth.json", "pkg": 2,
+              "status": ["codex", "login", "status"], "var": "CC_CODEX_MODEL", "parse": None,
+              "argv": lambda cwd, prompt, model: ["exec", "--sandbox", "read-only", "--skip-git-repo-check", "-C", cwd]
+              + (["-m", model] if model else []) + ["--", prompt]},
+    "grok": {"title": "Grok", "bin": "grok", "bin_env": "CC_GROK_BIN", "home": ".grok", "auth": ".grok/auth.json", "pkg": 1,
+             "status": None, "var": "CC_GROK_MODEL", "parse": _grok_answer,  # web search off: the chat text must not go to a search
+             "argv": lambda cwd, prompt, model: ["-p", _arg(prompt), "--permission-mode", "plan", "--disable-web-search",
+                                                 "--disallowed-tools", GROK_OFF,
+                                                 "--output-format", "streaming-messages-json"] + (["-m", model] if model else [])},
+    "gemini": {"title": "Gemini", "bin": "agy", "bin_env": "CC_GEMINI_BIN", "home": ".gemini", "auth": ".gemini/antigravity-cli/antigravity-oauth-token",
+               "pkg": 1, "status": None, "var": "CC_GEMINI_MODEL", "parse": None,
+               # the empty home trusts nothing: the chat clone may be read; the agent below has only read tools (no web, no commands)
+               "argv": lambda cwd, prompt, model: ["-p", _arg(prompt), "--mode", "plan", "--agent", "chatro", "--settings", json.dumps({
+                   "trustedWorkspaces": [cwd], "permissions": {"allow": ["%s(%s)" % (t, cwd) for t in ("read_file", "list_dir", "grep_search")]}})]
+               + (["--model", model] if model else []),
+               "files": {".gemini/antigravity-cli/agents/chatro.md": GEMINI_CHAT_AGENT}},
+}
+
+
+def bots_engine(env):
+    """The login engine a bot env names, else «sdk»."""
+    eng = (env.get("CC_RESPONDER_ENGINE") or "").strip().lower()
+    return eng if eng in LOGIN_ENGINES else "sdk"
+
+
+def engine_var(eng):
+    return LOGIN_ENGINES.get(eng, LOGIN_ENGINES["codex"])["var"]  # the old Codex key serves any other engine too
+
+
+def login_ok(eng, run):
+    """Is the CLI signed in here. `run(argv) -> returncode` for engines with their own check, else the login file exists."""
+    e = LOGIN_ENGINES[eng]
+    if not e["status"]:
+        return os.path.isfile(os.path.join(os.path.expanduser("~"), e["auth"]))
+    try:
+        return run(e["status"]) == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def login_boxed(eng, cwd, prompt, model=""):
+    """A login engine for the chat: the CLI's own «read-only» mode still reads the whole home (bot tokens), so it runs in bwrap that
+    sees only the system, the CLI itself and the chat clone. No bwrap -> OSError: the fallback fails closed."""
     import shutil
-    bw, codex = shutil.which("bwrap"), shutil.which(os.environ.get("CC_CODEX_BIN") or "codex")
-    if not bw or not codex:
-        raise OSError("bwrap or codex missing")
-    home, real = os.path.expanduser("~"), os.path.realpath(codex)
-    pkg = os.path.dirname(os.path.dirname(real))
-    if pkg in (home, os.path.dirname(home)) or pkg == os.path.join(home, ".local") or pkg.startswith(os.path.join(home, ".local", "bin")):
-        raise OSError("codex is not in its own package directory: %s" % pkg)  # ~/.local/bin holds the owner's scripts with keys
-    # an empty ~/.codex with only its login: the owner's hooks and config stay out (a hook blocked every prompt here)
-    auth = os.path.join(home, ".codex", "auth.json")
+    e = LOGIN_ENGINES[eng]
+    bw, exe = shutil.which("bwrap"), shutil.which(os.environ.get(e["bin_env"]) or e["bin"])
+    if not bw or not exe:
+        raise OSError("bwrap or %s missing" % e["bin"])
+    home, real = os.path.expanduser("~"), os.path.realpath(exe)
+    # pkg 1: the binary alone (agy lies bare in ~/.local/bin); pkg 2: its package directory. The symlink's directory stays out
+    pkg = real if e["pkg"] == 1 else os.path.dirname(os.path.dirname(real))
+    if pkg in (home, os.path.dirname(home)) or pkg == os.path.join(home, ".local") or (e["pkg"] != 1 and pkg.startswith(os.path.join(home, ".local", "bin"))):
+        raise OSError("%s is not in its own package directory: %s" % (eng, pkg))  # ~/.local/bin holds the owner's scripts with keys
+    # an empty CLI directory with only its login: the owner's hooks and config stay out (a hook blocked every prompt here)
+    auth = os.path.join(home, e["auth"])
     if not os.path.isfile(auth):
-        raise OSError("codex is not signed in")
+        raise OSError("%s is not signed in" % eng)
+    extra = []
+    for rel, text in e.get("files", {}).items():  # fixed files for the empty home, kept beside the log
+        src = os.path.join(home, ".local/state/zidos-pager", os.path.basename(rel))
+        os.makedirs(os.path.dirname(src), exist_ok=True)
+        try:
+            with open(src) as f: same = f.read() == text
+        except OSError:
+            same = False
+        if not same:  # atomic: a parallel answer must not mount a half-written agent (its tool list)
+            with open(src + ".%d" % os.getpid(), "w") as f: f.write(text)
+            os.replace(src + ".%d" % os.getpid(), src)
+        extra += ["--ro-bind", src, os.path.join(home, rel)]
     return [bw, "--ro-bind", "/usr", "/usr", "--ro-bind", "/etc", "/etc", "--symlink", "usr/lib", "/lib",
             "--symlink", "usr/lib64", "/lib64", "--symlink", "usr/bin", "/bin", "--symlink", "usr/sbin", "/sbin",
             "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp", "--tmpfs", home,
             "--ro-bind-try", "/run/systemd/resolve", "/run/systemd/resolve",  # /etc/resolv.conf points there: no DNS without it
-            "--tmpfs", os.path.join(home, ".codex"), "--bind", auth, auth,
+            "--tmpfs", os.path.join(home, e["home"]), "--bind", auth, auth,
             "--clearenv", "--setenv", "HOME", home, "--setenv", "PATH", "/usr/bin:/bin",
-            "--ro-bind", pkg, pkg, "--ro-bind", cwd, cwd,  # the real binary runs: the symlink's directory (~/.local/bin) stays out
-            "--unshare-pid", "--die-with-parent", "--chdir", cwd,
-            real, "exec", "--sandbox", "read-only", "--skip-git-repo-check", "-C", cwd] + (["-m", model] if model else []) + ["--", prompt]
+            "--ro-bind", pkg, pkg, "--ro-bind", cwd, cwd] + extra + [
+            "--unshare-pid", "--die-with-parent", "--chdir", cwd, real] + e["argv"](cwd, prompt, model)
 
 
 # the mini-app's «Model» sheet: provider -> Anthropic-compatible address, default model, key variable
@@ -3606,7 +3702,7 @@ MODEL_PRESETS = {
     "openrouter": {"title": "OpenRouter", "base": "https://openrouter.ai/api", "model": "deepseek/deepseek-v4.1-flash", "var": "OPENROUTER_API_KEY"},
     "anthropic": {"title": "Claude API", "base": "", "model": "sonnet", "var": "ANTHROPIC_API_KEY"},
     "custom": {"title": "", "base": "", "model": "", "var": "CUSTOM_API_KEY"},
-    "codex": {"title": "Codex", "base": None, "model": "", "var": None},
+    **{k: {"title": e["title"], "base": None, "model": "", "var": None} for k, e in LOGIN_ENGINES.items()},
 }
 # the console's own model only (not group bots): the installed Claude Code CLI with its own sign-in, no key
 CLAUDE_LOGIN = {"id": "claude_login", "title": "Claude Code", "model": "sonnet"}
@@ -3881,8 +3977,8 @@ def bots_launchd(action, slug):
 
 
 def bots_provider(sdk, engine):
-    if engine == "codex":
-        return "codex"
+    if engine in LOGIN_ENGINES:
+        return engine
     if not sdk.get("CC_SDK_MODEL"):
         return ""
     base = sdk.get("CC_SDK_BASE_URL", "")
@@ -3907,13 +4003,13 @@ def bots_get(cfg, slug):
         persona = {}
     keys = env_read(cdir + "/keys.env")
     cwd = env.get("CC_RESPONDER_CWD", "")
-    engine = "codex" if env.get("CC_RESPONDER_ENGINE") == "codex" else "sdk"
+    engine = bots_engine(env)
     return {"slug": slug, "username": slug, "name": env.get("CC_RESPONDER_NAME", ""), "chat": chat,
             "chat_title": str(groups.get(str(chat)) or chat) if chat is not None else "",  # an unnamed group shows its id
             "groups": [{"id": int(k), "title": str(v)} for k, v in groups.items() if re.fullmatch(r"-?\d+", k)],
             "cwd": cwd, "git": bool(cwd) and os.path.exists(os.path.join(cwd, ".git")),
             "site": sdk.get("CC_CHAT_SITE", ""), "provider": bots_provider(sdk, engine),
-            "model": env.get("CC_CODEX_MODEL", "") if engine == "codex" else sdk.get("CC_SDK_MODEL", ""), "engine": engine, "about": bots_read(cdir + "/about.md"),
+            "model": env.get(engine_var(engine), "") if engine != "sdk" else sdk.get("CC_SDK_MODEL", ""), "engine": engine, "about": bots_read(cdir + "/about.md"),
             "brief": bots_read(cdir + "/brief.md"), "persona": persona if isinstance(persona, dict) else {},
             "keys": [k for k, p in MODEL_PRESETS.items() if p["var"] and keys.get(p["var"])], "base": sdk.get("CC_SDK_BASE_URL", ""),
             "active": bots_service("active", slug), "error": bots_read(cdir + "/error.txt").strip(),
@@ -3978,7 +4074,7 @@ def bots_files(cfg, slug, token, me, env_extra=None):
 
 
 ADOPT_ENV = ("CC_RESPONDER_TOKEN", "CC_RESPONDER_CHAT", "CC_RESPONDER_CWD", "CC_RESPONDER_BRIEF", "CC_RESPONDER_ENGINE",
-             "CC_RESPONDER_NAME", "CC_RESPONDER_RATE", "CC_CODEX_MODEL")
+             "CC_RESPONDER_NAME", "CC_RESPONDER_RATE") + tuple(e["var"] for e in LOGIN_ENGINES.values())
 
 
 def bots_adopt(cfg):
@@ -4018,7 +4114,7 @@ def bots_adopt_copy(cfg, slug, me, tg):
     chat = cfg.responder_chat
     extra = {"CC_RESPONDER_CHAT": str(chat) if chat is not None else None, "CC_RESPONDER_CWD": cfg.responder_cwd or None,
              "CC_RESPONDER_RATE": str(cfg.responder_rate), "CC_RESPONDER_ENGINE": cfg.responder_engine,
-             "CC_CODEX_MODEL": cfg.codex_model or None, "CC_RESPONDER_NAME": bots_clean(cfg.responder_name, 64) or None}
+             engine_var(cfg.responder_engine): cfg.codex_model or None, "CC_RESPONDER_NAME": bots_clean(cfg.responder_name, 64) or None}
     cdir, sdir = bots_files(cfg, slug, cfg.responder_token, me, extra)
     if cfg.responder_brief:
         bots_write(cdir + "/brief.md", bots_read(cfg.responder_brief))
@@ -4179,7 +4275,7 @@ def bots_problem(cdir, error, started):
     parts = [error] if error else []
     if not started:
         parts.append("services did not start: run python3 setup.py again")
-    elif (read_env_file(cdir + "/env").get("CC_RESPONDER_ENGINE") != "codex"
+    elif (bots_engine(read_env_file(cdir + "/env")) == "sdk"
           and not os.path.exists(BOTS_REPO + "/.venv-sdk/bin/python")):
         parts.append("SDK runner is not installed: run python3 setup.py again and choose a model")
     return "; ".join(parts)
@@ -4189,10 +4285,10 @@ def bots_model_changes(cfg, slug, body):
     """True only when the body really changes the model (the mini-app sends provider on every save)."""
     cdir = bots_dirs(cfg, slug)[0]
     sdk, env = read_env_file(cdir + "/sdk.env"), read_env_file(cdir + "/env")
-    cur = bots_provider(sdk, "codex" if env.get("CC_RESPONDER_ENGINE") == "codex" else "sdk")
+    cur = bots_provider(sdk, bots_engine(env))
     pid, model, base = (str(body.get(k) or "").strip() for k in ("provider", "model", "base"))
-    if (pid or cur) == "codex" and "model" in body and model != env.get("CC_CODEX_MODEL", ""):
-        return True  # Codex: an empty name is a change too (back to the default of ~/.codex/config.toml)
+    if (pid or cur) in LOGIN_ENGINES and "model" in body and model != env.get(engine_var(pid or cur), ""):
+        return True  # a login engine: an empty name is a change too (back to the default of ~/.codex/config.toml)
     return bool(str(body.get("key") or "").strip() or (pid and pid != cur) or (model and model != sdk.get("CC_SDK_MODEL", ""))
                 or (base and (pid or cur) == "custom" and base != sdk.get("CC_SDK_BASE_URL", "")))
 
@@ -4201,21 +4297,18 @@ def bots_model(cfg, slug, body, env_up, sdk_up, keys_up):
     """Provider / model / key of one bot, checked like api_model_save: the key is stored only after model_check == ok."""
     cdir = bots_dirs(cfg, slug)[0]
     sdk = read_env_file(cdir + "/sdk.env")
-    cur = bots_provider(sdk, "codex" if read_env_file(cdir + "/env").get("CC_RESPONDER_ENGINE") == "codex" else "sdk")
+    cur = bots_provider(sdk, bots_engine(read_env_file(cdir + "/env")))
     pid = str(body.get("provider") or cur or "")
     preset = MODEL_PRESETS.get(pid)
     if preset is None:
         return "provider"
-    if preset["base"] is None:  # Codex: its own login on this machine, group answers only
-        try:
-            if subprocess.run(["codex", "login", "status"], capture_output=True, timeout=20).returncode != 0:
-                return "codex"
-        except (OSError, subprocess.SubprocessError):
-            return "codex"
+    if preset["base"] is None:  # Codex, Grok, Gemini: their own login on this machine, group answers only
+        if not login_ok(pid, lambda a: subprocess.run(a, capture_output=True, timeout=20).returncode):
+            return pid
         model = str(body.get("model") or "").strip()
         if model and not _MODEL_NAME.fullmatch(model):
             return "model"
-        env_up.update({"CC_RESPONDER_ENGINE": "codex", "CC_CODEX_MODEL": model or None})  # empty: ~/.codex/config.toml
+        env_up.update({"CC_RESPONDER_ENGINE": pid, engine_var(pid): model or None})  # empty: the CLI's own default
         return None
     model = str(body.get("model") or (sdk.get("CC_SDK_MODEL") if pid == cur else "") or preset["model"]).strip()
     base = str(body.get("base") or (sdk.get("CC_SDK_BASE_URL") if pid == cur else "") or "").strip() if pid == "custom" else preset["base"]
@@ -4258,7 +4351,7 @@ def bots_persona(cfg, body):
     env, sdk = read_env_file(cdir + "/env"), read_env_file(cdir + "/sdk.env")
     if not env:
         return {"ok": False, "error": "missing"}
-    if env.get("CC_RESPONDER_ENGINE") == "codex":
+    if bots_engine(env) != "sdk":
         return {"ok": False, "error": "persona_codex"}
     about = str(body.get("about") or "").strip()
     key = env_read(cdir + "/keys.env").get(sdk.get("CC_SDK_KEY_VAR") or "ANTHROPIC_API_KEY", "")
@@ -6170,7 +6263,7 @@ class Bot:
         if rec.get("re_bot"):
             recent += "It replies to your earlier answer: «%s»\n\n" % rec["re_bot"]
         act = ("If it asks to change something, say that you can only read and answer, not change anything."
-               if self.cfg.responder_engine == "codex" else
+               if self.cfg.responder_engine != "sdk" else
                "If it asks to change something, do it: every change, command or file write is sent "
                "to the owner to confirm first, so say what you are about to do.")
         return (brief + recent + "A message from %s in the group chat. Answer it fully: questions about the project and "
@@ -6217,7 +6310,7 @@ class Bot:
             rec = self._resp_busy = self._resp_queue.pop(0)
             rec["ts"] = self.clock()
         self.responder_pull()
-        if self.cfg.responder_engine == "codex":  # stateless: every question carries the brief and the chat tail
+        if self.cfg.responder_engine != "sdk":  # stateless: every question carries the brief and the chat tail
             self.responder_codex_run(self.responder_prompt(rec, True) + self.CODEX_RO, "", rec)
             return
         self.responder_sdk(rec)
@@ -6381,28 +6474,32 @@ class Bot:
         prompt = self.responder_prompt(rec, True) + self.CODEX_RO
         self.responder_forget()
         log("responder: Claude quota is out, the question goes to Codex")
-        self.responder_codex_run(prompt, "\n\n(ответил Codex: квота Claude исчерпана)")
+        self.responder_codex_run(prompt, "\n\n(ответил %s: квота Claude исчерпана)" % LOGIN_ENGINES["codex"]["title"], engine="codex")
         return True
 
     CODEX_RO = "\n\nОтвечай по-русски, кратко; ничего не меняй в файлах."
 
-    def responder_codex_run(self, prompt, suffix, rec=None):
-        """The question goes to Codex in a thread; any failure is a plain «could not answer» and the queue moves on.
+    def responder_codex_run(self, prompt, suffix, rec=None, engine=None):
+        """The question goes to a login engine (Codex by default) in a thread; any failure is a plain «could not answer» and the queue moves on.
         With `rec` (Codex is the chosen engine) a used-up Codex quota hands the question to the SDK runner once."""
+        eng = engine or self.cfg.responder_engine
+        model = self.cfg.codex_model if engine_var(eng) == engine_var(self.cfg.responder_engine) else ""
+
         def work():
             text, out = None, ""
             try:
-                r = subprocess.run(codex_boxed(self.cfg.responder_cwd, prompt, self.cfg.codex_model),
+                r = subprocess.run(login_boxed(eng, self.cfg.responder_cwd, prompt, model),
                                    stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=600)
                 out = (r.stdout or "") + (r.stderr or "")
-                if r.returncode == 0 and r.stdout.strip():
-                    text = r.stdout.strip() + suffix
+                ans = (LOGIN_ENGINES[eng]["parse"] or str)(r.stdout or "") if r.returncode == 0 else None
+                if ans and ans.strip():
+                    text = ans.strip() + suffix
             except (OSError, subprocess.SubprocessError) as e:
-                log("responder codex failed: %s" % type(e).__name__)
-            if (text is None and rec is not None and not rec.get("fell") and quota_stop(out) and self.sdk
+                log("responder %s failed: %s" % (eng, type(e).__name__))
+            if (text is None and rec is not None and not rec.get("fell") and engine_quota(out) and self.sdk
                     and os.environ.get("CC_RESPONDER_CODEX_FALLBACK") != "0" and self._resp_busy is rec):
-                rec["fell"], rec["note"] = True, "\n\n(ответил Claude: квота Codex исчерпана)"
-                log("responder: Codex quota is out, the question goes to the SDK runner")
+                rec["fell"], rec["note"] = True, "\n\n(ответил Claude: квота %s исчерпана)" % LOGIN_ENGINES[eng]["title"]
+                log("responder: %s quota is out, the question goes to the SDK runner" % eng)
                 self.responder_sdk(rec)
                 return
             self.responder_answer(text)
@@ -6796,7 +6893,7 @@ class Bot:
     def responder_status_text(self):
         gid = self.cfg.responder_chat
         group = (self.store.data.get("groups") or {}).get(str(gid)) or (str(gid) if gid is not None else "—")
-        model = "codex" if self.cfg.responder_engine == "codex" else env_read(self.cfg.sdk_env).get("CC_SDK_MODEL") or "—"
+        model = self.cfg.responder_engine if self.cfg.responder_engine != "sdk" else env_read(self.cfg.sdk_env).get("CC_SDK_MODEL") or "—"
         return _t("%s · group: %s · model: %s") % (self.chat_name(), group, model)
 
     def handle_responder_update(self, upd):
@@ -9669,7 +9766,8 @@ class Bot:
         for p in presets:
             p["models"] = MODEL_CHOICES.get(p["id"], [])
         group = {"on": bool(self.cfg.responder_token and self.cfg.responder_chat is not None),
-                 "engine": self.cfg.responder_engine, "codex_model": self.cfg.codex_model}
+                 "engine": self.cfg.responder_engine, "codex_model": self.cfg.codex_model,
+                 "engines": [{"id": k, "title": e["title"]} for k, e in LOGIN_ENGINES.items()]}
         return 200, {"provider": pid, "model": model, "base": base, "busy": busy, "presets": presets, "group": group}
 
     def api_model_save(self, body):
@@ -9692,18 +9790,20 @@ class Bot:
             env_update(self.cfg.sdk_env, {"CC_SDK_AUTH": "login", "CC_SDK_MODEL": model, "CC_SDK_BASE_URL": None})
             rc, _ = self.run(["systemctl", "--user", "restart", "zidos-pager-sdk"], timeout=30)
             return 200, {"ok": True, "restarted": rc == 0}
-        preset = MODEL_PRESETS.get("codex" if body.get("target") == "group" else body.get("provider"))
+        pid = body.get("provider")
+        if body.get("target") == "group":
+            pid = body.get("engine") if body.get("engine") in LOGIN_ENGINES else "codex"
+        preset = MODEL_PRESETS.get(pid)
         if preset is None:
             return 400, {"ok": False, "error": "provider"}
-        if preset["base"] is None:  # Codex: its own login on this machine, group answers only
-            rc, _ = self.run(["codex", "login", "status"], timeout=20)
-            if rc != 0:
-                return 200, {"ok": False, "error": "codex"}
-            model = str(body.get("model") or "").strip()  # empty: the default from ~/.codex/config.toml
+        if preset["base"] is None:  # Codex, Grok, Gemini: their own login on this machine, group answers only
+            if not login_ok(pid, lambda a: self.run(a, timeout=20)[0]):
+                return 200, {"ok": False, "error": pid}
+            model = str(body.get("model") or "").strip()  # empty: the default of the CLI's own settings
             if model and not _MODEL_NAME.fullmatch(model):
                 return 200, {"ok": False, "error": "model"}
-            self.cfg.responder_engine, self.cfg.codex_model = "codex", model
-            env_update(self.cfg.env_path, {"CC_RESPONDER_ENGINE": "codex", "CC_CODEX_MODEL": model or None})
+            self.cfg.responder_engine, self.cfg.codex_model = pid, model
+            env_update(self.cfg.env_path, {"CC_RESPONDER_ENGINE": pid, engine_var(pid): model or None})
             return 200, {"ok": True, "restarted": True}
         model = str(body.get("model") or preset["model"]).strip()
         base = str(body.get("base") or "").strip() if body.get("provider") == "custom" else preset["base"]

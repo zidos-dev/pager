@@ -45,7 +45,7 @@ def bot_card(page, lang):
     expect(prov.locator(".pv-now")).to_contain_text("opus")
     prov.locator(".pv-now").click()
     expect(prov.locator(".pv-now")).to_have_attribute("aria-expanded", "true")
-    expect(prov.locator(".pv-r")).to_have_count(4)
+    expect(prov.locator(".pv-r")).to_have_count(6)  # Claude, Kimi, Codex, Grok, Gemini, own address
     expect(prov.locator('[data-p="anthropic"]')).to_have_attribute("aria-checked", "true")
     fits(page, "#b-prov button, #b-models button")
     prov.locator('[data-p="codex"]').click()

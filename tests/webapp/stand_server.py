@@ -55,7 +55,8 @@ BOTS = {"bots": [], "presets": []}
 def bots_reset():
     """Synthetic /api/bots* state (README, "Several bots"): one active bot with a group, one without a group and with an API error."""
     BOTS["presets"] = [{"id": "anthropic", "title": "Claude", "model": "claude-sonnet-4-5", "models": ["opus", "sonnet", "haiku"]}, {"id": "kimi", "title": "Kimi", "model": "kimi-k2"},
-                       {"id": "codex", "title": "Codex", "model": ""}, {"id": "custom", "title": "", "model": ""}]
+                       {"id": "codex", "title": "Codex", "model": ""},
+                       {"id": "grok", "title": "Grok", "model": ""}, {"id": "gemini", "title": "Gemini", "model": ""}, {"id": "custom", "title": "", "model": ""}]
     BOTS["bots"] = [
         {"slug": "shop_helper_bot", "username": "shop_helper_bot", "name": "Shop Helper", "chat": -1001, "chat_title": "Shop team", "groups": [{"id": -1001, "title": "Shop team"}, {"id": -1002, "title": "Support"}],
          "cwd": "/srv/shop", "git": True, "site": "https://shop.example", "provider": "anthropic", "model": "claude-sonnet-4-5", "engine": "sdk", "about": "An online shop for bikes.",

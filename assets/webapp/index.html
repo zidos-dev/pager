@@ -594,7 +594,7 @@ textarea.field{min-height:120px;resize:vertical}
     <p class="b-h" data-i18n="groupBot">Bot in the group</p>
     <p class="state" id="g-now" aria-live="polite"></p>
     <div class="dirs" id="g-list" role="radiogroup" aria-label="Bot in the group" data-i18n-attr="aria-label:groupBot"></div>
-    <label class="m-l" id="g-model-l" for="g-model" data-i18n="groupCodexModel">Codex model</label>
+    <label class="m-l" id="g-model-l" for="g-model" data-i18n="groupCodexModel">Model of the server sign-in</label>
     <input class="field" id="g-model" autocapitalize="off" autocomplete="off" spellcheck="false">
     <p class="state" id="g-note"></p>
     <p class="m-err" id="g-err" role="alert" hidden></p>
@@ -747,12 +747,14 @@ const STR = {
   "botErr_provider": "Unknown provider.",
   "botErr_exists": "This bot is already added.",
   "botErr_missing": "The bot was not found. Refresh the list.",
-  "botErr_persona_codex": "Generation does not work with Codex. Fill the fields by hand.",
+  "botErr_persona_codex": "Generation does not work with Codex, Grok or Gemini. Fill the fields by hand.",
   "botErr_persona_fail": "Could not generate. Try again or fill the fields by hand.",
   "botErr_persona_nomodel": "Choose a model and a key below and save first: the bot's own model writes the personality.",
   "botErr_balance": "No money left at the provider.",
   "botErr_limit": "The provider is limiting requests: the limit is used up or there are too many requests. Try again later.",
   "botErr_codex": "Codex is not signed in on the server. Run codex login there.",
+  "botErr_grok": "Grok is not signed in on the server. Run grok login there.",
+  "botErr_gemini": "Antigravity is not signed in on the server. Run agy there and sign in.",
   "modelProvider": "Provider",
   "modelBase": "Address",
   "modelName": "Model name",
@@ -764,24 +766,24 @@ const STR = {
   "pvLogin": "Server sign-in, no key",
   "pvNeedKey": "Needs a key",
   "pvCustom": "Your own address",
-  "pvCodex": "Codex sign-in on the server",
+  "pvCodex": "{n} sign-in on the server",
   "pvDefault": "Default",
   "modelNow": "Now: {n}",
   "modelNoneYet": "No model connected yet",
   "modelLoadErr": "Could not load the settings. Close the sheet and open it again.",
   "modelBusy": "Running sessions: {n}. Connecting will stop them.",
-  "modelCodexNote": "Answers in the group and only reads files. Sign in on the server: codex login. Only for a group of people you trust: the model can read the Codex login file.",
+  "modelCodexNote": "Answers in the group and only reads files. Sign in on the server: {cmd}. Only for a group of people you trust: the model can read the {n} login file.",
   "modelKimiNote": "Needs a Kimi Code subscription.",
   "mySessions": "My sessions",
   "groupBot": "Bot in the group",
   "groupSame": "Same as my sessions",
   "groupSameNote": "The group bot answers on the model chosen above.",
-  "groupCodexFallback": "If Codex runs out of quota, the question goes to the model above.",
-  "groupCodexModel": "Codex model",
+  "groupCodexFallback": "If {n} runs out of quota, the question goes to the model above.",
+  "groupCodexModel": "Model of the server sign-in",
   "groupSave": "Save",
   "groupSaved": "Saved",
   "modelLoginNote": "No key: sessions use Claude Code's own sign-in on the server (your Claude subscription). Sign in there once: claude auth login.",
-  "modelCodexDefault": "default from Codex settings",
+  "modelCodexDefault": "default from {n} settings",
   "modelErr_claude_login": "Claude Code is not signed in on the server. Run claude auth login there.",
   "modelDone": "Connected: {n}",
   "modelRestart": "Saved. Restart zidos-pager-sdk on the server.",
@@ -792,6 +794,8 @@ const STR = {
   "modelErr_net": "The provider did not answer. Check the address and the network.",
   "modelErr_base": "The address must start with https://",
   "modelErr_codex": "Codex is not signed in on the server. Run codex login there.",
+  "modelErr_grok": "Grok is not signed in on the server. Run grok login there.",
+  "modelErr_gemini": "Antigravity is not signed in on the server. Run agy there and sign in.",
   "pushDevice": "Notifications on this device",
   "newSession": "New session",
   "loading": "Loading…",
@@ -1063,12 +1067,14 @@ const STR = {
   "botErr_provider": "Неизвестный провайдер.",
   "botErr_exists": "Этот бот уже добавлен.",
   "botErr_missing": "Бот не найден. Обновите список.",
-  "botErr_persona_codex": "С Codex генерация не работает. Заполните поля вручную.",
+  "botErr_persona_codex": "С Codex, Grok и Gemini генерация не работает. Заполните поля вручную.",
   "botErr_persona_fail": "Не получилось сгенерировать. Повторите или заполните вручную.",
   "botErr_persona_nomodel": "Сначала выберите модель и ключ ниже и сохраните: личность пишет модель самого бота.",
   "botErr_balance": "У провайдера закончились деньги.",
   "botErr_limit": "Провайдер ограничил запросы: лимит исчерпан или запросов слишком много. Попробуйте позже.",
   "botErr_codex": "На сервере нет входа в Codex. Выполните там codex login.",
+  "botErr_grok": "На сервере нет входа в Grok. Выполните там grok login.",
+  "botErr_gemini": "На сервере нет входа в Antigravity. Выполните там agy и войдите.",
   "modelProvider": "Провайдер",
   "modelBase": "Адрес",
   "modelName": "Название модели",
@@ -1080,24 +1086,24 @@ const STR = {
   "pvLogin": "Вход на сервере, без ключа",
   "pvNeedKey": "Нужен ключ",
   "pvCustom": "Свой адрес",
-  "pvCodex": "Вход Codex на сервере",
+  "pvCodex": "Вход {n} на сервере",
   "pvDefault": "По умолчанию",
   "modelNow": "Сейчас: {n}",
   "modelNoneYet": "Модель ещё не подключена",
   "modelLoadErr": "Настройки не загрузились. Закройте лист и откройте снова.",
   "modelBusy": "Идёт сессий: {n}. Подключение их оборвёт.",
-  "modelCodexNote": "Отвечает в группе и только читает файлы. Вход выполняется на сервере: codex login. Только для группы своих: модель может прочитать файл входа Codex.",
+  "modelCodexNote": "Отвечает в группе и только читает файлы. Вход выполняется на сервере: {cmd}. Только для группы своих: модель может прочитать файл входа {n}.",
   "modelKimiNote": "Нужна подписка Kimi Code.",
   "mySessions": "Мои сессии",
   "groupBot": "Бот в группе",
   "groupSame": "Как мои сессии",
   "groupSameNote": "Бот в группе отвечает на модели, выбранной выше.",
-  "groupCodexFallback": "Если у Codex кончится квота, вопрос уйдёт модели выше.",
-  "groupCodexModel": "Модель Codex",
+  "groupCodexFallback": "Если у {n} кончится квота, вопрос уйдёт модели выше.",
+  "groupCodexModel": "Модель входа на сервере",
   "groupSave": "Сохранить",
   "groupSaved": "Сохранено",
   "modelLoginNote": "Без ключа: сессии работают через вход Claude Code на сервере, то есть по вашей подписке Claude. Войти один раз там же: claude auth login.",
-  "modelCodexDefault": "по умолчанию из настроек Codex",
+  "modelCodexDefault": "по умолчанию из настроек {n}",
   "modelErr_claude_login": "Claude Code на сервере не выполнил вход. Запустите там claude auth login.",
   "modelDone": "Подключено: {n}",
   "modelRestart": "Сохранено. Перезапустите zidos-pager-sdk на сервере.",
@@ -1108,6 +1114,8 @@ const STR = {
   "modelErr_net": "Провайдер не ответил. Проверьте адрес и сеть.",
   "modelErr_base": "Адрес должен начинаться с https://",
   "modelErr_codex": "На сервере нет входа в Codex. Выполните там codex login.",
+  "modelErr_grok": "На сервере нет входа в Grok. Выполните там grok login.",
+  "modelErr_gemini": "На сервере нет входа в Antigravity. Выполните там agy и войдите.",
   "pushDevice": "Уведомления на этом устройстве",
   "newSession": "Новая сессия",
   "loading": "Загружаю…",
@@ -2239,29 +2247,33 @@ function mModels(){  // a known family: the models as chips; the field stays for
   $("m-models").innerHTML = pvModels(list, cur);
   pvNow($("m-list"), cur || $("m-model").placeholder);
 }
+/* движки «вход на сервере»: [как зовётся CLI в заметках, команда входа] */
+const LE = {codex: ["Codex", "codex login"], grok: ["Grok", "grok login"], gemini: ["Antigravity", "agy"]};
+const leV = id => ({n: (LE[id] || LE.codex)[0], cmd: (LE[id] || LE.codex)[1]});
 let gPick = "";
 function gPaint(){
   const g = mdl.group || {}; $("g-form").hidden = !g.on; if (!g.on) return;
   gPick = gPick || g.engine;
-  $("g-now").textContent = t("modelNow", {n: g.engine === "codex" ? "Codex" + (g.codex_model ? " · " + g.codex_model : "") : t("groupSame")});
-  $("g-list").innerHTML = [["sdk", t("groupSame")], ["codex", "Codex"]].map(([id, title]) => `<button class="chip" type="button" role="radio" aria-checked="${id === gPick}" aria-pressed="${id === gPick}" data-g="${id}">${esc(title)}</button>`).join("");
-  const codex = gPick === "codex";
+  const eng = g.engines || [{id: "codex", title: "Codex"}], ttl = Object.fromEntries(eng.map(x => [x.id, x.title]));
+  $("g-now").textContent = t("modelNow", {n: g.engine in LE ? (ttl[g.engine] || g.engine) + (g.codex_model ? " · " + g.codex_model : "") : t("groupSame")});
+  $("g-list").innerHTML = [["sdk", t("groupSame")]].concat(eng.map(x => [x.id, x.title])).map(([id, title]) => `<button class="chip" type="button" role="radio" aria-checked="${id === gPick}" aria-pressed="${id === gPick}" data-g="${id}">${esc(title)}</button>`).join("");
+  const codex = gPick in LE;
   $("g-model").hidden = $("g-model-l").hidden = !codex;
-  $("g-model").value = g.codex_model || ""; $("g-model").placeholder = t("modelCodexDefault");
-  $("g-note").textContent = codex ? t("modelCodexNote") + " " + t("groupCodexFallback") : t("groupSameNote");
+  $("g-model").value = gPick === g.engine ? g.codex_model || "" : ""; $("g-model").placeholder = t("modelCodexDefault", leV(gPick));
+  $("g-note").textContent = codex ? t("modelCodexNote", leV(gPick)) + " " + t("groupCodexFallback", leV(gPick)) : t("groupSameNote");
   $("g-err").hidden = true;
 }
 function mPaint(){
   gPaint();
-  const p = mPreset(), codex = mdlPick === "codex", custom = mdlPick === "custom", login = !!p.login;
+  const p = mPreset(), codex = mdlPick in LE, custom = mdlPick === "custom", login = !!p.login;
   pvPaint($("m-list"), mdl.presets.map(x => ({id: x.id, title: x.title || t("modelCustom"), sub: x.login ? t("pvLogin") : x.stored ? t("modelKeyStored") : x.id === "custom" ? t("pvCustom") : t("pvNeedKey")})), mdlPick, mOpen);
   $("m-base").hidden = $("m-base-l").hidden = !custom;
   ["m-key", "m-key-l"].forEach(id => { $(id).hidden = codex || login; });
   $("m-model").value = mdlPick === mdl.provider && mdl.model ? mdl.model : (p.model || "");
-  $("m-model").placeholder = codex ? t("modelCodexDefault") : "";
+  $("m-model").placeholder = codex ? t("modelCodexDefault", leV(mdlPick)) : "";
   mModels();
   $("m-key").value = ""; $("m-key").placeholder = p.stored ? t("modelKeyStored") : "";
-  const note = codex ? t("modelCodexNote") : login ? t("modelLoginNote") : mdlPick === "kimi" ? t("modelKimiNote") : "";
+  const note = codex ? t("modelCodexNote", leV(mdlPick)) : login ? t("modelLoginNote") : mdlPick === "kimi" ? t("modelKimiNote") : "";
   $("m-note").textContent = note; $("m-note").hidden = !note;
   mErr("");
 }
@@ -2435,7 +2447,7 @@ function bPaintList(){
   const l = $("b-list");
   if (!bots.bots.length){ l.innerHTML = `<div class="b-empty"><p>${esc(t("botsEmpty"))}</p></div>`; return; }
   l.innerHTML = bots.bots.map((b, i) => { const [cls, w] = bStatus(b), nm = b.name || b.username;
-    return `<button class="brow" type="button" data-i="${i}"><span class="av" aria-hidden="true">${esc([...(nm || "?")][0])}</span><span><span class="bn">${esc(nm || "Bot")}${b.username && b.username !== nm ? ` <span style="color:var(--muted);font-weight:400">@${esc(b.username)}</span>` : ""}</span><span class="bm">${esc((b.chat_title || t("botsNoGroup")) + " · " + (b.engine === "codex" ? "Codex" : b.model || "—"))}</span></span><span class="bst ${cls}">${esc(w)}</span></button>`; }).join("");
+    return `<button class="brow" type="button" data-i="${i}"><span class="av" aria-hidden="true">${esc([...(nm || "?")][0])}</span><span><span class="bn">${esc(nm || "Bot")}${b.username && b.username !== nm ? ` <span style="color:var(--muted);font-weight:400">@${esc(b.username)}</span>` : ""}</span><span class="bm">${esc((b.chat_title || t("botsNoGroup")) + " · " + (b.engine in LE ? (bots.presets.find(p => p.id === b.engine) || {}).title || LE[b.engine][0] : b.model || "—"))}</span></span><span class="bst ${cls}">${esc(w)}</span></button>`; }).join("");
 }
 async function bLoad(){
   try{ bots = await api("bots"); $("b-load").textContent = ""; bPaintList(); $("b-add").hidden = false; return true; }
@@ -2451,15 +2463,15 @@ function bGroupsPaint(){
   $("b-groups").innerHTML = [{id: null, title: t("botsGroupNone")}].concat(g).map(x => `<button class="chip" type="button" role="radio" aria-checked="${x.id === botChat}" aria-pressed="${x.id === botChat}" data-g="${x.id == null ? "" : esc(x.id)}">${esc(x.title)}</button>`).join("") + `<button class="chip" type="button" data-grefresh>${esc(t("botsRefresh"))}</button>`;
 }
 function bModelPaint(keepModel){
-  const p = bPreset(), codex = botPick === "codex", custom = botPick === "custom";
+  const p = bPreset(), codex = botPick in LE, custom = botPick === "custom";
   $("b-base").hidden = $("b-base-l").hidden = !custom;
   ["b-key", "b-key-l"].forEach(id => { $(id).hidden = codex; });
   if (!keepModel) $("b-model").value = botPick === bot.provider && bot.model ? bot.model : (p.model || "");
-  $("b-model").placeholder = codex ? t("modelCodexDefault") : "";
-  pvPaint($("b-prov"), bots.presets.map(x => ({id: x.id, title: x.title || t("modelCustom"), sub: x.id === "codex" ? t("pvCodex") : (bot.keys || []).includes(x.id) ? t("modelKeyStored") : x.id === "custom" ? t("pvCustom") : t("pvNeedKey")})), botPick, bOpen);
+  $("b-model").placeholder = codex ? t("modelCodexDefault", leV(botPick)) : "";
+  pvPaint($("b-prov"), bots.presets.map(x => ({id: x.id, title: x.title || t("modelCustom"), sub: x.id in LE ? t("pvCodex", leV(x.id)) : (bot.keys || []).includes(x.id) ? t("modelKeyStored") : x.id === "custom" ? t("pvCustom") : t("pvNeedKey")})), botPick, bOpen);
   bModels();
   $("b-key").value = ""; $("b-key").placeholder = (bot.keys || []).includes(botPick) ? t("botsKeyStored") : "";
-  const note = codex ? t("modelCodexNote") : botPick === "kimi" ? t("modelKimiNote") : "";
+  const note = codex ? t("modelCodexNote", leV(botPick)) : botPick === "kimi" ? t("modelKimiNote") : "";
   $("b-note").textContent = note; $("b-note").hidden = !note;
 }
 function bModels(){
@@ -2521,8 +2533,8 @@ $("b-vedit").addEventListener("submit", async e => {
   try{
     const body = {slug: bot.slug, about: $("b-about").value.trim(), brief: $("b-brief").value, persona: {name: $("b-name").value.trim(), short: $("b-short").value.trim(), description: botPersonaDesc},
       cwd: $("b-cwd").value.trim(), site: $("b-site").value.trim(), chat: botChat, provider: botPick, perms: pmBot.get()};
-    body.model = $("b-model").value.trim();  // Codex: пусто = модель из ~/.codex/config.toml
-    if (botPick !== "codex"){ const k = $("b-key").value.trim(); if (k) body.key = k; }
+    body.model = $("b-model").value.trim();  /* вход на сервере: пусто = модель из настроек самого CLI */
+    if (!(botPick in LE)){ const k = $("b-key").value.trim(); if (k) body.key = k; }
     if (botPick === "custom") body.base = $("b-base").value.trim();
     const r = await api("bots/save", body);
     if (!r.ok){ bShowErr(r.error || "net"); return; }

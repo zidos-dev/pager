@@ -259,7 +259,7 @@ const T = {
   mgroupHint:"Необязательно. Добавьте этого бота в группу и напишите там что-нибудь: группа появится ниже.",save:"Сохранить",saving:"Сохраняю…",
   mSum:"@{b}: {model}, {group}.",saved:"Бот @{b} сохранён и уже работает.",noBots:"Пока ни одного дополнительного бота.",nBots:"добавлено: {n}",
   eb_cwd:"Такой папки нет на сервере.",eb_site:"Адрес сайта должен начинаться с https://",eb_chat:"Бот не состоит в этой группе.",
-  eb_persona_codex:"Для Codex личность не генерируется: напишите роль руками ниже.",eb_persona_fail:"Не вышло сгенерировать. Попробуйте ещё раз или напишите руками.",eb_persona_nomodel:"Сначала выберите модель и ключ на шаге 2.",
+  eb_persona_codex:"Для Codex, Grok и Gemini личность не генерируется: напишите роль руками ниже.",eb_persona_fail:"Не вышло сгенерировать. Попробуйте ещё раз или напишите руками.",eb_persona_nomodel:"Сначала выберите модель и ключ на шаге 2.",
   eb_exists:"Такой бот уже добавлен.",eb_missing:"Бот не найден.",eb_cli:"Сервер не ответил. Обновите установку и повторите.",eb_notinstalled:"Сначала завершите установку.",eb_slug:"Не подходит имя бота.",
   s1:"Куда поставить",s2:"Бот",s3:"Вы",s4:"Модель",s5:"Группа и знания",s6:"Установка",edit:"Изменить",
   ssh:"Сервер по SSH",local:"Этот компьютер",localHint:"Бот будет работать на этом компьютере, пока он включён и не спит.",openTg:"Открыть бота в Telegram",
@@ -270,7 +270,8 @@ const T = {
   ownerHint:"Чтобы бот слушался только вас, напишите ему <b>/start</b> в Telegram.",openBot:"Открыть бота",waiting:"Жду сообщение…",
   provider:"Провайдер",base:"Адрес API",mname:"Название модели",key:"Ключ API",checkKey:"Проверить ключ",other:"Другой",
   loginNote:"Без ключа: сессии работают через вход Claude Code на сервере, то есть по вашей подписке Claude. Перед установкой выполните там claude auth login.",e_claude_login:"Claude Code на сервере не выполнил вход. Запустите там claude auth login и подключитесь снова.",
-  codexNote:"Codex входит под вашим аккаунтом на сервере: после установки выполните там codex login. Отвечает в группе и только читает файлы. Только для группы своих.",
+  e_codex:"На сервере нет входа в Codex. Выполните там codex login.",e_grok:"На сервере нет входа в Grok. Выполните там grok login.",e_gemini:"На сервере нет входа в Antigravity. Выполните там agy и войдите.",
+  codexNote:"{n} входит под вашим аккаунтом на сервере: после установки выполните там {cmd}. Отвечает в группе и только читает файлы. Только для группы своих.",
   kimiNote:"Нужна подписка Kimi Code.",
   groupHint:"Необязательно. Добавьте бота в группу и напишите там что-нибудь, группа появится ниже. Бот будет отвечать в ней на упоминания.",
   groupWaiting:"Слежу за новыми группами…",folder:"Папка с материалами на этом компьютере",bname:"Как бот себя называет",brief:"Роль и правила для бота",
@@ -292,7 +293,7 @@ const T = {
   mgroupHint:"Optional. Add this bot to a group and write anything there: the group appears below.",save:"Save",saving:"Saving…",
   mSum:"@{b}: {model}, {group}.",saved:"Bot @{b} is saved and already running.",noBots:"No extra bots yet.",nBots:"added: {n}",
   eb_cwd:"There is no such folder on the server.",eb_site:"The website address must start with https://",eb_chat:"The bot is not a member of this group.",
-  eb_persona_codex:"A personality cannot be generated for Codex: write the role by hand below.",eb_persona_fail:"Generation failed. Try again or write it by hand.",eb_persona_nomodel:"Choose a model and a key in step 2 first.",
+  eb_persona_codex:"A personality cannot be generated for Codex, Grok or Gemini: write the role by hand below.",eb_persona_fail:"Generation failed. Try again or write it by hand.",eb_persona_nomodel:"Choose a model and a key in step 2 first.",
   eb_exists:"This bot is already added.",eb_missing:"Bot not found.",eb_cli:"The server did not answer. Update the install and try again.",eb_notinstalled:"Finish the installation first.",eb_slug:"This bot name is not allowed.",
   s1:"Where to install",s2:"Bot",s3:"You",s4:"Model",s5:"Group and knowledge",s6:"Install",edit:"Change",
   ssh:"Server over SSH",local:"This computer",localHint:"The bot runs on this computer while it is on and awake.",openTg:"Open the bot in Telegram",
@@ -303,7 +304,8 @@ const T = {
   ownerHint:"So that the bot obeys only you, send it <b>/start</b> in Telegram.",openBot:"Open the bot",waiting:"Waiting for your message…",
   provider:"Provider",base:"API address",mname:"Model name",key:"API key",checkKey:"Check the key",other:"Other",
   loginNote:"No key: sessions use Claude Code's own sign-in on the server, that is your Claude subscription. Run claude auth login there before installing.",e_claude_login:"Claude Code is not signed in on the server. Run claude auth login there and connect again.",
-  codexNote:"Codex signs in with your account on the server: run codex login there after installing. It answers in the group and only reads files. Only for a group of people you trust.",
+  e_codex:"Codex is not signed in on the server. Run codex login there.",e_grok:"Grok is not signed in on the server. Run grok login there.",e_gemini:"Antigravity is not signed in on the server. Run agy there and sign in.",
+  codexNote:"{n} signs in with your account on the server: run {cmd} there after installing. It answers in the group and only reads files. Only for a group of people you trust.",
   kimiNote:"Needs a Kimi Code subscription.",
   groupHint:"Optional. Add the bot to a group and write anything there; the group appears below. The bot answers mentions in it.",
   groupWaiting:"Watching for new groups…",folder:"Folder with materials on this computer",bname:"What the bot calls itself",brief:"Role and rules for the bot",
@@ -318,6 +320,9 @@ const T = {
   e_os:"The bot runs only on Linux.",e_missing:"Some programs are missing. Run the command below on the computer you install the bot on, then connect again.",e_install:"Installation stopped. The reason is in the log above.",e_folder:"There is no such folder.",e_generic:"Something went wrong: {e}"}
 };
 let L = "ru";
+const LE = {codex: ["Codex", "codex login"], grok: ["Grok", "grok login"], gemini: ["Antigravity", "agy"]};  /* sign-in engines: name, login command */
+const p_title = id => (S.presets.find(x => x.id === id) || {}).title || LE[id][0];
+const leV = id => ({n: LE[id][0], cmd: LE[id][1]});
 const t = (k, v) => { let s = (T[L] && T[L][k]) || T.en[k] || k; return v ? s.replace(/\{(\w+)\}/g, (m, x) => x in v ? v[x] : m) : s; };
 const $ = id => document.getElementById(id);
 const TOKEN = new URLSearchParams(location.search).get("t") || "";
@@ -402,10 +407,10 @@ async function pollOwner(){
 function paintPresets(){
   $("presets").innerHTML = S.presets.filter(p => p.available !== false).map(p => `<button class="chip" type="button" role="radio" aria-checked="${p.id === S.provider}" aria-pressed="${p.id === S.provider}" data-p="${p.id}">${p.title || t("other")}</button>`).join("");
   const p = S.presets.find(x => x.id === S.provider) || {};
-  const codex = S.provider === "codex", login = !!p.login;
+  const codex = S.provider in LE, login = !!p.login;
   $("base-f").hidden = S.provider !== "custom"; $("model-f").hidden = codex; $("key-f").hidden = codex || login;
   $("mname").value = p.model || "";
-  const note = codex ? t("codexNote") : login ? t("loginNote") : S.provider === "kimi" ? t("kimiNote") : "";
+  const note = codex ? t("codexNote", leV(S.provider)) : login ? t("loginNote") : S.provider === "kimi" ? t("kimiNote") : "";
   $("model-note").textContent = note; $("model-note").hidden = !note; msg("msg-model", "");
 }
 $("presets").addEventListener("click", e => { const b = e.target.closest("[data-p]"); if (b){ S.provider = b.dataset.p; paintPresets(); } });
@@ -413,7 +418,7 @@ $("f-model").addEventListener("submit", e => { e.preventDefault(); busy($("b-mod
   msg("msg-model", "");
   const r = await api("model", {provider: S.provider, model: $("mname").value.trim(), base: $("base").value.trim(), key: $("key").value.trim()});
   if (!r.ok){ msg("msg-model", err(r.error, r.error)); return; }
-  $("key").value = ""; S.model = S.provider === "codex" ? "Codex" : S.provider === "claude_login" ? "Claude Code · " + $("mname").value.trim() : $("mname").value.trim();
+  $("key").value = ""; S.model = S.provider in LE ? p_title(S.provider) : S.provider === "claude_login" ? "Claude Code · " + $("mname").value.trim() : $("mname").value.trim();
   if (!$("bname").value && S.bot) $("bname").value = S.bot.name || "";
   finish("model", S.model);
 }).then(x => x && msg("msg-model", err("net"))); });
@@ -463,7 +468,7 @@ const esc = x => String(x).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":
 const mFill = (id, v) => { $(id).value = v || ""; };
 async function loadBots(){
   try{ const r = await api("bots"); if (r.bots) M.bots = r.bots; else if (r.error) return msg("msg-more", berr(r.error, r.error)); }catch(e){ return msg("msg-more", err("net")); }
-  $("bots-list").innerHTML = M.bots.length ? M.bots.map(b => `<li class="bot"><div class="bi"><b>@${esc(b.username)}</b><small${b.error ? ' class="bad"' : ""}>${esc(b.error || [b.model || (b.engine === "codex" ? "Codex" : ""), b.chat_title || t("noGroup")].filter(Boolean).join(" · "))}</small></div><button class="del" type="button" data-del="${esc(b.slug)}" data-u="${esc(b.username)}">${t("del")}</button></li>`).join("") : "";
+  $("bots-list").innerHTML = M.bots.length ? M.bots.map(b => `<li class="bot"><div class="bi"><b>@${esc(b.username)}</b><small${b.error ? ' class="bad"' : ""}>${esc(b.error || [b.model || (b.engine in LE ? p_title(b.engine) : ""), b.chat_title || t("noGroup")].filter(Boolean).join(" · "))}</small></div><button class="del" type="button" data-del="${esc(b.slug)}" data-u="${esc(b.username)}">${t("del")}</button></li>`).join("") : "";
   $("sum-more").textContent = M.bots.length ? t("nBots", {n: M.bots.length}) : "";
 }
 $("bots-list").addEventListener("click", async e => {
@@ -496,17 +501,17 @@ sub(1).addEventListener("submit", () => busy($("b-m1"), "checking", async () => 
 }).then(x => x && msg("msg-m1", err("net"))));
 function mPaint(){
   $("mpresets").innerHTML = S.presets.filter(p => p.available !== false && !p.login).map(p => `<button class="chip" type="button" role="radio" aria-checked="${p.id === M.provider}" aria-pressed="${p.id === M.provider}" data-p="${p.id}">${esc(p.title || t("other"))}</button>`).join("");
-  const p = S.presets.find(x => x.id === M.provider) || {}, codex = M.provider === "codex";
+  const p = S.presets.find(x => x.id === M.provider) || {}, codex = M.provider in LE;
   $("m-base-f").hidden = M.provider !== "custom"; $("m-model-f").hidden = codex; $("m-key-f").hidden = codex;
-  mFill("m-mname", p.model); const note = codex ? t("codexNote") : M.provider === "kimi" ? t("kimiNote") : "";
+  mFill("m-mname", p.model); const note = codex ? t("codexNote", leV(M.provider)) : M.provider === "kimi" ? t("kimiNote") : "";
   $("m-note").textContent = note; $("m-note").hidden = !note; msg("msg-m2", "");
 }
 $("mpresets").addEventListener("click", e => { const b = e.target.closest("[data-p]"); if (b){ M.provider = b.dataset.p; mPaint(); } });
 sub(2).addEventListener("submit", () => busy($("b-m2"), "checking", async () => {
-  msg("msg-m2", ""); const codex = M.provider === "codex";
-  const r = await api("bots/save", codex ? {slug: M.slug, provider: "codex"} : {slug: M.slug, provider: M.provider, model: $("m-mname").value.trim(), base: $("m-base").value.trim(), key: $("m-key").value.trim()});
+  msg("msg-m2", ""); const codex = M.provider in LE;
+  const r = await api("bots/save", codex ? {slug: M.slug, provider: M.provider} : {slug: M.slug, provider: M.provider, model: $("m-mname").value.trim(), base: $("m-base").value.trim(), key: $("m-key").value.trim()});
   if (!r.ok){ msg("msg-m2", berr(r.error, r.error)); return; }
-  mFill("m-key", ""); M.model = codex ? "Codex" : $("m-mname").value.trim(); subShow(3);
+  mFill("m-key", ""); M.model = codex ? p_title(M.provider) : $("m-mname").value.trim(); subShow(3);
 }).then(x => x && msg("msg-m2", err("net"))));
 $("b-gen").addEventListener("click", () => busy($("b-gen"), "generating", async () => {
   msg("msg-m3", ""); const r = await api("bots/persona", {slug: M.slug, about: $("m-about").value.trim()});

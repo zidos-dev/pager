@@ -3080,10 +3080,10 @@ class CodexBoxTests(unittest.TestCase):
             with open(auth, "w") as f:
                 f.write("{}")
             with mock.patch.dict(os.environ, {"HOME": home}), mock.patch("shutil.which", side_effect=lambda x: "/usr/bin/" + x):
-                cmd = cc.codex_boxed("/tmp", "вопрос", "m1")
+                cmd = cc.login_boxed("codex", "/tmp", "вопрос", "m1")
                 os.remove(auth)
                 with self.assertRaises(OSError):  # not signed in: the fallback fails closed
-                    cc.codex_boxed("/tmp", "вопрос")
+                    cc.login_boxed("codex", "/tmp", "вопрос")
         i = cmd.index("--tmpfs", cmd.index("--tmpfs", cmd.index("--tmpfs") + 1) + 1)
         self.assertEqual(cmd[i + 1:i + 5], [os.path.join(home, ".codex"), "--bind", auth, auth])
         self.assertIn("--clearenv", cmd)
@@ -3099,14 +3099,14 @@ class CodexBoxTests(unittest.TestCase):
             os.makedirs(os.path.dirname(link)); os.symlink(real, link)
             open(os.path.join(home, ".codex", "auth.json"), "w").close()
             with mock.patch.dict(os.environ, {"HOME": home}), mock.patch("shutil.which", side_effect=lambda x: "/usr/bin/bwrap" if x == "bwrap" else link):
-                cmd = cc.codex_boxed("/tmp", "q")
+                cmd = cc.login_boxed("codex", "/tmp", "q")
             self.assertNotIn(os.path.join(home, ".local", "bin"), cmd)
             self.assertIn(os.path.join(home, ".codex", "packages", "r1"), cmd)
             plain = os.path.join(home, ".local", "bin", "codex2")
             open(plain, "w").close()  # a bare binary in ~/.local/bin: its «package» would be ~/.local — refuse
             with mock.patch.dict(os.environ, {"HOME": home}), mock.patch("shutil.which", side_effect=lambda x: "/usr/bin/bwrap" if x == "bwrap" else plain):
                 with self.assertRaises(OSError):
-                    cc.codex_boxed("/tmp", "q")
+                    cc.login_boxed("codex", "/tmp", "q")
 
 
 class ModelSheetTests(unittest.TestCase):
@@ -10015,7 +10015,7 @@ class ResponderTests(unittest.TestCase):
             return subprocess.CompletedProcess(cmd, rc if len(calls) == 1 else 0, "Ответ кодекса", "")
         e.bot._spawn = lambda fn, *a: fn(*a)
         with mock.patch.object(cc.subprocess, "run", run), mock.patch.object(
-                cc, "codex_boxed", lambda cwd, prompt, model="": ["codex", "exec"] + (["-m", model] if model else []) + ["--", prompt]):
+                cc, "login_boxed", lambda eng, cwd, prompt, model="": ["codex", "exec"] + (["-m", model] if model else []) + ["--", prompt]):
             for i in range(n):
                 e.bot.handle_update(gmsg("@cctg_bot вопрос %d" % i, mid=10 + i))
         return e, fake, calls
@@ -10040,17 +10040,17 @@ class ResponderTests(unittest.TestCase):
         self.assertIn("Передам владельцу", texts[0])
         self.assertIn("Ответ кодекса", texts[1])
 
-    def codex_quota_case(self, claude_out=False):
+    def codex_quota_case(self, claude_out=False, engine="codex", err="ERROR: You've hit your usage limit. Try again later."):
         e, fake = responder_env(self)
-        e.bot.cfg.responder_engine = "codex"
+        e.bot.cfg.responder_engine = engine
         calls = []
 
         def run(cmd, **kw):
             calls.append(cmd)
-            return subprocess.CompletedProcess(cmd, 1, "", "ERROR: You've hit your usage limit. Try again later.")
+            return subprocess.CompletedProcess(cmd, 1, "", err)
         e.bot._spawn = lambda fn, *a: fn(*a)
         with mock.patch.object(cc.subprocess, "run", run), mock.patch.object(
-                cc, "codex_boxed", lambda cwd, prompt, model="": ["codex", "exec", "--", prompt]):
+                cc, "login_boxed", lambda eng, cwd, prompt, model="": ["codex", "exec", "--", prompt]):
             e.bot.handle_update(gmsg("@cctg_bot вопрос"))
             if claude_out:
                 e.bot.sdk_on_event({"event": "session.state", "data": {"session": fake.session(
@@ -10065,6 +10065,14 @@ class ResponderTests(unittest.TestCase):
         text = self.to_group(e)[-1]["text"]
         self.assertIn("Ответ Claude", text)
         self.assertIn("квота Codex исчерпана", text)
+
+    def test_grok_and_gemini_quota_errors_hand_the_question_to_the_sdk(self):
+        for engine, err, title in (("grok", "Error: 429 Too Many Requests: rate limit exceeded", "Grok"),
+                                   ("gemini", "Error: RESOURCE_EXHAUSTED: Quota exceeded for model", "Gemini")):
+            e, fake, calls = self.codex_quota_case(engine=engine, err=err)
+            self.assertEqual(len(fake.calls("session.start")), 1, engine)
+            self.done(e, "s-aabbccdd", "Ответ Claude")
+            self.assertIn("квота %s исчерпана" % title, self.to_group(e)[-1]["text"])
 
     def test_both_quotas_out_is_one_plain_failure_without_ping_pong(self):
         e, fake, calls = self.codex_quota_case(claude_out=True)

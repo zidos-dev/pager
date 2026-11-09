@@ -253,6 +253,23 @@ class WizardTests(WizardBase):
         self.assertNotIn("--with-sdk", args)
         self.assertIn("CC_RESPONDER_ENGINE=codex", args)
 
+    def test_install_grok_engine(self):
+        self.ssh_target()
+        self.call("/api/bot", {"token": TOKEN})
+        self.tg.updates.append(start_msg())
+        self.call("/api/owner", {})
+        self.assertTrue(self.call("/api/model", {"provider": "grok"})[1]["ok"])
+        self.call("/api/install", {"lang": "ru"})
+        for _ in range(300):
+            log = self.call("/api/install/log?from=0")[1]
+            if log["done"]:
+                break
+            time.sleep(0.2)
+        self.assertTrue(log["ok"], log)
+        args = self.setup_args.read_text().splitlines()
+        self.assertNotIn("--with-sdk", args)
+        self.assertIn("CC_RESPONDER_ENGINE=grok", args)
+
     def fake_claude(self, signed):
         f = self.shim / "claude"
         f.write_text('#!/bin/sh\necho \'{"loggedIn": %s, "authMethod": "claude.ai"}\'\n' % ("true" if signed else "false"))

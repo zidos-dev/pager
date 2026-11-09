@@ -95,6 +95,26 @@ def adopted(browser, lang, theme):
     ctx.close()
 
 
+def engine_label(browser):
+    """A bot on a sign-in engine other than Codex shows the engine's title in its row, not an empty model («—»)."""
+    import json
+
+    def grok(route):
+        r = route.fetch(); d = r.json()
+        for b in d["bots"]:
+            if b["slug"] == "docs_guide_bot": b["engine"], b["model"] = "grok", ""
+        route.fulfill(response=r, body=json.dumps(d))
+    urllib.request.urlopen(urllib.request.Request(URL + "/api/bots/reset", data=b"{}", method="POST")).read()
+    ctx = browser.new_context(viewport={"width": 390, "height": 844}, service_workers="block")  # WebKit: SW fetches skip routes
+    page = ctx.new_page(); page.set_default_timeout(5000)
+    page.route("**/api/bots", grok)
+    page.goto(f"{URL}/app/", wait_until="load")
+    page.locator("#bots-btn").click()
+    label = page.locator("#b-list .brow").nth(1).locator(".bm").inner_text()
+    check(label.endswith("· Grok"), "engine label: %r" % label)
+    ctx.close()
+
+
 def main():
     env = dict(os.environ, PORT=str(PORT))
     server = subprocess.Popen([sys.executable, str(ROOT / "stand_server.py")], env=env, stdout=subprocess.DEVNULL)
@@ -111,6 +131,7 @@ def main():
                     flow(page, lang, theme)
                     ctx.close()
                     adopted(browser, lang, theme)
+            engine_label(browser)
             browser.close()
     finally:
         server.terminate()
