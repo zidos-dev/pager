@@ -3325,7 +3325,22 @@ class WebApiTests(unittest.TestCase):
     def test_quota_nulls_when_no_file(self):
         self.e.cfg.rate_file = os.path.join(self.e.tmp.name, "nope.json")
         st, obj, _ = self.w.req("GET", "/api/sessions")
-        self.assertEqual(obj["quota"], {"h5": None, "d7": None, "stale": False, "updated": None, "h5_reset": None})
+        self.assertEqual(obj["quota"], {"h5": None, "d7": None, "stale": False, "updated": None, "h5_reset": None, "pinned": []})
+
+    def test_quota_pin_row_goes_to_sessions_tiles_and_back(self):
+        self._status_env()
+        self.w.req("POST", "/api/quota/refresh", {})
+        st, obj, _ = self.w.req("POST", "/api/quota/pins", {"id": "codex", "on": True})
+        self.assertEqual((st, obj["pins"]), (200, ["codex"]))
+        self.w.req("POST", "/api/quota/pins", {"id": "mem", "on": True})  # строка без процента: в плитки не идёт
+        st, obj, _ = self.w.req("GET", "/api/sessions")
+        self.assertEqual([(r["id"], r["pct"]) for r in obj["quota"]["pinned"]], [("codex", 100.0)])
+        st, obj, _ = self.w.req("GET", "/api/quota")
+        self.assertEqual(obj["pins"], ["codex", "mem"])  # список общий для устройств: лежит рядом с env
+        st, obj, _ = self.w.req("POST", "/api/quota/pins", {"id": "codex", "on": False})
+        self.assertEqual(obj["pins"], ["mem"])
+        self.assertEqual(self.w.req("GET", "/api/sessions")[1]["quota"]["pinned"], [])
+        self.assertEqual(self.w.req("POST", "/api/quota/pins", {"on": True})[0], 400)
 
     def test_session_detail_history_question_prev_next(self):
         e = self.e

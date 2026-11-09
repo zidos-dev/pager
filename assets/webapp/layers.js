@@ -888,7 +888,7 @@
   }
 
   /* ---- построение ---- */
-  function longLabel(k,raw){var ru=/[чд]/i.test(raw||"")||/ru/i.test(de.lang||"");return k==="h5"?(ru?"5 часов":"5 hours"):(ru?"7 дней":"7 days");}
+  function longLabel(k,raw){if(k!=="h5"&&k!=="d7")return raw;var ru=/[чд]/i.test(raw||"")||/ru/i.test(de.lang||"");return k==="h5"?(ru?"5 часов":"5 hours"):(ru?"7 дней":"7 days");}
   function ensureTile(k,raw){
     var t=tiles[k];if(t)return t;
     var root=document.getElementById("lab-q");
@@ -919,7 +919,7 @@
     if(q&&!q.hidden){
       [].forEach.call(q.querySelectorAll(".qbar"),function(b){
         var lab=(b.getAttribute("aria-label")||""),i=lab.lastIndexOf(":"),name=lab.slice(0,i).trim(),v=parseFloat(lab.slice(i+1));
-        var k=/^5/.test(name)?"h5":/^7/.test(name)?"d7":null;if(!k||isNaN(v))return;
+        var k=b.getAttribute("data-k")||(/^5/.test(name)?"h5":/^7/.test(name)?"d7":null);if(!k||isNaN(v))return;  // data-k: строка, вынесенная из листа квот
         var qv=b.nextElementSibling,sm=qv&&qv.querySelector("small");
         out[k]={v:v,raw:name,reset:sm?sm.textContent:""};
       });
@@ -964,6 +964,7 @@
       if(isNew&&!first&&!ranIn){/* ждём первого показа */}
     });
     Object.keys(tiles).forEach(function(k){if(!r.vals[k])tiles[k].tile.hidden=true;else tiles[k].tile.hidden=false;});
+    Object.keys(r.vals).forEach(function(k){if(k.slice(0,2)==="p:")root.appendChild(tiles[k].tile);});  // вынесенные строки — после Claude, в порядке листа
     var st=root.querySelector(".lqstale");st.textContent=r.stale;st.hidden=!r.stale;
     return r;
   }

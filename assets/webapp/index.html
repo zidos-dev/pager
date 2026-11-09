@@ -195,6 +195,10 @@ html.list-scrolled .lbar{opacity:1}html.list-scrolled .top h1{opacity:0}html.loc
 .qr{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;min-height:56px;padding:8px 14px;border-radius:14px;background:var(--soft)}
 .qr .qp{font-size:17px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap}
 .qr .qp.hot{color:color-mix(in srgb,var(--danger) 80%,var(--ink))}  /* 17px на --soft: чистый --danger в светлой теме даёт 3.8 < 4.5 */
+.qr{grid-template-columns:minmax(0,1fr) auto 44px}
+.qpin,.qpin-x{width:44px;height:44px;border-radius:50%}
+.qpin{background:var(--panel);color:var(--ink);transition:background-color .15s ease-out,color .15s ease-out}
+.qpin[aria-pressed="true"]{background:var(--ink);color:var(--panel)}  /* выбранное инверсией */
 #q-refresh{width:100%;margin-top:14px}
 .qbar{height:6px;border-radius:3px;background:var(--soft);overflow:hidden}
 .qbar i{display:block;height:100%;border-radius:3px;background:var(--ink);opacity:.75}
@@ -669,6 +673,7 @@ const STR = {
   "modelTitle": "Model",
   "qTitle": "Quotas",
   "qRefresh": "Refresh",
+  "qPin": "Show {n} in the header",
   "qAt": "Data as of {t}",
   "qNext": "Data as of {t}, the next refresh is possible at {n}",
   "qEmpty": "No quota data yet",
@@ -980,6 +985,7 @@ const STR = {
   "modelTitle": "Модель",
   "qTitle": "Квоты",
   "qRefresh": "Обновить",
+  "qPin": "Показывать {n} в шапке",
   "qAt": "Данные на {t}",
   "qNext": "Данные на {t}, обновить можно в {n}",
   "qEmpty": "Данных о квотах пока нет",
@@ -1409,7 +1415,8 @@ function renderList(){
   if (cnt("wait")) parts.push(`<span><b>${cnt("wait")}</b> ${t("sumWait")}</span>`);
   if (cnt("work")) parts.push(`<span><b>${cnt("work")}</b> ${t("sumWork")}</span>`);
   const bar = (label, v, extra) => v == null ? "" : `<span>${label}</span><span class="qbar" role="img" aria-label="${label}: ${Math.round(v)} %"><i class="${v >= 85 ? "hot" : ""}" style="width:${Math.max(2, Math.min(100, v))}%"></i></span><span class="qv">${Math.round(v)} %${extra ? ` <small>${esc(extra)}</small>` : ""}</span>`;
-  const qh = bar(t("h5"), q.h5, q.h5_reset ? t("until", {t: q.h5_reset}) : "") + bar(t("d7"), q.d7, "");
+  const qh = bar(t("h5"), q.h5, q.h5_reset ? t("until", {t: q.h5_reset}) : "") + bar(t("d7"), q.d7, "")
+    + (q.pinned || []).map(r => bar(esc(r.title + (r.sub ? " · " + r.sub : "")), r.pct, r.reset ? t("until", {t: r.reset}) : "").replace('class="qbar"', `class="qbar" data-k="p:${esc(r.id)}"`)).join("");
   listHTML($("quota"), qh + (q.stale ? `<span></span><span style="grid-column:2/4">${t("staleQuota")}</span>` : ""));
   $("quota").hidden = !qh;
   listHTML($("sum"), parts.join("") || `<span>${t("noSessions")}</span>`);
@@ -2321,8 +2328,12 @@ function quotaPaint(q){
   const pct = v => v == null ? "" : Math.round(v) + " %";
   if (c.h5 != null) rows.push({title: "Claude", sub: t("h5") + (c.h5_reset ? " · " + t("until", {t: c.h5_reset}) : ""), pct: c.h5});
   if (c.d7 != null) rows.push({title: "Claude", sub: t("d7"), pct: c.d7});
-  (q.rows || []).forEach(r => rows.push({title: r.title, sub: [r.sub, r.reset ? t("until", {t: r.reset}) : ""].filter(Boolean).join(" · "), pct: r.pct, hot: r.hot}));
-  listHTML($("q-rows"), rows.map(r => `<div class="qr"><span><span class="bn">${esc(r.title)}</span>${r.sub ? `<span class="bm">${esc(r.sub)}</span>` : ""}</span><span class="qp${r.hot || r.pct >= 85 ? " hot" : ""}">${pct(r.pct)}</span></div>`).join(""));
+  const pins = q.pins || [];
+  (q.rows || []).forEach(r => rows.push({id: r.id, title: r.title, sub: [r.sub, r.reset ? t("until", {t: r.reset}) : ""].filter(Boolean).join(" · "), pct: r.pct, hot: r.hot}));
+  // «+» выносит строку плиткой в шапку рядом с Claude (только строки с процентом); Claude там всегда
+  const pin = r => r.id == null || r.pct == null ? `<span class="qpin-x"></span>`
+    : `<button class="iconbtn qpin" type="button" data-pin="${esc(r.id)}" aria-pressed="${pins.includes(r.id)}" aria-label="${esc(t("qPin", {n: r.title + (r.sub ? " " + r.sub : "")}))}"><svg width="20" height="20" aria-hidden="true"><use href="#i-${pins.includes(r.id) ? "check" : "plus"}"/></svg></button>`;
+  listHTML($("q-rows"), rows.map(r => `<div class="qr"><span><span class="bn">${esc(r.title)}</span>${r.sub ? `<span class="bm">${esc(r.sub)}</span>` : ""}</span><span class="qp${r.hot || r.pct >= 85 ? " hot" : ""}">${pct(r.pct)}</span>${pin(r)}</div>`).join(""));
   const upd = Math.max(q.updated || 0, c.updated || 0);
   $("q-at").textContent = !rows.length ? t("qEmpty") : q.next_at && q.next_at > Date.now() / 1000 && upd ? t("qNext", {t: hm(upd), n: hm(q.next_at)}) : upd ? t("qAt", {t: hm(upd)}) : "";
   $("q-refresh").hidden = !q.can_refresh;
@@ -2334,6 +2345,12 @@ async function openQuota(){
 // плитки квоты рисует layers.js (#lab-q) поверх скрытого #quota: тап по любой из них открывает лист
 document.addEventListener("click", e => { if (e.target.closest("#lab-q, #quota")) openQuota(); });
 document.addEventListener("keydown", e => { if ((e.key === "Enter" || e.key === " ") && e.target.closest && e.target.closest("#lab-q")){ e.preventDefault(); openQuota(); } });
+$("q-rows").addEventListener("click", async e => {
+  const b = e.target.closest("[data-pin]"); if (!b || b.disabled) return;
+  b.disabled = true; haptic();
+  try{ quotaPaint(await api("quota/pins", {id: b.dataset.pin, on: b.getAttribute("aria-pressed") !== "true"})); loadList(); }
+  catch(err){ b.disabled = false; toast(t("qErr")); }
+});
 $("q-refresh").addEventListener("click", async () => {
   const b = $("q-refresh"); b.disabled = true;
   try{ quotaPaint(await api("quota/refresh", {})); }catch(e){ $("q-at").textContent = t("qErr"); }

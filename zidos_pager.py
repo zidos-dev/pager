@@ -3692,6 +3692,10 @@ def perms_lock(path):
             yield
 
 
+def quota_pins_path(cfg):
+    return os.path.join(os.path.dirname(cfg.env_path), "quota-pins.json")
+
+
 def perms_write(path, data):
     directory = os.path.dirname(path) or "."
     os.makedirs(directory, mode=0o700, exist_ok=True)
@@ -8512,8 +8516,8 @@ class Bot:
                 "stale": bool(upd and now - upd > STALE_QUOTA), "updated": upd,
                 "h5_reset": datetime.fromtimestamp(rs).strftime("%H:%M") if isinstance(rs, (int, float)) and rs else None}
 
-    def api_status(self, refreshed=False):
-        """Rows of CC_STATUS_FILE (validated) + the Claude quota; next_at = when a refresh will run the command again."""
+    def status_rows(self):
+        """-> (validated rows of CC_STATUS_FILE, file mtime or None)."""
         cfg, now = self.cfg, self.clock()
         rows, upd = [], None
         try:
@@ -8533,9 +8537,44 @@ class Bot:
                          "hot": bool(r.get("hot"))})
             if len(rows) == 20:
                 break
+        return rows, upd
+
+    def quota_pins(self):
+        try:
+            with open(quota_pins_path(self.cfg), encoding="utf-8") as f:
+                pins = json.load(f).get("pins")
+        except (OSError, ValueError, AttributeError):
+            return []
+        return [str(x)[:40] for x in pins][:8] if isinstance(pins, list) else []
+
+    def quota_pinned(self):
+        """Rows pinned to the header tiles next to Claude (only rows with a percent)."""
+        pins = self.quota_pins()
+        if not pins:
+            return []
+        rows = {r["id"]: r for r in self.status_rows()[0] if r["pct"] is not None}
+        return [rows[i] for i in pins if i in rows]
+
+    def api_status(self, refreshed=False):
+        """Rows of CC_STATUS_FILE (validated) + the Claude quota; next_at = when a refresh will run the command again."""
+        cfg = self.cfg
+        rows, upd = self.status_rows()
         can = bool(cfg.status_refresh)
         return {"rows": rows, "updated": upd, "claude": self.api_quota(), "can_refresh": can, "refreshed": refreshed,
-                "next_at": self._status_at + cfg.status_min_interval if can and self._status_at else None}
+                "next_at": self._status_at + cfg.status_min_interval if can and self._status_at else None,
+                "pins": self.quota_pins()}
+
+    def api_quota_pin(self, body):
+        """POST {id, on}: pin a status row to the header tiles or unpin it; the list lives next to the env (all devices)."""
+        rid = body.get("id") if isinstance(body, dict) else None
+        if not isinstance(rid, str) or not rid.strip():
+            return 400, {"error": "id"}
+        rid = rid[:40]
+        pins = [x for x in self.quota_pins() if x != rid]
+        if body.get("on"):
+            pins.append(rid)
+        perms_write(quota_pins_path(self.cfg), {"pins": pins[-8:]})
+        return 200, self.api_status()
 
     def api_status_refresh(self):
         cfg = self.cfg
@@ -8598,7 +8637,7 @@ class Bot:
         now = self.clock()
         rows = [self.api_row(uid, sid, now) for sid in self.api_ids()]
         rows.sort(key=lambda r: -r["updated"])
-        return {"quota": self.api_quota(), "topics": bool(self.topics_enabled), "lang": LANG,
+        return {"quota": dict(self.api_quota(), pinned=self.quota_pinned()), "topics": bool(self.topics_enabled), "lang": LANG,
                 "voice": self.stt_ready(), "sessions": rows}
 
     def api_history(self, sid):
@@ -9739,6 +9778,8 @@ class Bot:
             return (200, self.api_status()) if method == "GET" else (405, {"error": "method"})
         if parts == ["api", "quota", "refresh"]:
             return (200, self.api_status_refresh()) if method == "POST" else (405, {"error": "method"})
+        if parts == ["api", "quota", "pins"]:
+            return self.api_quota_pin(body) if method == "POST" else (405, {"error": "method"})
         if parts == ["api", "model"]:
             return self.api_model_get() if method == "GET" else self.api_model_save(body)
         if parts == ["api", "perms"]:

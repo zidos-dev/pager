@@ -267,7 +267,7 @@ html[data-lab-theme="dark"] .lq,html[data-lab-theme="dark"] .lab-sq{--lq-warn:#f
 #lab-q:focus-visible{outline:2px solid var(--link);outline-offset:3px}
 .lqt{transition:background-color .15s ease-out}
 #lab-q:active .lqt{background:color-mix(in srgb,var(--panel) 80%,var(--ink))}  /* тон нажатия, как у .card (ΔL* ≥15): плитки открывают лист квот */
-.lql{font-size:13px;color:var(--muted)}
+.lql{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .lqv{display:flex;align-items:baseline;gap:2px;margin-top:1px}
 .lqt .lqn{font-size:32px;font-weight:600;letter-spacing:-1px;color:var(--ink)}
 .lqp{font-size:15px;font-weight:500;color:var(--muted);margin-left:1px}

@@ -20,9 +20,13 @@ MODEL = {"provider": "deepseek", "model": "deepseek-flash", "base": "", "busy": 
     {"id": "custom", "title": "", "model": "", "stored": False, "models": []}]}
 
 # the shape of the real api_status: Claude from the demo quota + rows of CC_STATUS_FILE
+PINS = []  # строки квот, вынесенные в шапку (сервер держит их рядом с env)
+def quota_pinned():
+    return [r for r in quota_status(False)["rows"] if r["id"] in PINS and r["pct"] is not None]
+
 def quota_status(refreshed):
     now = time.time()
-    return {"claude": R["sessions"]["quota"], "can_refresh": True, "refreshed": refreshed, "updated": now - 240,
+    return {"claude": R["sessions"]["quota"], "can_refresh": True, "refreshed": refreshed, "updated": now - 240, "pins": list(PINS),
             "next_at": now + 60 if refreshed else None, "rows": [
                 {"id": "codex", "title": "Codex", "sub": "week", "pct": 41.0, "reset": "Thu 09:00", "hot": False},
                 {"id": "glm", "title": "GLM", "sub": "5 h", "pct": 88.0, "reset": "23:10", "hot": True},
@@ -130,6 +134,11 @@ class H(http.server.BaseHTTPRequestHandler):
             return self.perms_post(raw)
         if parts == ["api", "quota", "refresh"]:
             return self.j(quota_status(True))
+        if parts == ["api", "quota", "pins"]:
+            o = json.loads(raw or b"{}"); i = o.get("id")
+            if i in PINS: PINS.remove(i)
+            if o.get("on"): PINS.append(i)
+            return self.j(quota_status(False))
         if len(parts) == 3 and parts[:2] == ["api", "bots"]:
             return self.bots_post(parts[2], raw)
         # Server-side receipts also cover WebKit's unobservable background fetches.
@@ -356,7 +365,9 @@ class H(http.server.BaseHTTPRequestHandler):
         if p == "/api/sessions":
             if os.environ.get("FAIL_SESSIONS") == "1" or "fail_sessions=1" in self.headers.get("Cookie", ""):
                 return self.j({"error": "synthetic failure"}, 500)
-            return self.j(read_data()["sessions"])
+            d = read_data()["sessions"]
+            if isinstance(d, dict): d["quota"] = dict(d.get("quota") or {}, pinned=quota_pinned())
+            return self.j(d)
         if p == "/api/bots": return self.j(BOTS)
         if p == "/api/perms": return self.j(PERMS)
         if p == "/api/model": return self.j(MODEL)

@@ -48,7 +48,9 @@ def stand(app):
                 check(server.poll() is None, "stand failed to start")
                 try:
                     with urllib.request.urlopen(URL + "/api/sessions", timeout=.3) as response:
-                        check(json.load(response) == BASE["sessions"], "unexpected stand data")
+                        got = json.load(response)
+                        got.get("quota", {}).pop("pinned", None)  # the stand adds header pins, as the server does
+                        check(got == BASE["sessions"], "unexpected stand data")
                     break
                 except OSError:
                     time.sleep(.1)
