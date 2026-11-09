@@ -150,8 +150,10 @@
     selKey=b.dataset.f;
     retarget(true);
     if(native&&native.getAttribute("aria-pressed")!=="true"){
+      // M2: не скачок за кадр. Прозрачность ставится до смены списка: WebKit запускает animate кадром позже, и новый список мигал 1 → .4 → 1
+      var L=$("list"), fade=L&&!rm&&L.animate; if(fade) L.style.opacity=".4";
       native.click();
-      var L=$("list"); if(L&&!rm&&L.animate) L.animate([{opacity:.4},{opacity:1}],{duration:200,easing:"cubic-bezier(.2,.8,.2,1)"});  // M2: не скачок за кадр
+      if(fade) L.animate([{opacity:.4},{opacity:1}],{duration:200,easing:"cubic-bezier(.2,.8,.2,1)",fill:"both"}).finished.then(function(a){L.style.opacity="";a.cancel();},function(){L.style.opacity="";});
     }
   }
 
@@ -749,12 +751,12 @@
     if(S.root===root){ go("pill",true,true); S.pill.style.opacity="0"; root.dataset.state="gone"; }
     if(!hist){ setTimeout(function(){ if(S.root===root) teardown(); },400); return; }
     var empty=hist.querySelector(".empty"); if(empty) empty.remove();
-    var b=D.createElement("div"); b.className="me pending lab-ask-bubble"; b.textContent=text; b.style.opacity="0";
+    var b=D.createElement("div"); b.className="me pending lab-ask-bubble"; b.textContent=text; b.style.opacity="0"; b.dataset.flying="1";  // поллинг ленты не снимает цель из-под летящего клона
     hist.appendChild(b);
     try{ window.followUntil=Date.now()+4000; }catch(e){}
     body.scrollTop=body.scrollHeight;
     var tg=b.getBoundingClientRect();
-    if(reduce()||!tg.width){ b.style.transition="opacity 160ms linear"; requestAnimationFrame(function(){ b.style.opacity="1"; }); setTimeout(function(){ if(S.root===root) teardown(); },300); return; }
+    if(reduce()||!tg.width){ delete b.dataset.flying; b.style.transition="opacity 160ms linear"; requestAnimationFrame(function(){ b.style.opacity="1"; }); setTimeout(function(){ if(S.root===root) teardown(); },300); return; }
     var c=D.createElement("div"); c.className="me lab-ask-fly"; c.textContent=text;
     c.style.cssText="position:fixed;left:"+tg.left+"px;top:"+tg.top+"px;width:"+tg.width+"px;height:"+tg.height+"px;margin:0;max-width:none;z-index:25;transform-origin:0 0;pointer-events:none;will-change:transform";
     D.body.appendChild(c);
@@ -764,7 +766,7 @@
       {transform:"translate3d("+tx+"px,"+ty+"px,0) scale("+sc+")",backgroundColor:tok("--lab-lime")||"#d2fb4a",color:tok("--lab-lime-ink")||"#193006"},
       {transform:"translate3d(0,0,0) scale(1)",backgroundColor:getComputedStyle(b).backgroundColor,color:getComputedStyle(b).color}
     ],{duration:dur,easing:ease,fill:"both"});
-    var fin=function(){ b.style.opacity=""; b.style.transition="none"; c.remove(); if(S.root===root) teardown(); };
+    var fin=function(){ delete b.dataset.flying; b.style.opacity=""; b.style.transition="none"; c.remove(); if(S.root===root) teardown(); };
     an.onfinish=fin; an.oncancel=fin;
   }
 

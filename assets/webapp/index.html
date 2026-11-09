@@ -183,6 +183,8 @@ html.list-scrolled .lbar{opacity:1}html.list-scrolled .top h1{opacity:0}html.loc
 .pane-empty{display:none}
 @media (min-width:1000px){
   #list-screen{max-width:none;width:380px;margin:0 0 0 12px}
+  html[data-view="session"] .card.cur,html[data-view="sub"] .card.cur{background:color-mix(in srgb,var(--panel) 88%,var(--ink))}  /* открытая справа сессия — тоном */
+  .session-back{display:none}  /* список всегда виден слева: «← Сессии» вёл к пустой заглушке */
   #session-screen:not([hidden]){left:404px;right:12px;top:12px;height:calc(100dvh - 24px);border-radius:28px;background:var(--panel);--sfbg:var(--panel);overflow:hidden}
   #session-screen .session-header{background:color-mix(in srgb,var(--panel) 72%,transparent)}
   #session-screen .msg:not(.thinking){background:var(--soft);box-shadow:none}
@@ -1433,7 +1435,7 @@ function renderList(){
     if (s.watched) tags.push(`<span class="tag">${t("watchedTag")}</span>`);
     const act = (s.group === "archived" || s.group === "old") ? t("unarchive") : t("toArchive");
     const ds = (s.group === "wait" || s.perm) && waitOf(s) || detailOf(s);
-    return `<div class="cw" data-cw="${esc(s.id)}"><div class="ca"><button type="button" data-arch="${esc(s.id)}">${act}</button></div><button class="card${s.perm ? " perm" : ""}" type="button" data-id="${esc(s.id)}"><span class="sc" aria-hidden="true">${s.perm ? '<svg class="pi"><use href="#i-lock"/></svg>' : `<span class="dot ${dotCls(s)}"></span>`}</span><span class="nm">${esc(nameOf(s))}</span><span class="tm">${esc(s.ago)}</span>${ds ? `<span class="ds">${esc(ds)}</span>` : ""}${tags.length ? `<span class="tags">${tags.join("")}</span>` : ""}</button></div>`;
+    return `<div class="cw" data-cw="${esc(s.id)}"><div class="ca"><button type="button" data-arch="${esc(s.id)}">${act}</button></div><button class="card${s.perm ? " perm" : ""}${s.id === current ? " cur" : ""}" type="button" data-id="${esc(s.id)}"><span class="sc" aria-hidden="true">${s.perm ? '<svg class="pi"><use href="#i-lock"/></svg>' : `<span class="dot ${dotCls(s)}"></span>`}</span><span class="nm">${esc(nameOf(s))}</span><span class="tm">${esc(s.ago)}</span>${ds ? `<span class="ds">${esc(ds)}</span>` : ""}${tags.length ? `<span class="tags">${tags.join("")}</span>` : ""}</button></div>`;
   };
   // «Активные» — два раздела: сначала то, что ждёт вас
   let body;
@@ -1480,6 +1482,7 @@ $("chips").addEventListener("click", e => { const b = e.target.closest(".chip");
     dx = raw > 0 ? rubber(raw, 112) : raw < -112 ? -112 + rubber(raw + 112, 112) : raw;
     tr.add(dx); card.style.transform = `translate3d(${dx}px,0,0)`; cw.classList.add("act");
   }, {passive: true});
+  $("list").addEventListener("touchcancel", () => { if (cw && horiz) snap(cw, 0, 0); cw = null; });  // жест сорван системой (свайп от края iOS): карточка не застревает сдвинутой
   $("list").addEventListener("touchend", () => {
     if (!cw || !horiz){ cw = null; return; }
     const v = tr.v(), open = dx + project(v, 0.985) < -56;
@@ -1537,7 +1540,8 @@ const toBottom = () => { stick = true; progUntil = Date.now() + 1200; const b = 
   for (const e of ["wheel", "touchstart", "keydown"]) b.addEventListener(e, () => { progUntil = 0; }, {passive: true});  // палец или колесо перебивают её сразу
 }
 /* ---------- движение: пружина (прерываемая, с передачей скорости) ---------- */
-const RM = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+let RM = false;
+if (window.matchMedia){ const q = matchMedia("(prefers-reduced-motion: reduce)"); RM = q.matches; q.addEventListener && q.addEventListener("change", () => { RM = q.matches; }); }  // настройку меняют на лету
 function spring(from, to, o){
   o = o || {};
   const response = o.response || 0.38, damping = o.damping == null ? 1 : o.damping;
@@ -1599,7 +1603,7 @@ function pop(vel){
   belowOf(v).hidden = false;
   // кнопки нижнего экрана — сразу, вместе с уходом слоя, а не после пружины
   if (tg) tg.MainButton.hide(); else $("fab").hidden = true;
-  if (to === "list"){ $("new-btn").hidden = $("lb-new").hidden = false; document.documentElement.classList.remove("locked"); }
+  if (to === "list"){ $("new-btn").hidden = $("lb-new").hidden = false; document.documentElement.classList.remove("locked"); keepListY(); }
   if (v === "session"){
     /* морф слоёв сворачивает экран в карточку и шлёт session:closed; запасной таймер — если морфа нет */
     let tm = 0;
@@ -1627,7 +1631,10 @@ function syncHist(v){
   while (histDepth < d) history.pushState({d: ++histDepth}, "");
   if (histDepth > d){ const n = histDepth - d; histDepth = d; histSilent = true; history.go(-n); }
 }
+let listY = 0;  // прокрутка списка под слоем: фокус поля сессии обнуляет окно (iOS-клавиатура), а морф и список ждут прежнюю
+const keepListY = () => { if (scrollY !== listY) window.scrollTo(0, listY); };
 function show(v){
+  if (view === "list" && v !== "list" && v !== "gate" && !panel(v)) listY = scrollY;
   view = v;
   // список остаётся под открытыми слоями (для перехода и свайпа назад); сессия — под сабтаском
   $("list-screen").hidden = v === "gate"; $("session-screen").hidden = !(v === "session" || v === "sub"); $("new-screen").hidden = v !== "new"; $("gate-screen").hidden = v !== "gate"; $("sub-screen").hidden = v !== "sub";
@@ -1648,7 +1655,7 @@ function show(v){
 function renderHist(items){
   const box = $("s-hist");
   let ghosts = box.querySelectorAll(".pending").length;  // своё сообщение сменилось настоящим: въезд уже был у призрака
-  box.querySelectorAll(".pending").forEach(g => g.remove());
+  box.querySelectorAll(".pending:not([data-flying])").forEach(g => g.remove());
   const empty = box.querySelector(":scope > .empty"); if (empty) empty.remove();
   if (!items.length){ box.innerHTML = `<div class="empty">${t("emptyHist")}</div>`; return; }
   const cur = Array.from(box.children).filter(c => c.dataset.k);
@@ -1890,7 +1897,7 @@ async function openSession(id){
   stashDraft();
   permVersion++;
   ownAnswerVersion++;
-  current = id; sess = (data && data.sessions.find(s => s.id === id)) || {id, name: "…", group: "work"}; lastHist = ""; stick = true;
+  current = id; document.querySelectorAll("#list .card").forEach(c => c.classList.toggle("cur", c.dataset.id === id)); sess = (data && data.sessions.find(s => s.id === id)) || {id, name: "…", group: "work"}; lastHist = ""; stick = true;
   const own = ownAnswerRequests.get(id);
   if (own) sess = {...own.session};
   draftOut = false; $("s-text").value = drafts.get(id) || ""; atts = attDrafts.get(id) || []; attDrafts.delete(id); renderAtt(); setMode("send"); $("s-text").blur();
@@ -2347,9 +2354,10 @@ document.addEventListener("click", e => { if (e.target.closest("#lab-q, #quota")
 document.addEventListener("keydown", e => { if ((e.key === "Enter" || e.key === " ") && e.target.closest && e.target.closest("#lab-q")){ e.preventDefault(); openQuota(); } });
 $("q-rows").addEventListener("click", async e => {
   const b = e.target.closest("[data-pin]"); if (!b || b.disabled) return;
-  b.disabled = true; haptic();
-  try{ quotaPaint(await api("quota/pins", {id: b.dataset.pin, on: b.getAttribute("aria-pressed") !== "true"})); loadList(); }
-  catch(err){ b.disabled = false; toast(t("qErr")); }
+  const on = b.getAttribute("aria-pressed") !== "true", mark = v => { b.setAttribute("aria-pressed", v); b.querySelector("use").setAttribute("href", v ? "#i-check" : "#i-plus"); };
+  b.disabled = true; haptic(); mark(on);  // отклик сразу, не после ответа сервера
+  try{ quotaPaint(await api("quota/pins", {id: b.dataset.pin, on})); loadList(); }
+  catch(err){ b.disabled = false; mark(!on); toast(t("qErr")); }
 });
 $("q-refresh").addEventListener("click", async () => {
   const b = $("q-refresh"); b.disabled = true;
@@ -2393,8 +2401,8 @@ async function bLoad(){
 }
 async function openBots(){
   bView("list"); $("b-load").textContent = t("loading"); $("b-list").innerHTML = ""; $("b-add").hidden = true;
-  sheet("bots-sheet", true);
   await bLoad();
+  sheet("bots-sheet", true);  // лист поднимается с данными, без скачка высоты (как Права и Модель)
 }
 function bGroupsPaint(){
   const g = bot.groups || [];
@@ -2613,7 +2621,7 @@ const goBack = () => {
   if (!$("shade").hidden){ closeSheets(); return; }
   if (view === "sub") curSub = null;
   if (layerOf(view)){
-    if (view === "session"){ document.documentElement.classList.remove("locked"); document.dispatchEvent(new Event("session:close")); }  // капсула возвращается вместе с морфом, а не после пружины
+    if (view === "session"){ document.documentElement.classList.remove("locked"); keepListY(); document.dispatchEvent(new Event("session:close")); }  // капсула возвращается вместе с морфом, а не после пружины
     pop();
   }
 };
