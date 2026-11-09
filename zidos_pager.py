@@ -3662,7 +3662,7 @@ def asks_change(text):
     return bool(_CHANGE_RE.search(text or ""))
 CHAT_TAIL = 12  # last chat messages put into every question
 MEDIA_DIR = ".zidos-media"  # a question's pictures and video frames, in the chat clone: every engine reads it (bwrap sees only the clone)
-MEDIA_FRAMES = 4            # frames of a video, spread over its length
+MEDIA_FPS, MEDIA_FRAMES = 2, (4, 24)  # frames of a video per second, at least/at most: 4 over 13 s lost the punch a quiz asked about
 MEDIA_KEEP = 30             # the newest questions' media folders kept
 RESPONDER_WAIT = 1800  # s: a change the owner has not decided by then goes to the backlog, and the chat moves on
 RESPONDER_RUNNER_WAIT = 60  # s: a question waits this long for a runner that is still starting
@@ -6214,7 +6214,7 @@ class Bot:
 
     def responder_media(self, m, key, where, mid=None):
         """The media of a group message for the chat model -> (prompt line, note for the answer) or ("", "") without media.
-        Saved into the chat clone (MEDIA_DIR/<question id>): a picture or file as it is, a video as MEDIA_FRAMES frames.
+        Saved into the chat clone (MEDIA_DIR/<question id>): a picture or file as it is, a video as frames (MEDIA_FPS, MEDIA_FRAMES).
         A failure is a line too: the model must not answer as if there were nothing, and the answer says it."""
         att, dur = self.chat_media_att(m)
         if not att:
@@ -6256,22 +6256,26 @@ class Bot:
             with os.fdopen(fd, "wb") as f:
                 f.write(data)
             if kind != "video":
-                return "The %s %s (%s): %s — open the file and look at it." % (kind, where, mime or "?", src), ""
+                return ("The %s %s (%s): %s — open the file and really analyse it: what is in it, and if the post asks "
+                        "something (a quiz, a question), answer it with your reasons." % (kind, where, mime or "?", src)), ""
             if not dur:  # a video sent as a file, or a round one without a length: frames spread all the same
                 rc, out = self.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", src], timeout=30)
                 try:
                     dur = float(out.strip()) if rc == 0 else 0
                 except ValueError:
                     dur = 0
-            vf = "fps=%.4f,scale=640:-2" % (MEDIA_FRAMES / float(dur)) if dur else "fps=1,scale=640:-2"
-            self.run(["ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-i", src, "-vf", vf, "-frames:v", str(MEDIA_FRAMES),
+            n = min(MEDIA_FRAMES[1], max(MEDIA_FRAMES[0], int(round(dur * MEDIA_FPS)))) if dur else MEDIA_FRAMES[1]
+            vf = "fps=%.4f,scale=640:-2" % (n / float(dur)) if dur else "fps=%d,scale=640:-2" % MEDIA_FPS
+            self.run(["ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-i", src, "-vf", vf, "-frames:v", str(n),
                       os.path.join(d, key + "-frame-%d.jpg")], timeout=120)
             os.remove(src)  # the model cannot watch a video: the frames stand for it
-            frames = sorted(os.path.join(d, x) for x in os.listdir(d) if x.startswith(key + "-frame-"))
+            frames = [os.path.join(d, x) for x in sorted((x for x in os.listdir(d) if x.startswith(key + "-frame-")),
+                                                         key=lambda x: int(re.sub(r"\D", "", x[len(key):]) or 0))]  # frame-10 after frame-9
             if not frames:
                 raise OSError("no frames")
-            return ("The video %s (%s; you cannot watch it, here are %d frames spread over it, in order — open each image "
-                    "file and look at it): %s" % (where, "%d:%02d" % divmod(int(dur), 60) if dur else "length unknown",
+            return ("The video %s (%s; you cannot watch it, here are %d frames spread over it, in order — open every image "
+                    "file and really analyse it: what happens frame by frame, and if the post asks something (a quiz, a "
+                    "question), answer it with your reasons; never decline for lack of frames): %s" % (where, "%d:%02d" % divmod(int(dur), 60) if dur else "length unknown",
                                                     len(frames), ", ".join(frames))), ""
         except (TGError, OSError) as e:
             big = "too big" in str(e).lower()

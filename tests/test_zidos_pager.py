@@ -10306,7 +10306,7 @@ class ChatBotTests(unittest.TestCase):
         e.bot._spawn = lambda fn, *a: fn(*a)
         src = os.path.join(e.tmp.name, "src.mp4")
         rc, _ = cc.default_runner(["ffmpeg", "-nostdin", "-loglevel", "error", "-f", "lavfi", "-i",
-                                   "testsrc=duration=2:size=64x64:rate=10", "-pix_fmt", "yuv420p", src], timeout=60)
+                                   "testsrc=duration=6:size=64x64:rate=10", "-pix_fmt", "yuv420p", src], timeout=60)
         if rc != 0:
             self.skipTest("no ffmpeg")
         with open(src, "rb") as f:
@@ -10322,10 +10322,11 @@ class ChatBotTests(unittest.TestCase):
         e.bot.chat_update(gmsg(None, mid=20, caption="@sf_chat_bot", video={
             "file_id": "v1", "duration": 6, "file_size": 1000, "mime_type": "video/mp4"}))
         p = fake.calls("session.start")[0]["prompt"]
-        frames = sorted(glob.glob(os.path.join(e.tmp.name, cc.MEDIA_DIR, "20", "*.jpg")))
-        self.assertTrue(frames)
-        for f in frames:
-            self.assertIn(f, p)
+        frames = glob.glob(os.path.join(e.tmp.name, cc.MEDIA_DIR, "20", "*.jpg"))
+        self.assertEqual(len(frames), 12)  # 2 a second over the 6 s the message names
+        listed = re.findall(r"q-frame-(\d+)\.jpg", p)
+        self.assertEqual(listed, [str(i) for i in range(1, 13)])  # in order: frame-10 after frame-9
+        self.assertIn("answer it", p)
         self.assertIn("0:06", p)
         self.assertNotIn(".mp4", p)  # frames only: the video itself is not kept in the clone
         self.assertIn("[видео]", e.bot.store.data["chat_tail"][-1]["text"])
@@ -10369,7 +10370,7 @@ class ChatBotTests(unittest.TestCase):
         self.assertEqual(fake.calls("session.start"), [])  # the text question waits behind the video one
         jobs.pop()()
         p = fake.calls("session.start")[0]["prompt"]
-        self.assertIn("0:02", p)  # ffprobe found the length
+        self.assertIn("0:06", p)  # ffprobe found the length
         self.assertGreater(len(glob.glob(os.path.join(e.tmp.name, cc.MEDIA_DIR, "30", "*.jpg"))), 1)
         e.bot._spawn = lambda fn, *a: fn(*a)
         e.bot.responder_answer("ok")
