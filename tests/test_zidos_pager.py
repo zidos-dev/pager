@@ -3222,7 +3222,8 @@ class ModelSheetTests(unittest.TestCase):
         self.chk.assert_not_called()  # no key check: the CLI signs in by itself
         got = self.e.bot.api_dispatch(1, "GET", "/api/model", None)[1]
         self.assertEqual((got["provider"], got["model"]), ("claude_login", "opus"))
-        self.assertEqual(next(p for p in got["presets"] if p["id"] == "claude_login")["models"], ["opus", "sonnet", "haiku"])
+        self.assertEqual(next(p for p in got["presets"] if p["id"] == "claude_login")["models"],
+                         ["fable", "opus", "sonnet", "haiku", "claude-fable-5-1"])
         self.save(provider="glm", key="sk-secret-123")
         self.assertNotIn("CC_SDK_AUTH", cc.env_read(self.e.bot.cfg.sdk_env))  # a key provider switches login off again
 
@@ -7657,7 +7658,7 @@ class SdkTests(unittest.TestCase):
         fake = FakeSdk(self)
         e = sdk_env(self, fake, watch=False)
         m = e.bot.api_dirs()["models"]
-        self.assertEqual(m["claude"], ([] if e.bot.claude_missing() else ["opus", "sonnet", "haiku"]))
+        self.assertEqual(m["claude"], ([] if e.bot.claude_missing() else ["fable", "opus", "sonnet", "haiku", "claude-fable-5-1"]))
         self.assertIn(m["sdk"]["model"], m["sdk"]["models"])
 
     def test_api_new_multipart_files(self):

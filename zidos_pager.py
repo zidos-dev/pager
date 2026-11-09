@@ -3808,7 +3808,8 @@ MODEL_PRESETS = {
 }
 # the console's own model only (not group bots): the installed Claude Code CLI with its own sign-in, no key
 CLAUDE_LOGIN = {"id": "claude_login", "title": "Claude Code", "model": "sonnet"}
-MODEL_CHOICES = {"anthropic": ["opus", "sonnet", "haiku"], "claude_login": ["opus", "sonnet", "haiku"]}
+MODEL_CHOICES = {"anthropic": ["fable", "opus", "sonnet", "haiku", "claude-fable-5-1"],
+                 "claude_login": ["fable", "opus", "sonnet", "haiku", "claude-fable-5-1"]}
 _MODEL_NAME = re.compile(r"[\w./:\[\]-]{1,120}")
 _MODEL_KEY = re.compile(r"[\x21-\x7e]{8,512}")
 
@@ -3946,9 +3947,23 @@ def env_update(path, updates):
     os.replace(tmp, path)  # mkstemp made it 0600
 
 
+# shortcut: four CLI aliases, update when Claude Code changes the id behind fable, opus, sonnet or haiku
+MODEL_ALIAS = {"fable": "claude-fable-5-2", "opus": "claude-opus-5-5", "sonnet": "claude-sonnet-5-5", "haiku": "claude-haiku-5-5"}
+_MODEL_VER = re.compile(r"claude-([a-z]+)-(\d+)-(\d+)$")
+
+
 def bots_alias(base, model):
     """The Messages API does not know the CLI aliases (the runner does): sonnet -> a full model id on api.anthropic.com."""
-    return {"sonnet": "claude-sonnet-5-5", "opus": "claude-opus-5-5", "haiku": "claude-haiku-5-5"}.get(model, model) if not base else model
+    return MODEL_ALIAS.get(model, model) if not base else model
+
+
+def model_label(name):
+    """'Fable 5.2' from an alias (via MODEL_ALIAS) or from claude-<family>-<maj>-<min>; an unknown name stays."""
+    full = MODEL_ALIAS.get(name, name)
+    m = _MODEL_VER.fullmatch(full) if isinstance(full, str) else None
+    if not m:
+        return name
+    return "%s %s.%s" % (m.group(1).capitalize(), m.group(2), m.group(3))
 
 
 def model_check(base, key, model):
@@ -10020,6 +10035,8 @@ class Bot:
         presets.insert(0, dict(CLAUDE_LOGIN, stored=False, login=True))
         for p in presets:
             p["models"] = MODEL_CHOICES.get(p["id"], [])
+            if p["models"]:
+                p["labels"] = {x: model_label(x) for x in p["models"]}
         group = {"on": bool(self.cfg.responder_token and self.cfg.responder_chat is not None),
                  "engine": self.cfg.responder_engine, "codex_model": self.cfg.codex_model,
                  "engines": [{"id": k, "title": e["title"]} for k, e in LOGIN_ENGINES.items()]}
@@ -10084,9 +10101,13 @@ class Bot:
     def api_bots(self, method, action, body):
         """GET /api/bots, POST /api/bots/add|save|persona|remove: the same functions as the `bots` command (slow: no api_lock)."""
         if method == "GET" and not action:
-            return 200, {"bots": bots_list(self.cfg)["bots"],
-                         "presets": [{"id": k, "title": p["title"], "model": p["model"], "models": MODEL_CHOICES.get(k, [])}
-                                     for k, p in MODEL_PRESETS.items()]}
+            presets = []
+            for k, p in MODEL_PRESETS.items():
+                row = {"id": k, "title": p["title"], "model": p["model"], "models": MODEL_CHOICES.get(k, [])}
+                if row["models"]:
+                    row["labels"] = {x: model_label(x) for x in row["models"]}
+                presets.append(row)
+            return 200, {"bots": bots_list(self.cfg)["bots"], "presets": presets}
         if method != "POST" or action not in BOTS_ACTIONS:
             return 405, {"error": "method"}
         return 200, BOTS_ACTIONS[action](self.cfg, body)
@@ -10124,6 +10145,10 @@ class Bot:
                     env.get("CC_SDK_BASE_URL", "")).hostname or ""
                 models["sdk"] = {"provider": pid, "title": title, "model": model,
                                  "models": MODEL_CHOICES.get(pid) or [model]}
+            shown = list(models["claude"]) + list((models["sdk"] or {}).get("models") or [])
+            models["labels"] = {}
+            for x in shown:
+                models["labels"].setdefault(x, model_label(x))
             return {"dirs": clean_dirs, "models": models}
 
         if len(q) > 4096:

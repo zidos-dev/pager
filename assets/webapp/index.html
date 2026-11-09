@@ -2241,15 +2241,15 @@ function pvPaint(host, items, pick, open, now){  // свёрнуто: одна �
   else row.insertAdjacentHTML("afterend", `<div class="pv-list" role="radiogroup" aria-label="${esc(t("modelProvider"))}">${html}</div>`);
 }
 function pvNow(host, text){ const el = host.querySelector(".pv-now .bm"); if (el) el.textContent = text; }
-const pvModels = (list, cur) => list.map(m => pvRow(`data-m="${esc(m)}"`, m[0].toUpperCase() + m.slice(1), "", m === cur)).join("");
+const pvModels = (list, cur, labels) => list.map(m => pvRow(`data-m="${esc(m)}"`, (labels && labels[m]) || (m[0].toUpperCase() + m.slice(1)), "", m === cur)).join("");
 let mOpen = false, bOpen = false;
 const mPreset = () => (mdl.presets.find(p => p.id === mdlPick) || {});
 function mErr(text){ $("m-err").textContent = text || ""; $("m-err").hidden = !text; }
 function mModels(){  // a known family: the models as chips; the field stays for any other name
   const p = mPreset(), cur = $("m-model").value.trim(), list = p.models || [];
   $("m-models").hidden = !list.length;
-  $("m-models").innerHTML = pvModels(list, cur);
-  pvNow($("m-list"), cur || $("m-model").placeholder);
+  $("m-models").innerHTML = pvModels(list, cur, p.labels);
+  pvNow($("m-list"), (p.labels && p.labels[cur]) || cur || $("m-model").placeholder);
 }
 /* движки «вход на сервере»: [как зовётся CLI в заметках, команда входа] */
 const LE = {codex: ["Codex", "codex login"], grok: ["Grok", "grok login"], gemini: ["Antigravity", "agy"]};
@@ -2479,9 +2479,9 @@ function bModelPaint(keepModel){
   $("b-note").textContent = note; $("b-note").hidden = !note;
 }
 function bModels(){
-  const list = bPreset().models || [], cur = $("b-model").value.trim();
-  $("b-models").hidden = !list.length; $("b-models").innerHTML = pvModels(list, cur);
-  pvNow($("b-prov"), cur || $("b-model").placeholder);
+  const p = bPreset(), list = p.models || [], cur = $("b-model").value.trim();
+  $("b-models").hidden = !list.length; $("b-models").innerHTML = pvModels(list, cur, p.labels);
+  pvNow($("b-prov"), (p.labels && p.labels[cur]) || cur || $("b-model").placeholder);
 }
 function bEdit(b){
   bot = b; bOpen = false; botPick = b.provider; botChat = b.chat == null ? null : b.chat; botPersonaDesc = (b.persona && b.persona.description) || "";
@@ -2618,9 +2618,9 @@ $("a-arch").addEventListener("click", () => {
 let dir = null, dirHome = null, nItems = [], nPick = "", nOpen = false, nAtts = [], nGen = 0, hintT = 0, hintSeq = 0;
 function nPaint(){ const on = nItems.length > 1; $("n-model").hidden = $("n-model-l").hidden = !on; if (on) pvPaint($("n-model"), nItems, nPick, nOpen); }
 function nModels(m){  // Claude Code (TUI) и модели SDK-провайдера; провайдера здесь не меняют: адрес у раннера один
-  const c = (m && m.claude) || [], s = m && m.sdk, cc = "Claude Code";
-  nItems = [{id: "", title: t("pvDefault"), sub: c.length ? cc : s ? s.title : ""}].concat(c.map(x => ({id: "c:" + x, title: x[0].toUpperCase() + x.slice(1), sub: cc})),
-    s ? (s.models || []).map(x => ({id: "s:" + x, title: x, sub: s.title + (x === s.model ? " · " + t("pvDefault").toLowerCase() : "")})) : []);
+  const c = (m && m.claude) || [], s = m && m.sdk, cc = "Claude Code", lab = (m && m.labels) || {};
+  nItems = [{id: "", title: t("pvDefault"), sub: c.length ? cc : s ? s.title : ""}].concat(c.map(x => ({id: "c:" + x, title: lab[x] || (x[0].toUpperCase() + x.slice(1)), sub: cc})),
+    s ? (s.models || []).map(x => ({id: "s:" + x, title: lab[x] || x, sub: s.title + (x === s.model ? " · " + t("pvDefault").toLowerCase() : "")})) : []);
   nPick = ""; nOpen = false; nPaint();
 }
 $("n-model").addEventListener("click", e => { if (e.target.closest("[data-pv]")){ nOpen = !nOpen; nPaint();

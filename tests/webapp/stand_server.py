@@ -11,12 +11,12 @@ DATA_LOCK = threading.Lock()
 
 # lists of the model sheet: the shape of the real api_model (presets with models; empty list = one preset model)
 MODEL = {"provider": "deepseek", "model": "deepseek-flash", "base": "", "busy": 0, "group": {"on": False}, "presets": [
-    {"id": "claude_login", "title": "Claude Code", "model": "sonnet", "stored": False, "login": True, "models": ["opus", "sonnet", "haiku"]},
+    {"id": "claude_login", "title": "Claude Code", "model": "sonnet", "stored": False, "login": True, "models": ["fable", "opus", "sonnet", "haiku", "claude-fable-5-1"], "labels": {"fable": "Fable 5.2", "opus": "Opus 5.5", "sonnet": "Sonnet 5.5", "haiku": "Haiku 5.5", "claude-fable-5-1": "Fable 5.1"}},
     {"id": "deepseek", "title": "DeepSeek", "model": "deepseek-flash", "stored": True, "models": []},
     {"id": "glm", "title": "GLM", "model": "glm-5.3", "stored": True, "models": []},
     {"id": "kimi", "title": "Kimi", "model": "kimi-for-coding", "stored": False, "models": []},
     {"id": "openrouter", "title": "OpenRouter", "model": "x", "stored": False, "models": []},
-    {"id": "anthropic", "title": "Claude API", "model": "sonnet", "stored": False, "models": ["opus", "sonnet", "haiku"]},
+    {"id": "anthropic", "title": "Claude API", "model": "sonnet", "stored": False, "models": ["fable", "opus", "sonnet", "haiku", "claude-fable-5-1"], "labels": {"fable": "Fable 5.2", "opus": "Opus 5.5", "sonnet": "Sonnet 5.5", "haiku": "Haiku 5.5", "claude-fable-5-1": "Fable 5.1"}},
     {"id": "custom", "title": "", "model": "", "stored": False, "models": []}]}
 
 # the shape of the real api_status: Claude from the demo quota + rows of CC_STATUS_FILE
@@ -54,7 +54,7 @@ BOTS = {"bots": [], "presets": []}
 
 def bots_reset():
     """Synthetic /api/bots* state (README, "Several bots"): one active bot with a group, one without a group and with an API error."""
-    BOTS["presets"] = [{"id": "anthropic", "title": "Claude", "model": "claude-sonnet-4-5", "models": ["opus", "sonnet", "haiku"]}, {"id": "kimi", "title": "Kimi", "model": "kimi-k2"},
+    BOTS["presets"] = [{"id": "anthropic", "title": "Claude", "model": "claude-sonnet-4-5", "models": ["fable", "opus", "sonnet", "haiku", "claude-fable-5-1"], "labels": {"fable": "Fable 5.2", "opus": "Opus 5.5", "sonnet": "Sonnet 5.5", "haiku": "Haiku 5.5", "claude-fable-5-1": "Fable 5.1"}}, {"id": "kimi", "title": "Kimi", "model": "kimi-k2"},
                        {"id": "codex", "title": "Codex", "model": ""},
                        {"id": "grok", "title": "Grok", "model": ""}, {"id": "gemini", "title": "Gemini", "model": ""}, {"id": "custom", "title": "", "model": ""}]
     BOTS["bots"] = [
@@ -406,7 +406,7 @@ class H(http.server.BaseHTTPRequestHandler):
         if p == "/api/dirs":  # models as the real api_dirs: Claude Code (TUI) + the SDK runner's provider
             q_val = (q.get("q") or [None])[0]
             if not q_val:
-                return self.j({"models": {"claude": ["opus", "sonnet", "haiku"], "sdk": {"provider": "glm", "title": "GLM", "model": "glm-5.3", "models": ["glm-5.3"]}}, **R["dirs"]})
+                return self.j({"models": {"labels": {"fable": "Fable 5.2", "opus": "Opus 5.5", "sonnet": "Sonnet 5.5", "haiku": "Haiku 5.5", "claude-fable-5-1": "Fable 5.1"}, "claude": ["fable", "opus", "sonnet", "haiku", "claude-fable-5-1"], "sdk": {"provider": "glm", "title": "GLM", "model": "glm-5.3", "models": ["glm-5.3"]}}, **R["dirs"]})
             if len(q_val) > 4096:
                 return self.j({"error": "too long"}, 400)
             SYNTH_TREE = ["~/code/zidos-pager", "~/code/zidos-core", "~/srv/vaultwarden", "~/.workflow"]

@@ -472,8 +472,13 @@ class HttpTests(unittest.TestCase):
     def test_routes_are_thin_wrappers(self):
         w = self.w
         st, obj, _ = w.req("GET", "/api/bots")
-        self.assertEqual((st, obj), (200, {"bots": [], "presets": [{"id": k, "title": p["title"], "model": p["model"], "models": cc.MODEL_CHOICES.get(k, [])}
-                                                    for k, p in cc.MODEL_PRESETS.items()]}))
+        def row(k, p):
+            models = cc.MODEL_CHOICES.get(k, [])
+            out = {"id": k, "title": p["title"], "model": p["model"], "models": models}
+            if models:
+                out["labels"] = {m: cc.model_label(m) for m in models}
+            return out
+        self.assertEqual((st, obj), (200, {"bots": [], "presets": [row(k, p) for k, p in cc.MODEL_PRESETS.items()]}))
         self.assertNotIn("stored", obj["presets"][0])
         for action in ("add", "save", "persona", "remove"):
             st, obj, _ = w.req("POST", "/api/bots/" + action, {"slug": "x"})

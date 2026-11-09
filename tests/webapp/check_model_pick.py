@@ -30,6 +30,11 @@ def fits(page, sel):
     check(page.evaluate("document.documentElement.scrollWidth") <= 390, "horizontal overflow")
 
 
+def shot(page, name):  # SHOTS=<dir>: screenshots for an eye check
+    if os.environ.get("SHOTS"):
+        page.screenshot(path=os.path.join(os.environ["SHOTS"], f"{name}-{page.evaluate('matchMedia(\"(prefers-color-scheme: dark)\").matches') and 'dark' or 'light'}.png"), full_page=True)
+
+
 def bot_card(page, lang):
     urllib.request.urlopen(urllib.request.Request(URL + "/api/bots/reset", data=b"{}", method="POST")).read()
     page.goto(f"{URL}/app/", wait_until="load")
@@ -38,11 +43,14 @@ def bot_card(page, lang):
     expect(prov.locator(".pv-now")).to_contain_text("Claude")
     expect(prov.locator(".pv-now")).to_contain_text("claude-sonnet-4-5")
     expect(prov.locator(".pv-r")).to_have_count(0)  # collapsed: no rows of providers until a tap
-    expect(page.locator("#b-models .pv-r")).to_have_count(3)
+    expect(page.locator("#b-models .pv-r")).to_have_count(5)
+    expect(page.locator('#b-models [data-m="fable"]')).to_contain_text("Fable 5.2")
+    expect(page.locator('#b-models [data-m="claude-fable-5-1"]')).to_contain_text("Fable 5.1")
     page.locator('#b-models [data-m="opus"]').click()
     expect(page.locator("#b-model")).to_have_value("opus")
     expect(page.locator('#b-models [data-m="opus"]')).to_have_attribute("aria-checked", "true")
-    expect(prov.locator(".pv-now")).to_contain_text("opus")
+    expect(prov.locator(".pv-now")).to_contain_text("Opus 5.5")
+    shot(page, f"bot-{lang}")
     prov.locator(".pv-now").click()
     expect(prov.locator(".pv-now")).to_have_attribute("aria-expanded", "true")
     expect(prov.locator(".pv-r")).to_have_count(6)  # Claude, Kimi, Codex, Grok, Gemini, own address
@@ -66,7 +74,9 @@ def new_chat(page, lang):
     nm = page.locator("#n-model")
     expect(nm.locator(".pv-now")).to_contain_text("По умолчанию" if lang == "ru" else "Default")
     nm.locator(".pv-now").click()
-    expect(nm.locator(".pv-r")).to_have_count(5)  # default + opus/sonnet/haiku + the SDK provider's model
+    expect(nm.locator(".pv-r")).to_have_count(7)  # default + fable/opus/sonnet/haiku/fable-5-1 + the SDK provider's model
+    expect(nm.locator('[data-p="c:fable"]')).to_contain_text("Fable 5.2")
+    page.wait_for_timeout(700); shot(page, f"new-{lang}")
     fits(page, "#n-model button")
     nm.locator('[data-p="s:glm-5.3"]').click()
     expect(nm.locator(".pv-now")).to_contain_text("glm-5.3")
