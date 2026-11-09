@@ -145,9 +145,32 @@ class H(http.server.BaseHTTPRequestHandler):
         if len(parts) == 4 and parts[:2] == ["api", "session"] and parts[3] == "send" and os.environ.get("SEND_LOG"):
             with DATA_LOCK, open(os.environ["SEND_LOG"], "a") as log:
                 log.write(json.dumps({"sid": parts[2], "body": raw.decode("utf-8", errors="replace")}) + "\n")
-        if parts == ["api", "new"] and os.environ.get("SEND_LOG"):
-            with DATA_LOCK, open(os.environ["SEND_LOG"], "a") as log:
-                log.write(json.dumps({"new": json.loads(raw or b"{}")}) + "\n")
+        if parts == ["api", "new"]:
+            ctype = self.headers.get("Content-Type", "").lower()
+            if ctype.startswith("multipart/"):
+                from email.parser import BytesParser
+                from email.policy import HTTP
+                msg = BytesParser(policy=HTTP).parsebytes(b"Content-Type: " + self.headers.get("Content-Type", "").encode() + b"\r\n\r\n" + raw)
+                fields = {}
+                filenames = []
+                for part in msg.iter_parts():
+                    name = part.get_param("name", header="content-disposition")
+                    if name == "file":
+                        fn = part.get_filename()
+                        if fn:
+                            filenames.append(fn)
+                    elif name:
+                        fields[name] = part.get_content().strip()
+                new_data = {"text": fields.get("text", ""), "cwd": fields.get("cwd", ""), "files": filenames}
+            else:
+                try:
+                    new_data = json.loads(raw or b"{}")
+                except Exception:
+                    new_data = {}
+            if os.environ.get("SEND_LOG"):
+                with DATA_LOCK, open(os.environ["SEND_LOG"], "a") as log:
+                    log.write(json.dumps({"new": new_data}) + "\n")
+            return self.j({"ok": True, "menu": False})  # as before: no id
         if len(parts) == 4 and parts[:2] == ["api", "session"] and parts[3] == "answer":
             return self.answer(parts[2], raw)
         if len(parts) == 4 and parts[:2] == ["api", "session"] and parts[3] == "send":  # сервер отвечает после вставки в tmux (1–2 с)
@@ -377,7 +400,18 @@ class H(http.server.BaseHTTPRequestHandler):
         if p == "/api/quota": return self.j(quota_status(False))
         if p == "/api/commands": return self.j(R["commands"])
         if p == "/api/dirs":  # models as the real api_dirs: Claude Code (TUI) + the SDK runner's provider
-            return self.j({"models": {"claude": ["opus", "sonnet", "haiku"], "sdk": {"provider": "glm", "title": "GLM", "model": "glm-5.3", "models": ["glm-5.3"]}}, **R["dirs"]})
+            q_val = (q.get("q") or [None])[0]
+            if not q_val:
+                return self.j({"models": {"claude": ["opus", "sonnet", "haiku"], "sdk": {"provider": "glm", "title": "GLM", "model": "glm-5.3", "models": ["glm-5.3"]}}, **R["dirs"]})
+            if len(q_val) > 4096:
+                return self.j({"error": "too long"}, 400)
+            SYNTH_TREE = ["~/code/zidos-pager", "~/code/zidos-core", "~/srv/vaultwarden", "~/.workflow"]
+            name_part = "" if q_val.endswith("/") else q_val.rsplit("/", 1)[-1]
+            hints = [path for path in SYNTH_TREE if path.lower().startswith(q_val.lower())
+                     and not ("/." in path and not name_part.startswith("."))]
+            hints.sort(key=lambda s: s.lower())
+            exists = q_val.rstrip("/") in [path.rstrip("/") for path in SYNTH_TREE] or q_val in ("~", "~/")
+            return self.j({"q": q_val, "hints": hints[:8], "exists": exists})
         if p == "/api/file": return self.j({"url": "/f/x"})
         if p.startswith("/api/session/"):
             current = read_data()

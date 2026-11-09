@@ -3568,6 +3568,23 @@ class WebApiTests(unittest.TestCase):
         st, obj, _ = self.w.req("POST", "/api/new", {"text": "дома"})  # папка по умолчанию
         self.assertEqual([r for r in e.runs if "--bg" in r[0]][-1][1], e.cfg.default_cwd)
 
+    def test_dirs_query_and_new_multipart(self):
+        e = self.e
+        # GET /api/dirs?q=
+        st, obj, _ = self.w.req("GET", "/api/dirs?q=/nonexistent/path/123")
+        self.assertEqual(st, 200)
+        self.assertEqual(obj["q"], "/nonexistent/path/123")
+        self.assertEqual(obj["hints"], [])
+        self.assertFalse(obj["exists"])
+
+        # POST /api/new with multipart
+        body, ctype = multipart({"text": "Web multipart task", "cwd": "/tmp"},
+                                files=[("test.txt", b"web test content")])
+        st, obj, _ = self.w.req("POST", "/api/new", raw_body=body, headers={"Content-Type": ctype})
+        self.assertEqual(st, 200)
+        self.assertTrue(obj["ok"])
+        self.assertEqual(obj["id"], "abcd1234")
+
 
 class TunnelTests(unittest.TestCase):
     def test_new_url_sets_menu_button_and_panel_button(self):
@@ -4637,13 +4654,16 @@ class TelegramFileInTests(unittest.TestCase):
         self.assertIn("Не получилось скачать файл", e.tg.of("sendMessage")[-1]["text"])
 
 
-def multipart(fields, file=None, boundary="----ccbound"):
+def multipart(fields, file=None, boundary="----ccbound", files=None):
     out = b""
     for k, v in fields.items():
         out += ("--%s\r\nContent-Disposition: form-data; name=\"%s\"\r\n\r\n%s\r\n" % (boundary, k, v)).encode()
+    all_files = list(files or [])
     if file:
+        all_files.append(file)
+    for fn, data in all_files:
         out += ("--%s\r\nContent-Disposition: form-data; name=\"file\"; filename=\"%s\"\r\n"
-                "Content-Type: application/octet-stream\r\n\r\n" % (boundary, file[0])).encode() + file[1] + b"\r\n"
+                "Content-Type: application/octet-stream\r\n\r\n" % (boundary, fn)).encode() + data + b"\r\n"
     out += ("--%s--\r\n" % boundary).encode()
     return out, "multipart/form-data; boundary=" + boundary
 
@@ -7604,6 +7624,118 @@ class SdkTests(unittest.TestCase):
         m = e.bot.api_dirs()["models"]
         self.assertEqual(m["claude"], ([] if e.bot.claude_missing() else ["opus", "sonnet", "haiku"]))
         self.assertIn(m["sdk"]["model"], m["sdk"]["models"])
+
+    def test_api_new_multipart_files(self):
+        fake = FakeSdk(self)
+        e = sdk_env(self, fake, watch=False)
+        f1 = ("a.txt", b"hello world")
+        f2 = ("b.py", b"print(1)")
+        body, ctype = multipart({"text": "Task with 2 files", "cwd": e.tmp.name, "sdk": "1"}, files=[f1, f2])
+        code, res = e.bot.api_new(1, {"content_type": ctype, "raw": body})
+        self.assertEqual(code, 200)
+        sid = res["id"]
+        folder = e.bot.store.data.get("inbox_dirs", {}).get(sid)
+        self.assertTrue(bool(folder))
+        inbox_dir = os.path.join(e.cfg.home, "tg-inbox", folder)
+        self.assertTrue(os.path.isdir(inbox_dir))
+        found_files = []
+        for root, _, fs in os.walk(inbox_dir):
+            found_files.extend(fs)
+        self.assertIn("a.txt", found_files)
+        self.assertIn("b.py", found_files)
+        calls = fake.calls("session.start")
+        self.assertEqual(len(calls), 1)
+        prompt = calls[0]["prompt"]
+        self.assertTrue(prompt.startswith("Task with 2 files\n\n"))
+        self.assertIn("a.txt", prompt)
+        self.assertIn("b.py", prompt)
+        self.assertTrue("Files from owner (2):" in prompt or "Файлы от владельца (2):" in prompt)
+
+        # single file -> file_message format
+        fake.requests.clear()
+        f_single = ("note.md", b"# Note content")
+        body_s, ctype_s = multipart({"text": "Task with 1 file", "cwd": e.tmp.name, "sdk": "true"}, file=f_single)
+        code_s, res_s = e.bot.api_new(1, {"content_type": ctype_s, "raw": body_s})
+        self.assertEqual(code_s, 200)
+        prompt_s = fake.calls("session.start")[-1]["prompt"]
+        self.assertTrue(prompt_s.startswith("Task with 1 file\n\n"))
+        self.assertTrue("File from owner: " in prompt_s or "Файл от владельца: " in prompt_s)
+        self.assertIn("note.md", prompt_s)
+
+    def test_api_new_multipart_validation(self):
+        fake = FakeSdk(self)
+        e = sdk_env(self, fake, watch=False)
+        f1 = ("test.txt", b"content")
+        # multipart without text -> 400, files NOT saved
+        body, ctype = multipart({"text": "", "cwd": e.tmp.name}, file=f1)
+        code, res = e.bot.api_new(1, {"content_type": ctype, "raw": body})
+        self.assertEqual(code, 400)
+        inbox = os.path.join(e.cfg.home, "tg-inbox")
+        self.assertFalse(os.path.exists(inbox) and os.listdir(inbox))
+
+        # 11 files -> 413
+        files11 = [("f%d.txt" % i, b"content") for i in range(11)]
+        body11, ctype11 = multipart({"text": "Task with 11 files", "cwd": e.tmp.name}, files=files11)
+        code11, res11 = e.bot.api_new(1, {"content_type": ctype11, "raw": body11})
+        self.assertEqual(code11, 413)
+
+    def test_api_dirs_filter_junk_and_hints(self):
+        e = Env(self)
+        # without q: junk dirs (~/.claude/jobs/x/tmp, /tmp/x) filtered, default cwd first
+        good_dir = os.path.join(e.tmp.name, "my_project")
+        os.makedirs(good_dir, exist_ok=True)
+        jobs_dir = os.path.join(e.jobs, "x", "tmp")
+        os.makedirs(jobs_dir, exist_ok=True)
+        tmp_sub = "/tmp/zp_test_junk_sub"
+        os.makedirs(tmp_sub, exist_ok=True)
+        self.addCleanup(lambda: os.rmdir(tmp_sub) if os.path.exists(tmp_sub) else None)
+        e.bot.known["s1"] = {"cwd": good_dir, "updated": 100}
+        e.bot.known["s2"] = {"cwd": jobs_dir, "updated": 90}
+        e.bot.known["s3"] = {"cwd": tmp_sub, "updated": 80}
+        e.bot.known["s4"] = {"cwd": "/nonexistent/test/folder", "updated": 70}
+
+        dirs_res = e.bot.api_dirs()
+        self.assertEqual(dirs_res["dirs"][0], cc.tilde(e.cfg.default_cwd))
+        self.assertIn(cc.tilde(good_dir), dirs_res["dirs"])
+        self.assertNotIn(cc.tilde(jobs_dir), dirs_res["dirs"])
+        self.assertNotIn(cc.tilde(tmp_sub), dirs_res["dirs"])
+        self.assertNotIn("/nonexistent/test/folder", dirs_res["dirs"])
+
+        # with q:
+        work_dir = os.path.join(e.tmp.name, "work_hints")
+        os.makedirs(os.path.join(work_dir, "ProjectAlpha"), exist_ok=True)
+        os.makedirs(os.path.join(work_dir, "projectBeta"), exist_ok=True)
+        os.makedirs(os.path.join(work_dir, ".hiddenDir"), exist_ok=True)
+        os.makedirs(os.path.join(work_dir, "OtherDir"), exist_ok=True)
+
+        # case-insensitive prefix
+        q_path = os.path.join(work_dir, "proj")
+        res = e.bot.api_dirs(q=q_path)
+        self.assertFalse(res["exists"])
+        self.assertIn(cc.tilde(os.path.join(work_dir, "ProjectAlpha")), res["hints"])
+        self.assertIn(cc.tilde(os.path.join(work_dir, "projectBeta")), res["hints"])
+        self.assertNotIn(cc.tilde(os.path.join(work_dir, "OtherDir")), res["hints"])
+        self.assertNotIn(cc.tilde(os.path.join(work_dir, ".hiddenDir")), res["hints"])
+
+        # hidden only when entered part starts with '.'
+        res_dot = e.bot.api_dirs(q=os.path.join(work_dir, "."))
+        self.assertIn(cc.tilde(os.path.join(work_dir, ".hiddenDir")), res_dot["hints"])
+        self.assertNotIn(cc.tilde(os.path.join(work_dir, "ProjectAlpha")), res_dot["hints"])
+
+        # trailing slash -> child dirs
+        res_slash = e.bot.api_dirs(q=work_dir + "/")
+        self.assertTrue(res_slash["exists"])
+        self.assertIn(cc.tilde(os.path.join(work_dir, "ProjectAlpha")), res_slash["hints"])
+        self.assertNotIn(cc.tilde(os.path.join(work_dir, ".hiddenDir")), res_slash["hints"])
+
+        # nonexistent parent -> empty hints, no exception
+        res_nonexistent = e.bot.api_dirs(q="/nonexistent/parent/dir/xyz")
+        self.assertEqual(res_nonexistent["hints"], [])
+        self.assertFalse(res_nonexistent["exists"])
+
+        # length > 4096 -> 400
+        code, err = e.bot.api_dirs(q="x" * 4097)
+        self.assertEqual(code, 400)
 
 
 class SdkReviewTests(unittest.TestCase):

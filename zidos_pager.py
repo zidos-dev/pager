@@ -1587,6 +1587,18 @@ def file_message(path, size, mime, caption=""):
     return t + ("\n" + caption.strip() if caption and caption.strip() else "")
 
 
+def files_message(saved, caption=""):
+    if not saved:
+        return caption.strip() if caption else ""
+    if len(saved) == 1:
+        return file_message(saved[0][0], saved[0][1], saved[0][2], caption)
+    text = _t("Files from owner (%d):\n") % len(saved) + "\n".join(
+        "• %s (%s, %s)" % (pth, human_size(n), m or "application/octet-stream") for pth, n, m in saved)
+    if caption and caption.strip():
+        text += "\n" + caption.strip()
+    return text
+
+
 def make_file_token(path, secret, now, ttl=FILE_TOKEN_TTL):
     exp = int(now) + ttl
     sig = hmac.new(secret.encode(), ("%s|%d" % (path, exp)).encode(), hashlib.sha256).hexdigest()
@@ -8873,13 +8885,7 @@ class Bot:
         except OSError:
             return 500, {"ok": False, "error": _t("Could not save the file")}
         cap = fields.get("caption", "")
-        if len(saved) == 1:
-            text = file_message(saved[0][0], saved[0][1], saved[0][2], cap)
-        else:  # several files in one message so the session receives them together
-            text = _t("Files from owner (%d):\n") % len(saved) + "\n".join(
-                "• %s (%s, %s)" % (pth, human_size(n), m or "application/octet-stream") for pth, n, m in saved)
-            if cap.strip():
-                text += "\n" + cap.strip()
+        text = files_message(saved, cap)
         ok, err = self.deliver(uid, sid, text, origin="webapp")
         log("webapp upload %s: %d file(s), %s" % (sid, len(saved), "ok" if ok else ("menu" if err == ERR_MENU else "error: " + short(str(err), 90))))
         paths = [x[0] for x in saved]
@@ -9728,18 +9734,93 @@ class Bot:
             return 405, {"error": "method"}
         return 200, BOTS_ACTIONS[action](self.cfg, body)
 
-    def api_dirs(self):
+    def clean_recent_dirs(self):
+        default = tilde(self.cfg.default_cwd)
+        out = [default]
+        jobs_a = os.path.abspath(os.path.expanduser("~/.claude/jobs"))
+        jobs_b = os.path.abspath(self.cfg.jobs_dir) if hasattr(self.cfg, "jobs_dir") else jobs_a
+        home = os.path.abspath(getattr(self.cfg, "home", os.path.expanduser("~")))
+        for d in self.recent_dirs(cached=True)[1:]:
+            exp = os.path.abspath(os.path.expanduser(d))
+            if not os.path.isdir(exp):
+                continue
+            if exp == jobs_a or exp.startswith(jobs_a + "/") or exp == jobs_b or exp.startswith(jobs_b + "/"):
+                continue
+            in_home = (exp == home or exp.startswith(home + "/"))
+            if not in_home and (exp.startswith("/tmp/") or exp == "/var/tmp" or exp.startswith("/var/tmp/")):
+                continue
+            td = tilde(d)
+            if td not in out:
+                out.append(td)
+        return out
+
+    def api_dirs(self, q=None):
         """Folders and the models a new session can take: Claude Code's own, or the SDK runner's provider (one base URL)."""
-        models = {"claude": [] if self.claude_missing() else list(MODEL_CHOICES["claude_login"]), "sdk": None}
-        if self.sdk_ready():
-            env = env_read(self.cfg.sdk_env)
-            pid = self.sdk_provider(env)
-            model = env.get("CC_SDK_MODEL") or "sonnet"
-            title = "Claude Code" if pid == "claude_login" else MODEL_PRESETS[pid]["title"] or urllib.parse.urlsplit(
-                env.get("CC_SDK_BASE_URL", "")).hostname or ""
-            models["sdk"] = {"provider": pid, "title": title, "model": model,
-                             "models": MODEL_CHOICES.get(pid) or [model]}
-        return {"dirs": [tilde(d) for d in self.recent_dirs(cached=True)], "models": models}
+        clean_dirs = self.clean_recent_dirs()
+        if not q:
+            models = {"claude": [] if self.claude_missing() else list(MODEL_CHOICES["claude_login"]), "sdk": None}
+            if self.sdk_ready():
+                env = env_read(self.cfg.sdk_env)
+                pid = self.sdk_provider(env)
+                model = env.get("CC_SDK_MODEL") or "sonnet"
+                title = "Claude Code" if pid == "claude_login" else MODEL_PRESETS[pid]["title"] or urllib.parse.urlsplit(
+                    env.get("CC_SDK_BASE_URL", "")).hostname or ""
+                models["sdk"] = {"provider": pid, "title": title, "model": model,
+                                 "models": MODEL_CHOICES.get(pid) or [model]}
+            return {"dirs": clean_dirs, "models": models}
+
+        if len(q) > 4096:
+            return 400, {"error": "query too long"}
+
+        exp_q = os.path.expanduser(q)
+        exists = os.path.isdir(exp_q)
+
+        hints = []
+        for td in clean_dirs:
+            if td.lower().startswith(q.lower()) or os.path.expanduser(td).lower().startswith(exp_q.lower()):
+                if td not in hints:
+                    hints.append(td)
+                    if len(hints) >= 8:
+                        break
+
+        if len(hints) < 8:
+            if q.endswith("/"):
+                scan_dir = exp_q
+                name_prefix = ""
+            else:
+                scan_dir = os.path.dirname(exp_q)
+                name_prefix = os.path.basename(exp_q)
+
+            scanned = []
+            try:
+                if os.path.isdir(scan_dir):
+                    with os.scandir(scan_dir) as it:
+                        for entry in it:
+                            try:
+                                if not entry.is_dir():
+                                    continue
+                            except OSError:
+                                continue
+                            if entry.name.startswith(".") and not name_prefix.startswith("."):
+                                continue
+                            if name_prefix and not entry.name.lower().startswith(name_prefix.lower()):
+                                continue
+                            scanned.append(entry)
+                    scanned.sort(key=lambda e: e.name.lower())
+            except OSError:
+                scanned = []
+
+            for entry in scanned:
+                try:
+                    td = tilde(entry.path)
+                    if td not in hints:
+                        hints.append(td)
+                        if len(hints) >= 8:
+                            break
+                except OSError:
+                    continue
+
+        return {"q": q, "hints": hints, "exists": exists}
 
     @staticmethod
     def sdk_provider(env):
@@ -9748,21 +9829,65 @@ class Bot:
              and k != "custom"), "custom")
 
     def api_new(self, uid, body):
-        text = str(body.get("text") or "").strip()
+        files = []
+        if "raw" in body:
+            try:
+                parsed = parse_multipart(body.get("content_type", ""), body.get("raw", b""))
+            except Exception:
+                parsed = None
+            if parsed:
+                fields, _first = parsed
+                files = fields.pop("_files", None) or ([_first] if _first else [])
+            else:
+                fields = {}
+            if len(files) > UPLOAD_FILES_MAX:
+                return 413, {"ok": False, "error": _t("No more than %d files at a time") % UPLOAD_FILES_MAX}
+            if any(len(d) > FILE_MAX for _, d in files):
+                return 413, {"ok": False, "error": _t("File is larger than 50 MB")}
+            text = str(fields.get("text") or "").strip()
+            cwd = os.path.expanduser(str(fields.get("cwd") or self.cfg.default_cwd))
+            sdk_val = fields.get("sdk")
+            sdk = str(sdk_val).lower() in ("1", "true")
+            model = str(fields.get("model") or "").strip()
+        else:
+            text = str(body.get("text") or "").strip()
+            cwd = os.path.expanduser(str(body.get("cwd") or self.cfg.default_cwd))
+            sdk = body.get("sdk") is True
+            model = str(body.get("model") or "").strip()  # this session only; empty: the default
+
         if not text:
             return 400, {"ok": False, "error": _t("Describe the task")}
-        cwd = os.path.expanduser(str(body.get("cwd") or self.cfg.default_cwd))
         if not os.path.isdir(cwd):
             return 400, {"ok": False, "error": _t("Folder not found")}
-        sdk = body.get("sdk") is True
-        model = str(body.get("model") or "").strip()  # this session only; empty: the default
         if model and not (_MODEL_NAME.fullmatch(model) if sdk or self.claude_missing() else model in MODEL_CHOICES["claude_login"]):
             return 400, {"ok": False, "error": "model"}
         if sdk and not self.sdk_ready(True):
             return 400, {"ok": False, "error": _t("The SDK runner is not available")}
-        sid = self.do_new(uid, cwd, text, sdk, model)
+
+        folder = None
+        saved = []
+        prompt = text
+        if files:
+            folder = self.new_inbox_folder(text)
+            try:
+                for fname, data in files:
+                    saved.append((save_inbox(self.cfg.home, data, fname, self.clock(), folder), len(data), mimetypes.guess_type(fname)[0]))
+            except OSError:
+                return 500, {"ok": False, "error": _t("Could not save the file")}
+            prompt = text + "\n\n" + files_message(saved, "")
+
+        sid = self.do_new(uid, cwd, prompt, sdk, model)
         if not sid:
-            return 502, {"ok": False, "error": _t("Could not create the session")}
+            resp = {"ok": False, "error": _t("Could not create the session")}
+            if files:
+                resp["paths"] = [x[0] for x in saved]
+            return 502, resp
+
+        if files:
+            with self.store.lock:
+                self.store.data.setdefault("inbox_dirs", {})[sid] = folder
+            self.store.save()
+
         return 200, {"ok": True, "id": sid}
 
     def api_dispatch(self, uid, method, path, body, device=None):
@@ -10537,6 +10662,13 @@ class WebServer:
                     q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
                     code, obj = srv.bot.api_file(uid, (q.get("path") or [""])[0])
                     return self._json(code, obj)
+                if method == "GET" and path == "/api/dirs":
+                    qs = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+                    q = (qs.get("q") or [None])[0]
+                    res = srv.bot.api_dirs(q=q)
+                    if isinstance(res, tuple):
+                        return self._json(res[0], res[1])
+                    return self._json(200, res)
                 if method == "POST":
                     try:
                         length = int(self.headers.get("Content-Length") or 0)
@@ -10544,16 +10676,17 @@ class WebServer:
                         length = -1
                     upload = re.fullmatch(r"/api/session/[^/]+/upload", path) is not None
                     voice = path == "/api/voice"
+                    new_multipart = path == "/api/new" and (self.headers.get("Content-Type") or "").lower().startswith("multipart/")
                     if length < 0:
                         return self._json(400, {"error": "bad length"})
-                    if length > (UPLOAD_MAX if upload else VOICE_MAX if voice else MAX_BODY):
+                    if length > (UPLOAD_MAX if (upload or new_multipart) else VOICE_MAX if voice else MAX_BODY):
                         self.close_connection = True
                         if voice:
                             return self._json(413, {"ok": False, "code": "too_large", "error": "too large"})
                         return self._json(413, {"error": "too large"})
                     raw = self.rfile.read(length) if length else b""
                     self._body_read = True
-                    if upload or voice:
+                    if upload or voice or new_multipart:
                         body = {"content_type": self.headers.get("Content-Type", ""), "raw": raw}
                         raw = b""
                     try:

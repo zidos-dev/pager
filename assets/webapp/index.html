@@ -338,6 +338,19 @@ textarea.field{min-height:120px;resize:vertical}
 .dirs{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 .dirs .chip{background:var(--soft)}
 .dirs .chip[aria-pressed="true"]{background:var(--action);color:var(--action-ink)}
+.natt{display:flex;align-items:center;gap:8px;margin-top:8px;min-width:0}
+#new-screen .clip{background:var(--soft);color:var(--muted)}
+#n-attach{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;min-width:0}
+#n-attach[hidden]{display:none}
+#n-attach::-webkit-scrollbar{display:none}
+#n-other{margin-top:8px}
+#n-path{min-height:44px}
+#n-hints{display:flex;flex-direction:column;margin-top:4px}
+#n-hints:empty{display:none}
+.hint{min-height:44px;padding:0 12px;border-radius:12px;background:transparent;color:var(--ink);font-size:15px;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:background-color .12s}
+.hint:active{background:var(--soft)}
+@media (hover:hover){.hint:hover{background:var(--soft)}}
+#n-nodir{margin-top:6px}
 #model-sheet{max-height:92dvh;overflow-y:auto;overscroll-behavior:contain}
 /* выбор провайдер → модель: свёрнутая строка с текущим, по тапу строки на месте; выбранное инверсией */
 .mpk{display:grid;gap:6px;margin-top:8px}
@@ -517,7 +530,9 @@ textarea.field{min-height:120px;resize:vertical}
   <div class="navbar" data-nav hidden><button class="back" type="button" data-back><svg width="26" height="26"><use href="#i-back"/></svg><span data-i18n="sessions">Sessions</span></button><span class="nt" data-i18n="newSession">New session</span></div>
   <header class="head"><h2 data-i18n="newSession">New session</h2><div class="state" data-i18n="newIntro">Describe a task — Claude Code will start a background session.</div></header>
   <section class="block"><label for="n-text" class="state" style="display:block;margin:0 0 8px" data-i18n="task">Task</label><textarea class="field" id="n-text" placeholder="For example: check last night's nginx logs and tell me if there were any 5xx" data-i18n-attr="placeholder:taskPh"></textarea>
+    <div class="natt"><button class="clip" type="button" id="n-clip" aria-label="Attach files" data-i18n-attr="aria-label:attachAria"><svg width="22" height="22"><use href="#i-clip"/></svg></button><input type="file" id="n-file" multiple hidden><div id="n-attach" hidden></div></div>
     <div class="state" style="margin-top:12px" data-i18n="folder">Folder</div><div class="dirs" id="n-dirs"></div>
+    <div id="n-other" hidden><input class="field" id="n-path" type="text" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" placeholder="~/code/project" aria-label="Folder path" data-i18n-attr="aria-label:pathAria" aria-controls="n-hints"><div id="n-hints" role="listbox" aria-label="Folders" data-i18n-attr="aria-label:folder"></div><div class="state" id="n-nodir" data-i18n="noDir" hidden>No such folder</div></div>
     <div class="state" style="margin-top:16px" id="n-model-l" data-i18n="modelTitle" hidden>Model</div><div class="mpk" id="n-model" hidden></div></section>
 </main>
 
@@ -968,6 +983,9 @@ const STR = {
   "confStop": "Stop “{name}”? The conversation is kept.",
   "confStopPlain": "Stop the session?",
   "homeDir": "Home (~)",
+  "otherDir": "Other",
+  "noDir": "No such folder",
+  "pathAria": "Folder path",
   "start": "Start",
   "launched": "Session started",
   "notStarted": "Didn't start",
@@ -1280,6 +1298,9 @@ const STR = {
   "confStop": "Остановить «{name}»? Разговор сохранится.",
   "confStopPlain": "Остановить сессию?",
   "homeDir": "Домашняя (~)",
+  "otherDir": "Другая",
+  "noDir": "Такой папки нет",
+  "pathAria": "Путь к папке",
   "start": "Запустить",
   "launched": "Сессия запущена",
   "notStarted": "Не запустилась",
@@ -2049,18 +2070,23 @@ $("s-hist").addEventListener("click", async e => {
 $("s-clip").addEventListener("click", () => { $("s-text").blur(); $("s-file").click(); });
 function renderAtt(){
   const box = $("s-attach"); box.hidden = !atts.length; box.textContent = "";
-  atts.forEach(a => {
-    const el = document.createElement("div"); el.className = "att";
-    if (a.url){ const im = document.createElement("img"); im.src = a.url; im.alt = ""; el.appendChild(im); }
-    else { const n = document.createElement("div"); n.className = "an"; const b = document.createElement("b"); b.textContent = a.file.name; const sz = document.createElement("span"); sz.textContent = a.file.size >= 1048576 ? (a.file.size / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(a.file.size / 1024)) + " KB"; n.append(b, sz); el.appendChild(n); }
-    const x = document.createElement("button"); x.type = "button"; x.className = "att-x"; x.setAttribute("aria-label", t("removeAria"));
-    x.addEventListener("click", () => { if (a.url) URL.revokeObjectURL(a.url); atts = atts.filter(q => q !== a); renderAtt(); });
-    el.appendChild(x); box.appendChild(el);
-  });
+  atts.forEach(a => box.appendChild(attEl(a, a => { atts = atts.filter(q => q !== a); renderAtt(); })));
   const nAtt = atts.length + [...attDrafts.values()].reduce((n, l) => n + l.length, 0);
   try{ nAtt ? sessionStorage.setItem("cc-att", nAtt) : sessionStorage.removeItem("cc-att"); }catch(e){}  // перезагрузка сбросит черновик — скажем об этом
   autosize(); $("s-text").dispatchEvent(new Event("input"));  // voice.js пересчитает микрофон/«Отправить»
 }
+/* плашка вложения — общая для сессии и «Новой сессии» */
+function attEl(a, onRemove){
+    const el = document.createElement("div"); el.className = "att";
+    if (a.url){ const im = document.createElement("img"); im.src = a.url; im.alt = ""; el.appendChild(im); }
+    else { const n = document.createElement("div"); n.className = "an"; const b = document.createElement("b"); b.textContent = a.file.name; const sz = document.createElement("span"); sz.textContent = a.file.size >= 1048576 ? (a.file.size / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(a.file.size / 1024)) + " KB"; n.append(b, sz); el.appendChild(n); }
+    const x = document.createElement("button"); x.type = "button"; x.className = "att-x"; x.setAttribute("aria-label", t("removeAria"));
+    x.addEventListener("click", () => { if (a.url) URL.revokeObjectURL(a.url); onRemove(a, el); });
+    el.appendChild(x); return el;
+}
+/* лимиты сервера: 10 файлов, 50 МБ на файл, 100 МБ вместе */
+const attErr = (have, fs) => { const all = have.concat(fs); return all.length > 10 ? "max10" : fs.some(f => f.size > 50 * 1048576) ? "over50" : all.reduce((n, f) => n + f.size, 0) > 100 * 1048576 ? "over100" : ""; };
+function authH(){ const h = {}; if (initData) h["X-Tg-Init-Data"] = initData; else if (deviceToken) h["X-Device-Token"] = deviceToken; if (DEV) h["X-Dev"] = "1"; return h; }
 function clearAtt(){ if (!atts.length) return; atts.forEach(a => a.url && URL.revokeObjectURL(a.url)); atts = []; renderAtt(); }
 /* миниатюра 112 px (56 × 2) уменьшенным кадром: фото с камеры iPhone (3213×5712) в <img> занимает ~70 МБ и роняет веб-вью —
    черновик пропадал «просто ничего» (владелец 20.10 11:17). Не вышло — плашка с именем файла. */
@@ -2077,10 +2103,7 @@ async function thumb(f){
 }
 async function addFiles(list){
   const fs = Array.from(list || []); if (!fs.length || !sess) return;
-  const all = atts.map(a => a.file).concat(fs);
-  if (all.length > 10) return toast(t("max10"));
-  if (fs.some(f => f.size > 50 * 1048576)) return toast(t("over50"));
-  if (all.reduce((n, f) => n + f.size, 0) > 100 * 1048576) return toast(t("over100"));
+  const err = attErr(atts.map(a => a.file), fs); if (err) return toast(t(err));
   const sid0 = sess.id, add = [];
   for (const f of fs) add.push({file: f, url: await thumb(f)});  // по одной: пик памяти — один кадр
   if (!sess || sess.id !== sid0){ add.forEach(a => a.url && URL.revokeObjectURL(a.url)); return; }
@@ -2095,7 +2118,7 @@ async function sendDraft(){
   sending = true; $("s-send").disabled = true;
   const sid0 = sess.id, ta = $("s-text"), cap = ta.value.trim(), batch = atts.slice();
   const fd = new FormData(); batch.forEach(a => fd.append("file", a.file, a.file.name)); if (cap) fd.append("caption", cap);
-  const h = {}; if (initData) h["X-Tg-Init-Data"] = initData; else if (deviceToken) h["X-Device-Token"] = deviceToken; if (DEV) h["X-Dev"] = "1";
+  const h = authH();
   toast(batch.length > 1 ? t("uploadingN", {n: batch.length}) : t("uploading1", {name: batch[0].file.name}));
   try{
     const r = await fetch(`/api/session/${encodeURIComponent(sid0)}/upload`, {method: "POST", headers: h, body: fd});
@@ -2556,7 +2579,7 @@ $("a-arch").addEventListener("click", () => {
 });
 
 /* новая сессия */
-let dir = null, nItems = [], nPick = "", nOpen = false;
+let dir = null, dirHome = null, nItems = [], nPick = "", nOpen = false, nAtts = [], nGen = 0, hintT = 0, hintSeq = 0;
 function nPaint(){ const on = nItems.length > 1; $("n-model").hidden = $("n-model-l").hidden = !on; if (on) pvPaint($("n-model"), nItems, nPick, nOpen); }
 function nModels(m){  // Claude Code (TUI) и модели SDK-провайдера; провайдера здесь не меняют: адрес у раннера один
   const c = (m && m.claude) || [], s = m && m.sdk, cc = "Claude Code";
@@ -2567,19 +2590,55 @@ function nModels(m){  // Claude Code (TUI) и модели SDK-провайде�
 $("n-model").addEventListener("click", e => { if (e.target.closest("[data-pv]")){ nOpen = !nOpen; nPaint();
     if (nOpen) $("n-model").scrollIntoView({block: "end", behavior: RM ? "auto" : "smooth"}); return; }  /* раскрытый список не прячется под «Запустить» */ const b = e.target.closest("[data-p]"); if (b){ nPick = b.dataset.p; nOpen = false; nPaint(); haptic(); } });
 async function openNew(instant){
-  if (instant) show("new"); else push("new");  // диплинк при загрузке: экран сразу, без перехода от невиданного списка $("n-text").value = ""; dir = null; nModels(null);
-  try{ const r = await api("dirs"); const ds = r.dirs || []; dir = ds[0] || null; nModels(r.models);
-    $("n-dirs").innerHTML = ds.map((d, i) => `<button class="chip" type="button" data-d="${esc(d)}" aria-pressed="${i === 0}">${d === "~" ? t("homeDir") : esc(d)}</button>`).join(""); }catch(e){}
+  if (instant) show("new"); else push("new");  // диплинк при загрузке: экран сразу, без перехода от невиданного списка
+  nReset(); nModels(null);
+  try{ const r = await api("dirs"); dirHome = (r.dirs || [])[0] || null; nModels(r.models);
+    $("n-dirs").innerHTML = (dirHome ? `<button class="chip" type="button" data-d="h" aria-pressed="true">${dirHome === "~" ? t("homeDir") : esc(dirHome)}</button>` : "") + `<button class="chip" type="button" data-d="o" aria-pressed="false">${t("otherDir")}</button>`;
+    nDir(!dirHome); }catch(e){}
   mainButton();  // без автофокуса: клавиатура не выезжает посреди перехода
 }
-$("n-dirs").addEventListener("click", e => { const b = e.target.closest(".chip"); if (!b) return; dir = b.dataset.d; $("n-dirs").querySelectorAll(".chip").forEach(x => x.setAttribute("aria-pressed", x === b)); haptic(); });
+function nReset(){ $("n-text").value = ""; $("n-path").value = ""; $("n-hints").textContent = ""; $("n-nodir").hidden = true; $("n-other").hidden = true; dir = dirHome = null; clearTimeout(hintT); hintSeq++; nClear(); }
+/* папка: по умолчанию или своя — путь с подсказками по мере набора (владелец 09.11: без списка предложенных каталогов) */
+function nDir(other){ $("n-dirs").querySelectorAll(".chip").forEach(x => x.setAttribute("aria-pressed", (x.dataset.d === "o") === other)); $("n-other").hidden = !other; dir = other ? ($("n-path").value.trim() || null) : dirHome; }
+$("n-dirs").addEventListener("click", e => { const b = e.target.closest(".chip"); if (!b) return; const other = b.dataset.d === "o"; nDir(other); if (other) $("n-path").focus(); haptic(); });
+async function nHints(){
+  const q = $("n-path").value.trim(), seq = ++hintSeq;
+  if (!q){ $("n-hints").textContent = ""; $("n-nodir").hidden = true; return; }
+  try{ const r = await api("dirs?q=" + encodeURIComponent(q)); if (seq !== hintSeq) return;  // ответ на устаревший ввод не перетирает свежий
+    $("n-hints").innerHTML = (r.hints || []).filter(h => h + "/" !== q && h !== q).map(h => `<button class="hint" type="button" role="option" data-h="${esc(h)}">${esc(h)}</button>`).join("");
+    $("n-nodir").hidden = r.exists !== false; }catch(e){}
+}
+$("n-path").addEventListener("input", () => { dir = $("n-path").value.trim() || null; clearTimeout(hintT); hintT = setTimeout(nHints, 150); });
+$("n-hints").addEventListener("click", e => { const b = e.target.closest("[data-h]"); if (!b) return; $("n-path").value = b.dataset.h + "/"; $("n-path").focus(); $("n-path").dispatchEvent(new Event("input")); haptic(); });
+/* файлы к задаче: те же плашки и лимиты, что в сессии */
+/* плашки добавляются и убираются по одной: пересборка заново проигрывала появление у оставшихся */
+function nPut(a){ $("n-attach").appendChild(attEl(a, (a, el) => { nAtts = nAtts.filter(q => q !== a); el.remove(); $("n-attach").hidden = !nAtts.length; })); $("n-attach").hidden = false; }
+function nClear(){ nGen++; nAtts.forEach(a => a.url && URL.revokeObjectURL(a.url)); nAtts = []; $("n-attach").textContent = ""; $("n-attach").hidden = true; }
+async function nAdd(list){
+  const fs = Array.from(list || []); if (!fs.length) return;
+  const err = attErr(nAtts.map(a => a.file), fs); if (err) return toast(t(err));
+  const g = nGen, add = []; for (const f of fs) add.push({file: f, url: await thumb(f)});
+  if (g !== nGen){ add.forEach(a => a.url && URL.revokeObjectURL(a.url)); return; }  // экран сбросили, пока готовились миниатюры
+  nAtts.push(...add); add.forEach(nPut);
+}
+$("n-clip").addEventListener("click", () => { $("n-text").blur(); $("n-file").click(); });  // один click(): двойной роняет выбор в iOS
+$("n-file").addEventListener("change", () => { nAdd($("n-file").files); $("n-file").value = ""; });
+$("n-text").addEventListener("paste", e => { const fs = Array.from(e.clipboardData?.files || []).filter(f => /^image\//.test(f.type)); if (fs.length){ e.preventDefault(); nAdd(fs); } });
 $("n-text").addEventListener("input", mainButton);
 let launching = false;
 async function launch(){
   const text = $("n-text").value.trim(); if (!text || launching) return;
   launching = true; $("fab").disabled = true; try{ tg && tg.MainButton.showProgress(); }catch(e){}
   try{ const body = {text, cwd: dir}; if (nPick){ body.model = nPick.slice(2); if (nPick[0] === "s") body.sdk = true; }
-    const r = await api("new", body); if (r.ok){ haptic("ok"); toast(t("launched")); await loadList(); if (r.id){ settleNav("new"); show("list"); openSession(r.id); } else pop(); } else toast(r.error || t("notStarted")); }
+    let r;
+    if (nAtts.length){  // с файлами — multipart, как загрузка в сессию
+      const fd = new FormData(); fd.append("text", text); if (dir) fd.append("cwd", dir); if (body.model) fd.append("model", body.model); if (body.sdk) fd.append("sdk", "1");
+      nAtts.forEach(a => fd.append("file", a.file, a.file.name));
+      const res = await fetch("/api/new", {method: "POST", headers: authH(), body: fd}); r = await res.json().catch(() => ({}));
+      if (!res.ok) r = {error: res.status === 401 ? t("authMsg") : r.error || (res.status === 413 ? t("tooBig") : t("notStarted"))};
+    } else r = await api("new", body);
+    /* форму чистит следующее открытие: пустая форма в уезжающем экране выглядит сбоем */
+    if (r.ok){ haptic("ok"); toast(t("launched")); await loadList(); if (r.id){ settleNav("new"); show("list"); openSession(r.id); } else pop(); } else toast(r.error || t("notStarted")); }
   catch(e){ toast(t("launchFail")); }
   finally{ launching = false; try{ tg && tg.MainButton.hideProgress(); }catch(e){} mainButton(); }
 }
