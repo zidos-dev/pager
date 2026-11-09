@@ -104,6 +104,11 @@ _RU = {
     "Cancelled.": "Отменено.",
     "Choose a folder:": "Выберите папку:",
     "Claude quota": "Квота Claude",
+    "Live Claude quota": "Живая квота Claude",
+    "Live quota: refreshes itself while it is on screen. Without widgets: /quota":
+        "Живая квота: обновляется сама, пока на экране. Без виджетов: /quota",
+    "reset at %s": "сброс в %s",
+    "updated at %s": "обновлено в %s",
     "Claude quota\n"
     "No data yet: file not found. It is updated while any Claude Code is open.":
         "Квота Claude\n"
@@ -829,6 +834,36 @@ REWIDTH_EVERY = 10  # s between garbled-screen cures of one session in the mini-
 TOPIC_RENAME_SETTLE = 90  # a new name waits until it stops changing: every rename is a service message
 STALE_QUOTA = 30 * 60
 
+# Bot API 10.4 widget: fixed HTML in the message, numbers come from the bot (chat_data at sending, then
+# answers to background requests while it is on screen). No network in the sandbox; colors are the bubble's.
+LIVE_WIDGET = """<style>
+body{margin:0;padding:10px 12px}
+.h{font-weight:500;margin-bottom:6px}
+.r{display:flex;align-items:center;gap:10px;margin:6px 0}
+.n{flex:0 0 36%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.b{flex:1;height:6px;border-radius:3px;background:var(--tg-theme-secondary-bg-color)}
+.b i{display:block;height:100%;border-radius:3px;background:var(--tg-theme-button-color)}
+.b i.hot{background:var(--tg-theme-destructive-text-color)}
+.v{min-width:4ch;text-align:right;font-variant-numeric:tabular-nums}
+.s{color:var(--tg-theme-hint-color);font-size:.85em;margin-top:4px}
+</style><div class="h" id="h"></div><div id="rows"></div><div class="s" id="s"></div>
+<script>
+var W=window.TelegramWidget,L=__L__;
+function el(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}
+function row(n,p){var r=el("div","r"),b=el("div","b"),i=el("i",p>=85?"hot":"");
+i.style.width=Math.max(0,Math.min(100,p||0))+"%";b.appendChild(i);
+r.appendChild(el("div","n",n));r.appendChild(b);r.appendChild(el("div","v",p==null?"\\u2014":Math.round(p)+"%"));return r}
+function draw(t){var d=null;try{d=JSON.parse(t)}catch(e){}if(!d)return;
+var rs=document.getElementById("rows");rs.textContent="";
+rs.appendChild(row(L.h5,d.h5));rs.appendChild(row(L.d7,d.d7));
+(d.p||[]).forEach(function(x){rs.appendChild(row(x[0],x[1]))});
+var s=[];if(d.rs)s.push(L.rs.replace("%s",d.rs));if(d.u)s.push(L.u.replace("%s",d.u));
+document.getElementById("s").textContent=d.st?L.st:s.join(" \\u00b7 ")}
+function ask(){if(!W||!W.isActive)return;W.request("q").then(function(a){draw(a.result)},function(){})}
+document.getElementById("h").textContent=L.t;
+if(W){draw(W.chatData);W.onEvent("activated",ask);ask();setInterval(ask,10000)}
+</script>"""
+
 
 def panel_title():
     return _t("🎛 Agents")
@@ -848,7 +883,7 @@ def route_prompt():
 
 
 def bot_commands():
-    return [("s", _t("Session list")), ("new", _t("New session")), ("quota", _t("Claude quota")),
+    return [("s", _t("Session list")), ("new", _t("New session")), ("quota", _t("Claude quota")), ("live", _t("Live Claude quota")),
             ("screen", _t("Session screen")), ("stop", _t("Stop a session")), ("pwa", _t("App on your phone")),
             ("devices", _t("Devices of the app")), ("help", _t("Help"))]
 
@@ -2147,6 +2182,62 @@ def short(s, n):
     return s if len(s) <= n else s[:n - 1] + "…"
 
 
+def rich_plain(x, sep=""):
+    """The words of a Bot API RichText / RichBlock tree (a rich message, a quote from one): text fields only, no links,
+    ids or buttons. Inline pieces join as they are, blocks, list items and table cells by lines."""
+    if isinstance(x, str):
+        return x
+    if isinstance(x, list):
+        return sep.join(t for t in (rich_plain(i, sep) for i in x) if t)
+    if not isinstance(x, dict):
+        return ""
+    if x.get("type") == "bank_card_number":
+        return "[card]"
+    head = " ".join(t for t in (rich_plain(x.get(k)) for k in ("label", "summary", "text", "expression", "alternative_text")) if t)
+    return "\n".join(t for t in [head] + [rich_plain(x.get(k), "\n") for k in ("blocks", "items", "cells")]
+                     + [rich_plain(x.get(k)) for k in ("caption", "credit")] if t)
+
+
+def mask_cards(text, entities):
+    """Card numbers Telegram marked (bank_card_number, Bot API 10.4) -> [card]: the group's words go to outside models.
+    Offsets are UTF-16 code units. shortcut: only what Telegram marked, an unmarked number stays."""
+    spans = sorted(((e.get("offset", 0), e.get("length", 0)) for e in entities or () if e.get("type") == "bank_card_number"), reverse=True)
+    if not spans or not isinstance(text, str):
+        return text
+    b = text.encode("utf-16-le")
+    for o, n in spans:
+        b = b[:2 * o] + "[card]".encode("utf-16-le") + b[2 * (o + n):]
+    return b.decode("utf-16-le", "replace")
+
+
+def card_values(m):
+    """The card numbers Telegram marked in a message: text, caption and the card nodes of a rich message."""
+    out = []
+    for t, ents in ((m.get("text"), m.get("entities")), (m.get("caption"), m.get("caption_entities"))):
+        b = (t or "").encode("utf-16-le")
+        out += [b[2 * e.get("offset", 0):2 * (e.get("offset", 0) + e.get("length", 0))].decode("utf-16-le", "replace")
+                for e in ents or () if e.get("type") == "bank_card_number"]
+
+    def walk(x):
+        if isinstance(x, list):
+            for i in x:
+                walk(i)
+        elif isinstance(x, dict):
+            if x.get("type") == "bank_card_number":
+                out.append(rich_plain(x.get("text")))
+            else:
+                for v in x.values():
+                    walk(v)
+    walk(m.get("rich_message"))
+    return [c for c in out if c]
+
+
+def msg_text(m):
+    """Text, caption or the words of a rich message (another bot's answer has no text); card numbers masked."""
+    return (mask_cards(m.get("text"), m.get("entities")) or mask_cards(m.get("caption"), m.get("caption_entities"))
+            or rich_plain((m.get("rich_message") or {}).get("blocks"), "\n"))
+
+
 def summary_line(sessions):
     c = {k: 0 for k in RANK}
     for s in sessions:
@@ -3264,7 +3355,8 @@ class TG:
 
     def get_updates(self, offset):
         return self.call("getUpdates", {"offset": offset, "timeout": 30,
-                                        "allowed_updates": ["message", "edited_message", "callback_query", "my_chat_member"]}, timeout=45)
+                                        "allowed_updates": ["message", "edited_message", "callback_query", "my_chat_member",
+                                                            "widget_query"]}, timeout=45)
 
     @staticmethod
     def _reply(reply_to):
@@ -3290,6 +3382,13 @@ class TG:
         if parse_mode:
             p["parse_mode"] = parse_mode
         return self._notify(chat_id, self.call("sendMessage", p), thread)
+
+    def send_widget(self, chat_id, html, caption, chat_data, thread=None):
+        """Bot API 10.4 sendWidget (private chats only in production); raises TGError where it is refused."""
+        p = {"chat_id": chat_id, "html": html, "caption": caption, "chat_data": chat_data, "allow_queries": True}
+        if thread:
+            p["message_thread_id"] = thread
+        return self._notify(chat_id, self.call("sendWidget", p), thread)
 
     def send(self, chat_id, text, markup=None, reply_to=None, thread=None, silent=False):
         """Plain text, chunks <= 4000. -> list of sendMessage results."""
@@ -3562,6 +3661,9 @@ def asks_change(text):
     """Words of a change request (shortcut: word stems, not intent; a question with «изменения» goes to opus too)."""
     return bool(_CHANGE_RE.search(text or ""))
 CHAT_TAIL = 12  # last chat messages put into every question
+MEDIA_DIR = ".zidos-media"  # a question's pictures and video frames, in the chat clone: every engine reads it (bwrap sees only the clone)
+MEDIA_FRAMES = 4            # frames of a video, spread over its length
+MEDIA_KEEP = 30             # the newest questions' media folders kept
 RESPONDER_WAIT = 1800  # s: a change the owner has not decided by then goes to the backlog, and the chat moves on
 RESPONDER_RUNNER_WAIT = 60  # s: a question waits this long for a runner that is still starting
 RESPONDER_TIMEOUT = 600  # s: a question without a result by then is given up, so the queue never stalls
@@ -4468,7 +4570,7 @@ class Bot:
         self.last_forward = {}
         self.reply_to = {}
         self.status = {}
-        self.topics_enabled = False
+        self.topics_enabled, self.bot_username = False, None
         self._plock = threading.RLock()
         self._ask_cache = {}
         self.names_busy = False
@@ -5508,6 +5610,48 @@ class Bot:
         self.panel_mode(chat, "quota")
         self.panel_publish(chat)
 
+    def live_snapshot(self):
+        """Quota numbers for the live widget: compact JSON, at most 1024 bytes (Telegram's limit for its data).
+        A broken quota file gives empty numbers, never an exception: every widget query must still be answered."""
+        try:
+            q = self.api_quota()
+            upd = q["updated"]
+            d = {"h5": q["h5"], "d7": q["d7"], "rs": q["h5_reset"], "st": q["stale"],
+                 "u": datetime.fromtimestamp(upd).strftime("%H:%M") if upd else None,
+                 "p": [[short(r["title"], 40), r["pct"]] for r in self.quota_pinned()]}
+        except (ValueError, OSError, OverflowError, TypeError) as e:
+            log("live snapshot: %s" % type(e).__name__)
+            d = {"h5": None, "d7": None, "p": []}
+        while True:
+            s = json.dumps(d, ensure_ascii=False, separators=(",", ":"))
+            if len(s.encode()) <= 1024 or not d["p"]:
+                return s
+            d["p"].pop()
+
+    def send_live(self, chat):
+        """The live quota widget in the private chat; the quota panel where Telegram refuses widgets."""
+        if self.claude_missing():
+            return self.send_quota(chat)
+        labels = {"t": _t("Live Claude quota"), "h5": _t("5 h"), "d7": _t("7 d"), "rs": _t("reset at %s"),
+                  "u": _t("updated at %s"), "st": _t("⚠️ Data is stale: it is updated while any Claude Code is open.")}
+        html = LIVE_WIDGET.replace("__L__", json.dumps(labels, ensure_ascii=False).replace("</", "<\\/"))
+        try:
+            self.tg.send_widget(chat, html, _t("Live quota: refreshes itself while it is on screen. "
+                                               "Without widgets: /quota"), self.live_snapshot())
+        except TGError as e:
+            log("sendWidget refused: %s" % e)
+            self.send_quota(chat)
+
+    def on_widget_query(self, q):
+        """A request from the live widget: answered every time (else the widget waits for TIMEOUT), data only to the owner."""
+        p = {"widget_query_id": q.get("id")}
+        if self.authorized((q.get("from") or {}).get("id"), (q.get("chat") or {}).get("type")):
+            p["data"] = self.live_snapshot()
+        try:
+            self.tg.call("answerWidgetQuery", p)
+        except TGError as e:
+            log("answerWidgetQuery failed: %s" % e)
+
     def clean_chat(self, chat):
         now = self.clock()
         keep = {(self.panel_state(chat).get("mid")),
@@ -5532,6 +5676,7 @@ class Bot:
         try:
             me = self.tg.get_me() or {}
             self.topics_enabled = bool(me.get("has_topics_enabled"))
+            self.bot_username = me.get("username") or None  # t.me/<bot>/<thread> opens a session's topic (Bot API 10.4)
             if self.tg_chat is self.tg:
                 self.chat_username = me.get("username")
         except TGError as e:
@@ -5939,7 +6084,9 @@ class Bot:
         return self.cfg.responder_name or self.chat_username or "Bot"
 
     def responder_on_message(self, m, edited=False):
-        text, me = m.get("text"), self.chat_username or self.chat_me()
+        text, me = mask_cards(m.get("text"), m.get("entities")), self.chat_username or self.chat_me()
+        if not isinstance(text, str):  # a photo or a video: the mention is in its caption
+            text = mask_cards(m.get("caption"), m.get("caption_entities")) or ("" if self.chat_media_att(m)[0] else None)
         if not isinstance(text, str) or self.store.data.get("responder", {}).get("off"):
             return
         if not me:  # the bot's own name is unknown (no network at start): keep it, answered once the name is known
@@ -5963,7 +6110,7 @@ class Bot:
             return
         if not q:  # a bare mention: about the message it replies to
             log("responder bare mention: %s" % ",".join(sorted(m)))
-            if not self.reply_context(m):
+            if not self.chat_media_att(m)[0] and not self.reply_context(m):
                 # Telegram leaves the reply out when the bot cannot see that message (sent before it joined)
                 try:
                     self.tg_chat.send(self.cfg.responder_chat, _t(
@@ -5981,6 +6128,13 @@ class Bot:
         if stuck:
             self.responder_drop()
         who = (m.get("from") or {}).get("first_name") or "?"
+        # the media of the question and of the message it replies to: fetched off the poll thread, after the hourly limit
+        srcs = [x for x in [(m, "q", "attached to the question", None)] + [
+            (r, k, "in the message it replies to", m.get("message_id")) for r, k in (
+                (m.get("reply_to_message"), "r"), (m.get("external_reply"), "x")) if r and str(((r.get("from") or {}).get("username")) or "").lower() != me.lower()]
+            if self.chat_media_att(x[0])[0]]
+        rec = {"mid": m.get("message_id"), "q": q, "who": who, "ctx": self.reply_context(m), "re_bot": self.reply_to_bot(m),
+               "from": (m.get("from") or {}).get("id")}
         now = self.clock()
         with self._resp_lock:
             self._resp_times = [t for t in self._resp_times if now - t < 3600]
@@ -5988,16 +6142,26 @@ class Bot:
                 log("responder: hourly limit")
                 return
             self._resp_times.append(now)
-            self._resp_queue.append({"mid": m.get("message_id"), "q": q, "who": who, "ctx": self.reply_context(m),
-                                     "re_bot": self.reply_to_bot(m),
-                                     "from": (m.get("from") or {}).get("id")})
+            rec["wait"] = bool(srcs)  # in the queue at once, so the order holds; answered when its media is in
+            self._resp_queue.append(rec)
             handled[:] = (handled + [m.get("message_id")])[-200:]
         try:  # seen at once: the answer may take a while
             self.tg_chat.call("setMessageReaction", {"chat_id": self.cfg.responder_chat, "message_id": m.get("message_id"),
                                                      "reaction": [{"type": "emoji", "emoji": "👀"}]})
         except TGError as e:
             log("responder reaction failed: %s" % e)
-        self.responder_next()
+        if not srcs:
+            self.responder_next()
+            return
+
+        def fetch():
+            try:
+                media = [x for x in (self.responder_media(*a) for a in srcs) if x[0]]
+                rec["media"], rec["media_note"] = [x[0] for x in media], "".join("\n\n(%s)" % x[1] for x in media if x[1])
+            finally:  # a crash must not hold the queue
+                rec["wait"] = False
+            self.responder_next()
+        self._spawn(fetch)
 
     def relay_capture(self, m):
         """A message sent to the chat on the owner's behalf (relay.json next to the responder log: its message id and
@@ -6011,7 +6175,7 @@ class Bot:
             return False
         if not isinstance(relay, dict) or self.clock() > relay.get("until", 0) or (m.get("from") or {}).get("id") in self.cfg.allowed:
             return False
-        text = m.get("text") or m.get("caption") or ""
+        text = msg_text(m)
         reply = (m.get("reply_to_message") or {}).get("message_id") in (relay.get("mids") or [relay.get("mid")])
         try:
             with open(os.path.join(d, "relay.jsonl"), "a", encoding="utf-8") as f:
@@ -6022,6 +6186,84 @@ class Bot:
         # a question in the reply (a mention of the bot or «?») is still the bot's: such questions used to get lost
         asks = "?" in text or bool(self.chat_username and re.search(r"@%s(?!\w)" % re.escape(self.chat_username), text, re.I))
         return reply and not asks
+
+    @staticmethod
+    def chat_media_att(m):
+        """The picture, video or file of a group message -> (attachment, seconds) or (None, 0). A GIF is an animation
+        (Telegram adds a document copy), a round video a video_note."""
+        v = next((m[k] for k in ("animation", "video", "video_note") if isinstance(m.get(k), dict)), None)
+        if v:
+            return {"file_id": v.get("file_id"), "name": "video.mp4", "size": v.get("file_size") or 0,
+                    "mime": v.get("mime_type") or "video/mp4"}, v.get("duration") or 0
+        return Bot.extract_attachment(m), 0
+
+    def responder_media(self, m, key, where, mid=None):
+        """The media of a group message for the chat model -> (prompt line, note for the answer) or ("", "") without media.
+        Saved into the chat clone (MEDIA_DIR/<question id>): a picture or file as it is, a video as MEDIA_FRAMES frames.
+        A failure is a line too: the model must not answer as if there were nothing, and the answer says it."""
+        att, dur = self.chat_media_att(m)
+        if not att:
+            return "", ""
+        mime = att.get("mime") or ""
+        kind = "video" if mime.startswith("video/") else "picture" if mime.startswith("image/") else "file"
+        ru = {"video": "видео", "picture": "фото", "file": "файл"}[kind]
+        base = os.path.join(self.cfg.responder_cwd, MEDIA_DIR)
+        d = os.path.join(base, str(mid or m.get("message_id") or "x"))
+        try:
+            if not att.get("file_id"):
+                raise OSError("no file id")
+            if att["size"] > TG_DL_LIMIT:
+                raise TGError("file is too big")
+            info = self.tg_chat.get_file(att["file_id"])
+            if (info.get("file_size") or att["size"] or 0) > TG_DL_LIMIT:
+                raise TGError("file is too big")
+            data = self.tg_chat.fetch_file(info["file_path"])
+            os.makedirs(d, mode=0o700, exist_ok=True)
+            ex = os.path.join(self.cfg.responder_cwd, ".git", "info", "exclude")  # the clone stays clean: no «git add -A» picks it up
+            if os.path.isdir(os.path.dirname(os.path.dirname(ex))):
+                os.makedirs(os.path.dirname(ex), exist_ok=True)
+                with open(ex, "a+", encoding="utf-8") as f:
+                    f.seek(0)
+                    if "/%s/" % MEDIA_DIR not in f.read().split():
+                        f.write("\n/%s/\n" % MEDIA_DIR)
+            with self._resp_lock:
+                live = {str(x.get("mid")) for x in self._resp_queue + [self._resp_busy or {}]} | {os.path.basename(d)}
+
+            def age(x):
+                try:
+                    return os.path.getmtime(os.path.join(base, x))
+                except OSError:
+                    return 0
+            for old in sorted((x for x in os.listdir(base) if x not in live), key=age)[:-MEDIA_KEEP]:
+                shutil.rmtree(os.path.join(base, old), ignore_errors=True)
+            src = os.path.join(d, "%s-%s" % (key, safe_filename(att["name"])))
+            fd = os.open(src, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "wb") as f:
+                f.write(data)
+            if kind != "video":
+                return "The %s %s (%s): %s — open the file and look at it." % (kind, where, mime or "?", src), ""
+            if not dur:  # a video sent as a file, or a round one without a length: frames spread all the same
+                rc, out = self.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", src], timeout=30)
+                try:
+                    dur = float(out.strip()) if rc == 0 else 0
+                except ValueError:
+                    dur = 0
+            vf = "fps=%.4f,scale=640:-2" % (MEDIA_FRAMES / float(dur)) if dur else "fps=1,scale=640:-2"
+            self.run(["ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-i", src, "-vf", vf, "-frames:v", str(MEDIA_FRAMES),
+                      os.path.join(d, key + "-frame-%d.jpg")], timeout=120)
+            os.remove(src)  # the model cannot watch a video: the frames stand for it
+            frames = sorted(os.path.join(d, x) for x in os.listdir(d) if x.startswith(key + "-frame-"))
+            if not frames:
+                raise OSError("no frames")
+            return ("The video %s (%s; you cannot watch it, here are %d frames spread over it, in order — open each image "
+                    "file and look at it): %s" % (where, "%d:%02d" % divmod(int(dur), 60) if dur else "length unknown",
+                                                    len(frames), ", ".join(frames))), ""
+        except (TGError, OSError) as e:
+            big = "too big" in str(e).lower()
+            log("responder media %s failed: %s" % (kind, "too big" if big else type(e).__name__))
+            return ("The %s %s could not be downloaded (%s): you have not seen it — say so plainly, do not guess what is in it."
+                    % (kind, where, "larger than 20 MB" if big else "download failed"),
+                    "%s не скачалось: %s" % (ru, "больше 20 МБ" if big else "ошибка загрузки"))
 
     def chat_tail_add(self, who, text, mid=None):
         """The last messages of the shared chat (the bot's answers too): every question carries them, so neither a
@@ -6046,7 +6288,7 @@ class Bot:
         """The bot's own message a question replies to (not «someone's words»: the owner's reply stays his own)."""
         r = m.get("reply_to_message") or {}
         if str((r.get("from") or {}).get("username") or "").lower() == str(self.chat_username or "").lower():
-            return short(str(r.get("text") or r.get("caption") or ""), 1500) or None
+            return short(str(msg_text(r) or ""), 1500) or None
         return None
 
     def reply_context(self, m):
@@ -6054,7 +6296,11 @@ class Bot:
         r = m.get("reply_to_message") or {}
         x = m.get("external_reply") or {}  # «reply in another chat»: no reply_to_message, the text only in quote
         o = x.get("origin") or {}
-        text = (m.get("quote") or {}).get("text") or r.get("text") or r.get("caption") or (
+        q = m.get("quote") or {}  # a quote from a rich message: empty text, the words in rich_texts (Bot API 10.4)
+        text = q.get("text") or rich_plain(q.get("rich_texts"))
+        for card in card_values(r) if text else ():
+            text = text.replace(card, "[card]")  # a quote keeps no card entity: the source's marks
+        text = text or msg_text(r) or (
             (_t("[a message without text]") if r or x else None))
         if not isinstance(text, str) or str((r.get("from") or {}).get("username") or "").lower() == str(
                 self.chat_username or "").lower():
@@ -6071,6 +6317,7 @@ class Bot:
         d["bl_seq"] = d.get("bl_seq", 0) + 1
         rec["bl"] = "b%d" % d["bl_seq"]
         bl = self.backlog()
+        # shortcut: the question's media (rec["media"]) is not kept, ▶️ runs on the words only; keep it if owners ask
         bl.append({"id": rec["bl"], "who": rec["who"], "from": rec.get("from"), "q": rec["q"], "ctx": rec.get("ctx"),
                    "mid": rec.get("mid"), "ts": self.clock(), "status": "waiting"})
         del bl[:-50]
@@ -6171,8 +6418,11 @@ class Bot:
             if edited:
                 self.responder_on_message(m, edited=True)
                 return True
-            if m.get("text") or m.get("caption"):
-                self.chat_tail_add((m.get("from") or {}).get("first_name") or "?", m.get("text") or m.get("caption"), m.get("message_id"))
+            att = self.chat_media_att(m)[0]
+            tag = "[%s]" % {"video": "видео", "image": "фото"}.get((att.get("mime") or "").split("/")[0], "файл") if att else ""
+            if msg_text(m) or tag:
+                self.chat_tail_add((m.get("from") or {}).get("first_name") or "?", " ".join(
+                    x for x in (tag, msg_text(m)) if x), m.get("message_id"))
             if not self.relay_capture(m):
                 self.responder_on_message(m)
             return True
@@ -6269,8 +6519,8 @@ class Bot:
         return (brief + recent + "A message from %s in the group chat. Answer it fully: questions about the project and "
                 "general ones. %s Answer briefly; do not make "
                 "things up.\n\n%s%s" % (rec["who"] + (" (the owner himself: talk to him directly, never «pass it to the "
-                                                        "owner»)" if rec.get("from") in self.cfg.allowed else ""), act, "In reply to a message from %s: «%s»\n\n" % rec["ctx"]
-                                           if rec.get("ctx") else "", rec["q"]))
+                                                        "owner»)" if rec.get("from") in self.cfg.allowed else ""), act, ("In reply to a message from %s: «%s»\n\n" % rec["ctx"]
+                                           if rec.get("ctx") else "") + "".join(x + "\n\n" for x in rec.get("media") or ()), rec["q"]))
 
     def responder_auto(self, sid, req):
         """The owner's own question runs without confirmation. -> True when the request was allowed here."""
@@ -6305,7 +6555,7 @@ class Bot:
 
     def responder_next(self):
         with self._resp_lock:
-            if self._resp_busy or not self._resp_queue:
+            if self._resp_busy or not self._resp_queue or self._resp_queue[0].get("wait"):
                 return
             rec = self._resp_busy = self._resp_queue.pop(0)
             rec["ts"] = self.clock()
@@ -6539,7 +6789,7 @@ class Bot:
             if text is None and it:
                 self.backlog_show(it)
         owner = text is None
-        out = _t("Could not answer now. I will pass this to the owner.") if owner else text.strip() + rec.get("note", "")
+        out = _t("Could not answer now. I will pass this to the owner.") if owner else text.strip() + rec.get("note", "") + rec.get("media_note", "")
         if rec.get("link") and not owner:
             out += "\n\n" + rec["link"]
         out, files = self.responder_files(out)
@@ -6923,6 +7173,8 @@ class Bot:
             return  # groups belong to the chat bot
         if "edited_message" in upd:
             return  # edits matter only to the group responder
+        if "widget_query" in upd:
+            return self.on_widget_query(upd["widget_query"])
         if "callback_query" in upd:
             cq = upd["callback_query"]
             msg = cq.get("message") or {}
@@ -7121,6 +7373,8 @@ class Bot:
                     self.say_temp(chat, _t("The backlog is empty."))
             elif cmd == "/quota":
                 self.send_quota(chat)
+            elif cmd == "/live":
+                self.send_live(chat)
             elif cmd == "/responder" and arg.strip() in ("on", "off"):
                 self.store.data.setdefault("responder", {})["off"] = arg.strip() == "off"
                 self.store.save()
@@ -8727,7 +8981,7 @@ class Bot:
                 "group": group, "state": state, "failed": state == "failed", "detail": detail,
                 "ago": ago_short(info["updated"], now), "updated": info["updated"],
                 "kind": info.get("kind") or "claude", "source": info.get("source") or "claude",
-                "herdr": is_herdr(sid), "sdk": is_sdk(sid),
+                "herdr": is_herdr(sid), "sdk": is_sdk(sid), "thread": self._th(uid, sid),
                 **({"auto": info.get("auto", [])[-20:]} if is_sdk(sid) else {}),
                 "perm": perm, "perm_title": self.perm_title(sid) if perm else "",
                 "perm_body": (short(self.perm_body(sid), 200) or None) if perm else None,
@@ -8748,7 +9002,8 @@ class Bot:
         now = self.clock()
         rows = [self.api_row(uid, sid, now) for sid in self.api_ids()]
         rows.sort(key=lambda r: -r["updated"])
-        return {"quota": dict(self.api_quota(), pinned=self.quota_pinned()), "topics": bool(self.topics_enabled), "lang": LANG,
+        return {"quota": dict(self.api_quota(), pinned=self.quota_pinned()), "topics": bool(self.topics_enabled),
+                "bot": self.bot_username, "lang": LANG,
                 "voice": self.stt_ready(), "sessions": rows}
 
     def api_history(self, sid):

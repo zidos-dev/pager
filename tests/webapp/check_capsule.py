@@ -50,6 +50,10 @@ def stand(app):
                     with urllib.request.urlopen(URL + "/api/sessions", timeout=.3) as response:
                         got = json.load(response)
                         got.get("quota", {}).pop("pinned", None)  # the stand adds header pins, as the server does
+                        if got.get("topics"):  # and with topics the bot's name and each session's topic
+                            got.pop("bot", None)
+                            for row in got.get("sessions") or []:
+                                row.pop("thread", None)
                         check(got == BASE["sessions"], "unexpected stand data")
                     break
                 except OSError:

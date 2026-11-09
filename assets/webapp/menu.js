@@ -23,6 +23,7 @@
     pencil:'<path d="M4 20l1-4L16.5 4.5a2.1 2.1 0 0 1 3 3L8 19l-4 1Z"/><path d="M14.5 6.5l3 3"/>',
     archive:'<path d="M3.5 6.5h17v3.5h-17z"/><path d="M5 10v8a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 18v-8"/><path d="M10 14h4"/>',
     restore:'<path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4.5V8.5h4"/>',
+    chat:'<path d="M5 18.5V7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H8.2L5 18.5Z"/>',
     stop:'<circle cx="12" cy="12" r="9"/><rect x="9" y="9" width="6" height="6" rx="1.2"/>'
   };
   function ic(n){ return '<svg class="mn-ic" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">'+P[n]+'</svg>'; }
@@ -35,14 +36,14 @@
     var at=$("a-arch").textContent.trim();
     return {watched:/^(on|вкл)/i.test(val.trim()),wlabel:lab,wval:val.trim(),rlabel:$("a-rename").textContent.trim()||D("ren"),
       restore:/restore|верн/i.test(at),alabel:at,stopHidden:$("a-stop").hidden,slabel:$("a-stop").textContent.trim()||D("stop"),
-      meta:($("s-meta").textContent||"").trim()};
+      meta:($("s-meta").textContent||"").trim(),topicHidden:$("a-topic").hidden,tlabel:$("a-topic").textContent.trim()};
   }
   function rowHtml(r,i){
     return '<button type="button" class="mn-row'+(r.dng?" dng":"")+'" role="menuitem" tabindex="-1" data-k="'+r.k+'" style="--i:'+i+'">'+ic(r.icon)+
       '<span class="mn-tx"><b>'+esc(r.label)+'</b>'+(r.sub?'<small>'+esc(r.sub)+'</small>':'')+'</span></button>';
   }
   function rowsOf(m){
-    var g1=[{k:"watch",icon:m.watched?"bell":"bellOff",label:m.wlabel,sub:m.wval},{k:"rename",icon:"pencil",label:m.rlabel},{k:"arch",icon:m.restore?"restore":"archive",label:m.alabel}];
+    var g1=(m.topicHidden?[]:[{k:"topic",icon:"chat",label:m.tlabel}]).concat([{k:"watch",icon:m.watched?"bell":"bellOff",label:m.wlabel,sub:m.wval},{k:"rename",icon:"pencil",label:m.rlabel},{k:"arch",icon:m.restore?"restore":"archive",label:m.alabel}]);
     var g2=m.stopHidden?[]:[{k:"stop",icon:"stop",label:m.slabel,dng:true}];
     return [g1,g2];
   }
@@ -135,7 +136,7 @@
     var k=row.dataset.k;
     if(k==="watch"){ $("a-watch").click(); return; }
     close({focus:!!kb&&k!=="rename"}); hap();
-    $({rename:"a-rename",arch:"a-arch",stop:"a-stop"}[k]).click();
+    $({topic:"a-topic",rename:"a-rename",arch:"a-arch",stop:"a-stop"}[k]).click();
   }
   dyn.addEventListener("click",function(e){
     var row=e.target.closest&&e.target.closest(".mn-row"); if(!row||!S.open) return;

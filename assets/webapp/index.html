@@ -559,6 +559,7 @@ textarea.field{min-height:120px;resize:vertical}
 <div class="scrim" id="scrim"></div>
 <section class="sheet" id="act-sheet" hidden aria-label="Session actions" data-i18n-attr="aria-label:sessionActions"><span class="grab"></span><button class="sx" type="button" aria-label="Close" data-i18n-attr="aria-label:close" data-close-sheet><svg width="18" height="18" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button><h3 data-i18n="actions">Actions</h3>
   <div class="alist">
+    <button class="arow" type="button" id="a-topic" hidden data-i18n="openInChat">Open in chat</button>
     <button class="arow" type="button" id="a-watch">Notifications</button>
     <button class="arow" type="button" id="a-rename" data-i18n="rename">Rename</button>
     <button class="arow" type="button" id="a-arch">Archive</button>
@@ -827,6 +828,7 @@ const STR = {
   "actions": "Actions",
   "notifications": "Notifications",
   "rename": "Rename",
+  "openInChat": "Open in chat",
   "archiveIt": "Archive",
   "stop": "Stop",
   "subsAria": "Subtasks",
@@ -1147,6 +1149,7 @@ const STR = {
   "actions": "Действия",
   "notifications": "Уведомления",
   "rename": "Переименовать",
+  "openInChat": "Открыть в чате",
   "archiveIt": "Убрать в архив",
   "stop": "Остановить",
   "subsAria": "Сабтаски",
@@ -1734,6 +1737,7 @@ function renderSession(){
   $("a-watch").innerHTML = `${t("notifications")} <span class="aval">${t(s.watched ? "watchOn" : "watchOff")}</span>`;
   $("a-arch").textContent = t((s.group === "archived" || s.group === "old") ? "unarchiveAct" : "archiveIt");
   $("a-stop").hidden = s.group === "archived";
+  $("a-topic").hidden = !(s.thread && data && data.bot);  /* t.me/<bot>/<topic>: Bot API 10.4 */
   const h = (s.history || []).map((m, idx) => ({k: m.uuid || (m.role + ":" + idx), html: (m => {
     if (m.role === "user" && /^(Файлы? от владельца|Files? from owner)/.test(m.text || "")){
       const lines = (m.text || "").split("\n"), media = [], rest = [];
@@ -2555,7 +2559,7 @@ $("b-del-yes").addEventListener("click", async () => {
   finally{ y.disabled = false; }
 });
 document.querySelectorAll("[data-close-sheet]").forEach(b => b.addEventListener("click", () => closeSheets()));
-["a-watch", "a-rename", "a-arch", "a-stop"].forEach(id => $(id).addEventListener("click", () => sheet("act-sheet", false), true));
+["a-topic", "a-watch", "a-rename", "a-arch", "a-stop"].forEach(id => $(id).addEventListener("click", () => sheet("act-sheet", false), true));
 SHEETS.forEach(id => {
   const el = $(id); let y0 = 0, on = false, dy = 0, tr = null;
   const sb = sheetBody(el);
@@ -2595,6 +2599,7 @@ $("scr-close").addEventListener("click", () => { closeSheets(); loadSession(); }
 /* действия */
 $("a-watch").addEventListener("click", async () => { if (!sess) return; const id0 = sess.id; try{ await api(`session/${encodeURIComponent(id0)}/watch`, {on: !sess.watched}); if (!sess || sess.id !== id0) return; sess.watched = !sess.watched; renderSession(); haptic("ok"); toast(t(sess.watched ? "watchOnToast" : "watchOffToast")); }catch(e){ toast(t("failed")); } });
 $("a-rename").addEventListener("click", () => { if (sess) setMode("rename"); });
+$("a-topic").addEventListener("click", () => { if (!sess || !sess.thread || !data || !data.bot) return; const u = `https://t.me/${encodeURIComponent(data.bot)}/${+sess.thread}`; try{ tg.openTelegramLink(u); }catch(x){ window.open(u, "_blank", "noopener"); } });
 $("a-stop").addEventListener("click", () => {
   if (!sess) return;
   const go = async ok => { if (!ok) return; try{ await api(`session/${encodeURIComponent(sess.id)}/stop`, {}); toast(t("sessStopped")); await loadSession(); }catch(e){ toast(t("stopFail")); } };

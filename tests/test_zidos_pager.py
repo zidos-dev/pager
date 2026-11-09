@@ -1,4 +1,5 @@
 import base64
+import glob
 import json
 import socket
 import re
@@ -9,6 +10,7 @@ import tempfile
 import threading
 import time
 import unittest
+import zlib
 import types
 from unittest import mock
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -627,7 +629,7 @@ class BotTests(unittest.TestCase):
         e = Env(self)
         e.tg.set_commands()
         cmds = [c["command"] for c in e.tg.of("setMyCommands")[0]["commands"]]
-        self.assertEqual(cmds, ["s", "new", "quota", "screen", "stop", "pwa", "devices", "help"])
+        self.assertEqual(cmds, ["s", "new", "quota", "live", "screen", "stop", "pwa", "devices", "help"])
 
 
 class ConfigTests(unittest.TestCase):
@@ -1477,6 +1479,21 @@ class TopicTests(unittest.TestCase):
         e.tg.topics = False
         e.bot.topics_enabled = False
         self.assertFalse(e.bot.detect_topics())
+
+    def test_mini_app_gets_the_topic_link_parts(self):
+        """Bot API 10.4: t.me/<bot>/<thread> opens a private-chat topic; the mini-app gets the bot's name and each
+        session's thread (none without topics or before the topic exists)."""
+        e = topic_env(self)
+        e.tg.get_me = lambda: {"username": "pager_bot", "has_topics_enabled": True}
+        e.bot.detect_topics()
+        e.bot.list_sessions(True)
+        row = lambda: {r["id"]: r for r in e.bot.api_sessions(1)["sessions"]}["a"]
+        self.assertEqual(e.bot.api_sessions(1)["bot"], "pager_bot")
+        self.assertIsNone(row()["thread"])
+        e.bot.ensure_topic(1, "a")
+        self.assertEqual(row()["thread"], thread_of(e))
+        e.bot.topics_enabled = False
+        self.assertIsNone(row()["thread"])
 
     def test_text_in_topic_goes_to_that_session(self):
         e = topic_env(self)
@@ -6294,7 +6311,7 @@ class I18nTests(unittest.TestCase):
                          ["waiting for you", "running", "done", "error"])
         self.assertEqual([cc.btn(k) for k in ("list", "new", "quota", "clean")],
                          ["📋 Sessions", "➕ New", "📊 Quota", "🧹 Clean"])
-        self.assertEqual([c for c, _ in cc.bot_commands()], ["s", "new", "quota", "screen", "stop", "pwa", "devices", "help"])
+        self.assertEqual([c for c, _ in cc.bot_commands()], ["s", "new", "quota", "live", "screen", "stop", "pwa", "devices", "help"])
         self.assertEqual(dict(cc.bot_commands())["quota"], "Claude quota")
         by = {c["cmd"]: c for c in cc.slash_commands()}
         self.assertEqual((by["/model"]["title"], by["/model"]["hint"]), ("Model", "Also changes the default for new sessions"))
@@ -9806,7 +9823,7 @@ class ResponderTests(unittest.TestCase):
         e, fake = responder_env(self)
         e.bot.handle_update(gmsg("@cctg_bot вопрос", chat=-5))
         e.bot.handle_update(gmsg("просто болтаем"))
-        e.bot.handle_update(gmsg(None, photo=[{"file_id": "x"}], caption="@cctg_bot"))
+        e.bot.handle_update(gmsg(None, photo=[{"file_id": "x"}], caption="просто фото"))
         self.assertEqual(fake.calls("session.start") + fake.calls("session.send"), [])
         self.assertEqual(e.tg.of("sendMessage"), [])
 
@@ -10282,6 +10299,113 @@ class ChatBotTests(unittest.TestCase):
         self.assertEqual(m.get("reply_to_message_id") or (m.get("reply_parameters") or {}).get("message_id"), 12)
         self.assertIn("Перешлите", m["text"])
 
+    def media_env(self):
+        e, fake = self.env()
+        e.bot.run = cc.default_runner  # the real ffmpeg
+        e.bot._spawn = lambda fn, *a: fn(*a)
+        src = os.path.join(e.tmp.name, "src.mp4")
+        rc, _ = cc.default_runner(["ffmpeg", "-nostdin", "-loglevel", "error", "-f", "lavfi", "-i",
+                                   "testsrc=duration=2:size=64x64:rate=10", "-pix_fmt", "yuv420p", src], timeout=60)
+        if rc != 0:
+            self.skipTest("no ffmpeg")
+        with open(src, "rb") as f:
+            e.bot.tg_chat.files["v1"] = ("videos/file_1.mp4", f.read())
+        os.remove(src)
+        e.bot.tg_chat.files["p1"] = ("photos/file_2.jpg", b"\xff\xd8\xff\xe0jpeg")
+        return e, fake
+
+    def test_mention_in_a_video_caption_is_a_question_and_the_model_gets_frames(self):
+        """09.11: a quiz video posted with the caption «@bot» got no answer (only text was read), and a reply about a video
+        reached the model as words only («I got only the answer options»)."""
+        e, fake = self.media_env()
+        e.bot.chat_update(gmsg(None, mid=20, caption="@sf_chat_bot", video={
+            "file_id": "v1", "duration": 6, "file_size": 1000, "mime_type": "video/mp4"}))
+        p = fake.calls("session.start")[0]["prompt"]
+        frames = sorted(glob.glob(os.path.join(e.tmp.name, cc.MEDIA_DIR, "20", "*.jpg")))
+        self.assertTrue(frames)
+        for f in frames:
+            self.assertIn(f, p)
+        self.assertIn("0:06", p)
+        self.assertNotIn(".mp4", p)  # frames only: the video itself is not kept in the clone
+        self.assertIn("[видео]", e.bot.store.data["chat_tail"][-1]["text"])
+        jobs = []
+        e.bot._spawn = lambda fn, *a: jobs.append(fn)  # the download is off the poll thread: the question waits for it
+        e.bot.responder_answer("ok")
+        e.bot.chat_update(gmsg(None, mid=24, caption="@sf_chat_bot ещё", video={"file_id": "v1", "duration": 2}))
+        self.assertEqual(len(fake.calls("session.send")), 0)
+        self.assertTrue(any(r.get("message_id") == 24 for r in e.bot.tg_chat.of("setMessageReaction")))  # 👀 at once
+        jobs.pop()()
+        self.assertEqual(len(fake.calls("session.send")), 1)
+        with open(os.path.join(e.tmp.name, ".git", "info", "exclude")) as f:
+            self.assertEqual(f.read().split().count("/.zidos-media/"), 1)
+
+    def test_media_of_the_replied_message_reaches_the_model(self):
+        e, fake = self.media_env()
+        e.bot.chat_update(gmsg("@sf_chat_bot а это что?", mid=21, reply_to_message={
+            "message_id": 7, "from": {"first_name": "Анна"}, "caption": "Кто победит?", "photo": [
+                {"file_id": "p0", "file_size": 10, "width": 90}, {"file_id": "p1", "file_size": 20, "width": 800}]}))
+        p = fake.calls("session.start")[0]["prompt"]
+        pics = glob.glob(os.path.join(e.tmp.name, cc.MEDIA_DIR, "21", "*.jpg"))
+        self.assertEqual(len(pics), 1)
+        self.assertIn(pics[0], p)
+        self.assertIn("Кто победит?", p)
+        e.bot.responder_answer("ok")
+        e.bot.chat_update(gmsg("@sf_chat_bot а видео?", mid=22, external_reply={  # a reply from another chat
+            "origin": {"type": "user", "sender_user": {"first_name": "Олег"}}, "video": {"file_id": "v1", "duration": 2}}))
+        p = fake.calls("session.send")[-1]["text"]
+        self.assertTrue(glob.glob(os.path.join(e.tmp.name, cc.MEDIA_DIR, "22", "*.jpg")))
+        self.assertIn(os.path.join(cc.MEDIA_DIR, "22"), p)
+
+    def test_media_question_keeps_its_place_and_odd_media_is_handled(self):
+        """Review 09.11: a text question after a video one was answered first; a video without a length took the first
+        4 seconds; an empty file id went silent; the bot's own photo was fetched as «the message it replies to»."""
+        e, fake = self.media_env()
+        jobs = []
+        e.bot._spawn = lambda fn, *a: jobs.append(fn)
+        e.bot.chat_update(gmsg(None, mid=30, caption="@sf_chat_bot", document={  # a video sent as a file: no duration
+            "file_id": "v1", "file_name": "fight.mp4", "mime_type": "video/mp4"}))
+        e.bot.chat_update(gmsg("@sf_chat_bot а это?", mid=31))
+        self.assertEqual(fake.calls("session.start"), [])  # the text question waits behind the video one
+        jobs.pop()()
+        p = fake.calls("session.start")[0]["prompt"]
+        self.assertIn("0:02", p)  # ffprobe found the length
+        self.assertGreater(len(glob.glob(os.path.join(e.tmp.name, cc.MEDIA_DIR, "30", "*.jpg"))), 1)
+        e.bot._spawn = lambda fn, *a: fn(*a)
+        e.bot.responder_answer("ok")
+        e.bot.responder_answer("ok")
+        e.bot.chat_update(gmsg(None, mid=32, caption="@sf_chat_bot", photo=[{"file_size": 5}]))
+        self.assertIn("could not", fake.calls("session.send")[-1]["text"])
+        e.bot.responder_answer("ok")
+        self.assertIn("фото не скачалось", e.bot.tg_chat.of("sendMessage")[-1]["text"])
+        e.bot.chat_update(gmsg("@sf_chat_bot поясни", mid=33, reply_to_message={
+            "message_id": 9, "from": {"username": "sf_chat_bot"}, "photo": [{"file_id": "p1"}]}))
+        self.assertFalse(os.path.exists(os.path.join(e.tmp.name, cc.MEDIA_DIR, "33")))
+
+    def test_media_cleanup_spares_questions_still_waiting(self):
+        e, fake = self.media_env()
+        base = os.path.join(e.tmp.name, cc.MEDIA_DIR)
+        for i in range(cc.MEDIA_KEEP + 5):
+            os.makedirs(os.path.join(base, str(100 + i)))
+            os.utime(os.path.join(base, str(100 + i)), (i, i))
+        e.bot._resp_queue.append({"mid": 100, "q": "x", "wait": True})
+        e.bot.responder_media({"message_id": 40, "photo": [{"file_id": "p1"}]}, "q", "attached")
+        left = set(os.listdir(base))
+        self.assertIn("100", left)  # the oldest, but its question is still queued
+        self.assertIn("40", left)
+        self.assertEqual(len(left), cc.MEDIA_KEEP + 2)
+
+    def test_media_that_could_not_be_fetched_is_said_in_the_answer(self):
+        e, fake = self.media_env()
+        e.bot.chat_update(gmsg(None, mid=23, caption="@sf_chat_bot что тут?", video={
+            "file_id": "v1", "duration": 60, "file_size": cc.TG_DL_LIMIT + 1}))
+        p = fake.calls("session.start")[0]["prompt"]
+        self.assertIn("could not", p)
+        self.assertIn("что тут?", p)
+        e.bot.responder_answer("Не вижу видео.")
+        out = e.bot.tg_chat.of("sendMessage")[-1]["text"]
+        self.assertIn("видео не скачалось", out)
+        self.assertIn("20", out)
+
     def test_bare_mention_on_a_reply_from_another_chat_or_a_quote(self):
         e, fake = self.env()
         e.bot.chat_update(gmsg("@sf_chat_bot", quote={"text": "такой рейтинг добавить"}, external_reply={
@@ -10292,6 +10416,62 @@ class ChatBotTests(unittest.TestCase):
         self.assertNotIn("Hi", p)
         self.assertEqual(cc.Bot.reply_context(e.bot, {"reply_to_message": {"message_id": 7, "from": {"first_name": "Анна"},
                                                                           "photo": [{}]}})[0], "Анна")  # a photo alone is context too
+
+    def test_quote_and_message_from_a_rich_message(self):
+        """Bot API 10.4: a quote chosen from a rich message has empty text and rich_texts; a rich message (another bot's
+        answer, seen in groups since 10.0) has no text, its words are in rich_message.blocks."""
+        e, fake = self.env()
+        rich = {"blocks": [{"type": "section_heading", "text": "Итог", "size": 2},
+                           {"type": "paragraph", "text": ["рейтинг ", {"type": "bold", "text": "4,8"},
+                                                          {"type": "url", "text": " тут", "url": "https://x.example/secret"}]},
+                           {"type": "list", "items": [{"type": "unordered", "label": "•", "blocks": [
+                               {"type": "paragraph", "text": {"type": "custom_emoji", "custom_emoji_id": "5", "alternative_text": "🔥"}}]}]},
+                           {"type": "table", "cells": [[{"text": "A"}, {"text": "B"}]]},
+                           {"type": "buttons", "buttons": [{"text": "Купить", "callback_data": "buy"}]}]}
+        e.bot.chat_update(gmsg(None, mid=11, name="GPT", rich_message=rich))
+        tail = e.bot.store.data["chat_tail"][-1]["text"]
+        self.assertIn("рейтинг 4,8 тут", tail)
+        for word in ("Итог", "• 🔥", "A", "B"):
+            self.assertIn(word, tail)
+        for hidden in ("secret", "Купить", "buy"):  # links and buttons are not the message's words
+            self.assertNotIn(hidden, tail)
+        e.bot.chat_update(gmsg("@sf_chat_bot", quote={"text": "", "position": 5, "rich_texts": [
+            "рейтинг ", {"type": "italic", "text": ["4,", {"type": "bold", "text": "8"}]}]},
+            reply_to_message={"message_id": 11, "from": {"first_name": "GPT"}, "rich_message": rich}))
+        p = fake.calls("session.start")[0]["prompt"]
+        self.assertIn("«рейтинг 4,8»", p)
+        ctx = cc.Bot.reply_context(e.bot, {"reply_to_message": {"message_id": 11, "from": {"first_name": "GPT"}, "rich_message": rich}})
+        self.assertEqual(ctx[0], "GPT")
+        self.assertIn("рейтинг 4,8", ctx[1])
+
+    def test_card_numbers_marked_by_telegram_do_not_reach_the_model(self):
+        """Bot API 10.4 marks bank card numbers (entity bank_card_number, RichTextBankCardNumber): the group's words go
+        to outside models, so the number becomes [card]. Offsets are UTF-16: an emoji before it must not shift the cut."""
+        e, fake = self.env()
+        card = {"type": "bank_card_number", "offset": 9, "length": 19}
+        e.bot.chat_update(gmsg("🙂 карта 4111 1111 1111 1111 ок", mid=11, entities=[card]))
+        self.assertEqual(e.bot.store.data["chat_tail"][-1]["text"], "🙂 карта [card] ок")
+        e.bot.chat_update(gmsg(None, mid=12, name="GPT", rich_message={"blocks": [{"type": "paragraph", "text": [
+            "плати на ", {"type": "bank_card_number", "text": "5500 0000 0000 0004", "bank_card_number": "5500000000000004"}]}]}))
+        self.assertEqual(e.bot.store.data["chat_tail"][-1]["text"], "плати на [card]")
+        e.bot.chat_update(gmsg("@sf_chat_bot это 4111 1111 1111 1111?", mid=13, entities=[
+            {"type": "mention", "offset": 0, "length": 12}, {"type": "bank_card_number", "offset": 17, "length": 19}]))
+        p = fake.calls("session.start")[0]["prompt"]
+        for number in ("4111", "5500"):
+            self.assertNotIn(number, p)
+        self.assertIn("[card]", p)
+        self.assertEqual(cc.mask_cards("без карты", None), "без карты")
+        src = {"message_id": 11, "from": {"first_name": "Анна"}, "text": "🙂 карта 4111 1111 1111 1111 ок", "entities": [card]}
+        ctx = cc.Bot.reply_context(e.bot, {"quote": {"text": "карта 4111 1111 1111 1111"}, "reply_to_message": src})
+        self.assertEqual(ctx[1], "карта [card]")  # a quote keeps no card entity: the source message's marks apply
+        cap = {"message_id": 14, "from": {"first_name": "Анна"}, "photo": [{"file_id": "p"}],
+               "caption": "🙂 карта 4111 1111 1111 1111 ок", "caption_entities": [card]}
+        ctx = cc.Bot.reply_context(e.bot, {"quote": {"text": "карта 4111 1111 1111 1111"}, "reply_to_message": cap})
+        self.assertEqual(ctx[1], "карта [card]")  # the caption's marks apply too
+        rich = {"message_id": 15, "from": {"first_name": "GPT"}, "rich_message": {"blocks": [{"type": "paragraph", "text": [
+            "плати на ", {"type": "bank_card_number", "text": "5500 0000 0000 0004"}]}]}}
+        ctx = cc.Bot.reply_context(e.bot, {"quote": {"rich_texts": ["плати на ", "5500 0000 0000 0004"]}, "reply_to_message": rich})
+        self.assertEqual(ctx[1], "плати на [card]")  # and the card nodes of a rich message
 
     def test_report_word_sums_up_the_day_with_a_page_link(self):
         e, fake = self.env()
@@ -10765,3 +10945,74 @@ class EverywhereTests(unittest.TestCase):
         self.assertEqual(e.bot.api_sessions(1)["sessions"][0]["auto"], auto[-20:])
         self.assertEqual(e.bot.api_session(1, SID)["auto"], auto[-20:])
         self.assertEqual(fake.requests, before)
+
+
+class WidgetTests(unittest.TestCase):
+    """Bot API 10.4: /live sends a live quota widget to the private chat; the widget asks the bot for fresh numbers."""
+
+    def env(self):
+        e = Env(self)
+        with open(e.cfg.rate_file, "w") as f:
+            json.dump({"updated_at": time.time() - 60, "five_hour": {"used_percentage": 42.0, "resets_at": time.time() + 3600},
+                       "seven_day": {"used_percentage": 17.0}}, f)
+        return e
+
+    def query(self, uid=1, data="q"):
+        return {"update_id": 77, "widget_query": {"id": "wq1", "from": {"id": uid}, "data": data, "message_id": 5,
+                                                  "chat": {"id": uid, "type": "private"}}}
+
+    def test_live_sends_a_widget_within_telegram_limits(self):
+        e = self.env()
+        e.bot.handle_update(e.msg("/live", mid=11))
+        w = e.tg.of("sendWidget")
+        self.assertEqual(len(w), 1)
+        p = w[0]
+        self.assertTrue(p["allow_queries"])
+        html = p["html"].encode()
+        self.assertNotIn(b"\x00", html)
+        self.assertLessEqual(len(html), 32768)
+        self.assertLessEqual(len(zlib.compress(html, 9)), 4096)
+        self.assertLessEqual(len(p["chat_data"].encode()), 1024)
+        self.assertEqual(json.loads(p["chat_data"])["h5"], 42.0)
+        self.assertTrue(p["caption"])  # apps without widgets show the caption
+
+    def test_live_falls_back_to_the_quota_panel_when_telegram_refuses_the_widget(self):
+        e = self.env()
+        e.tg.errors["sendWidget"] = (lambda p: True, "Bad Request: method not found")
+        e.bot.handle_update(e.msg("/live", mid=11))
+        self.assertEqual(e.bot.panel_state(1).get("mode"), "quota")
+
+    def test_widget_query_from_the_owner_gets_the_numbers(self):
+        e = self.env()
+        e.bot.handle_update(self.query())
+        a = e.tg.of("answerWidgetQuery")
+        self.assertEqual(len(a), 1)
+        self.assertEqual(a[0]["widget_query_id"], "wq1")
+        self.assertEqual(json.loads(a[0]["data"])["d7"], 17.0)
+
+    def test_widget_query_from_a_stranger_is_answered_without_data(self):
+        e = self.env()
+        e.bot.handle_update(self.query(uid=2))
+        a = e.tg.of("answerWidgetQuery")
+        self.assertEqual(len(a), 1)  # every query is answered, or the widget waits for TIMEOUT
+        self.assertNotIn("data", a[0])
+
+    def test_snapshot_fits_1024_bytes_with_long_cyrillic_rows(self):
+        e = self.env()
+        e.bot.quota_pinned = lambda: [{"id": str(i), "title": "Очень длинное название провайдера номер %d" % i,
+                                       "pct": 50.0 + i, "reset": "через 3 ч"} for i in range(8)]
+        s = e.bot.live_snapshot()
+        self.assertLessEqual(len(s.encode()), 1024)
+        self.assertGreaterEqual(len(json.loads(s)["p"]), 1)
+
+    def test_a_broken_quota_file_still_answers_the_widget(self):
+        e = self.env()
+        with open(e.cfg.rate_file, "w") as f:
+            json.dump({"updated_at": 1e20, "five_hour": {"used_percentage": 5, "resets_at": 1e20}}, f)
+        e.bot.handle_update(self.query())
+        self.assertEqual(json.loads(e.tg.of("answerWidgetQuery")[0]["data"])["h5"], None)
+
+    def test_updates_include_widget_queries(self):
+        e = self.env()
+        e.tg.get_updates(0)
+        self.assertIn("widget_query", e.tg.of("getUpdates")[0]["allowed_updates"])

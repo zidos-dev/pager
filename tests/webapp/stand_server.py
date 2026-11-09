@@ -394,6 +394,9 @@ class H(http.server.BaseHTTPRequestHandler):
                 return self.j({"error": "synthetic failure"}, 500)
             d = read_data()["sessions"]
             if isinstance(d, dict): d["quota"] = dict(d.get("quota") or {}, pinned=quota_pinned())
+            if isinstance(d, dict) and d.get("topics"):  # как сервер с темами: имя бота и тема каждой сессии (t.me/<bot>/<тема>)
+                d["bot"] = "pager_demo_bot"
+                for i, row in enumerate(d.get("sessions") or []): row.setdefault("thread", 800 + i)
             return self.j(d)
         if p == "/api/bots": return self.j(BOTS)
         if p == "/api/perms": return self.j(PERMS)
@@ -435,6 +438,8 @@ class H(http.server.BaseHTTPRequestHandler):
                 base = next((s for s in current["sessions"]["sessions"] if s["id"] == sid), {"id": sid, "name": sid, "group": "work"})
                 d = dict(base, history=[], cwd="~", question=None)
             d = dict(d)
+            if current["sessions"].get("topics"):
+                d.setdefault("thread", 800 + next((i for i, s in enumerate(current["sessions"]["sessions"]) if s["id"] == sid), 0))
             return self.j(d)
         self.send_response(404); self.end_headers()
 if __name__ == "__main__":
