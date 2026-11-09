@@ -3090,6 +3090,24 @@ class CodexBoxTests(unittest.TestCase):
         self.assertIn("/run/systemd/resolve", cmd)
         self.assertEqual(cmd[cmd.index("-m") + 1], "m1")
 
+    def test_box_does_not_mount_the_directory_of_the_codex_symlink(self):
+        """~/.local/bin/codex -> ~/.codex/packages/…/bin/codex: only the package is visible, not ~/.local/bin with the owner's scripts."""
+        with tempfile.TemporaryDirectory() as home:
+            real = os.path.join(home, ".codex", "packages", "r1", "bin", "codex")
+            os.makedirs(os.path.dirname(real)); open(real, "w").close()
+            link = os.path.join(home, ".local", "bin", "codex")
+            os.makedirs(os.path.dirname(link)); os.symlink(real, link)
+            open(os.path.join(home, ".codex", "auth.json"), "w").close()
+            with mock.patch.dict(os.environ, {"HOME": home}), mock.patch("shutil.which", side_effect=lambda x: "/usr/bin/bwrap" if x == "bwrap" else link):
+                cmd = cc.codex_boxed("/tmp", "q")
+            self.assertNotIn(os.path.join(home, ".local", "bin"), cmd)
+            self.assertIn(os.path.join(home, ".codex", "packages", "r1"), cmd)
+            plain = os.path.join(home, ".local", "bin", "codex2")
+            open(plain, "w").close()  # a bare binary in ~/.local/bin: its «package» would be ~/.local — refuse
+            with mock.patch.dict(os.environ, {"HOME": home}), mock.patch("shutil.which", side_effect=lambda x: "/usr/bin/bwrap" if x == "bwrap" else plain):
+                with self.assertRaises(OSError):
+                    cc.codex_boxed("/tmp", "q")
+
 
 class ModelSheetTests(unittest.TestCase):
     def setUp(self):

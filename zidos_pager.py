@@ -3581,6 +3581,8 @@ def codex_boxed(cwd, prompt, model=""):
         raise OSError("bwrap or codex missing")
     home, real = os.path.expanduser("~"), os.path.realpath(codex)
     pkg = os.path.dirname(os.path.dirname(real))
+    if pkg in (home, os.path.dirname(home)) or pkg == os.path.join(home, ".local") or pkg.startswith(os.path.join(home, ".local", "bin")):
+        raise OSError("codex is not in its own package directory: %s" % pkg)  # ~/.local/bin holds the owner's scripts with keys
     # an empty ~/.codex with only its login: the owner's hooks and config stay out (a hook blocked every prompt here)
     auth = os.path.join(home, ".codex", "auth.json")
     if not os.path.isfile(auth):
@@ -3591,7 +3593,7 @@ def codex_boxed(cwd, prompt, model=""):
             "--ro-bind-try", "/run/systemd/resolve", "/run/systemd/resolve",  # /etc/resolv.conf points there: no DNS without it
             "--tmpfs", os.path.join(home, ".codex"), "--bind", auth, auth,
             "--clearenv", "--setenv", "HOME", home, "--setenv", "PATH", "/usr/bin:/bin",
-            "--ro-bind", pkg, pkg, "--ro-bind", os.path.dirname(codex), os.path.dirname(codex), "--ro-bind", cwd, cwd,
+            "--ro-bind", pkg, pkg, "--ro-bind", cwd, cwd,  # the real binary runs: the symlink's directory (~/.local/bin) stays out
             "--unshare-pid", "--die-with-parent", "--chdir", cwd,
             real, "exec", "--sandbox", "read-only", "--skip-git-repo-check", "-C", cwd] + (["-m", model] if model else []) + ["--", prompt]
 
