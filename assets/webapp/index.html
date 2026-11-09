@@ -60,7 +60,7 @@
 .navbar .nt{min-width:0;flex:1;font-weight:600;font-size:17px;letter-spacing:-.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:0;transition:opacity .15s}
 .navbar.scrolled .nt{opacity:1}
 .fab{position:fixed;left:16px;right:16px;bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:12;max-width:688px;margin:0 auto;background:var(--action);color:var(--action-ink);border-radius:16px;padding:13px 26px;font-weight:600;font-size:16px;min-height:50px;box-shadow:0 8px 24px rgba(0,0,0,.18)}
-.fab:disabled{background:var(--panel);color:var(--muted);box-shadow:none}
+.fab:disabled{background:color-mix(in srgb,var(--action) 32%,var(--canvas));color:var(--action-ink);box-shadow:none}  /* приглушённая та же кнопка: белая на холсте читалась подписью (09.11) */
 #new-screen ~ .fab{}
 #new-screen:has(~ .fab:not([hidden])){padding-bottom:calc(env(safe-area-inset-bottom,0px) + 84px)}  /* место под плавающую «Начать»: последние папки не уходят под неё (телефон лёжа) */
 .gate{padding:40px 8px;display:grid;gap:14px}
@@ -472,6 +472,11 @@ textarea.field{min-height:120px;resize:vertical}
 .pm-none{display:flex;align-items:center;min-height:44px;margin:8px 0 0;padding:0 12px;border-radius:12px;background:color-mix(in srgb,var(--soft) 55%,var(--panel));color:var(--muted);font-size:14.5px}  /* пустой список — место строки правила, а не голый текст */
 .pm-in{margin-top:6px;min-height:44px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:15px}
 .pm-add{display:flex;gap:6px;margin-top:6px}
+#p-whose{display:block;margin-top:2px}
+#p-block .pm-ml,#b-perms .pm-ml{margin-top:14px}
+.pm-q{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}  /* равная сетка: перенос 2+1 читается небрежно */
+.pm-q .chip:last-child:nth-child(odd){grid-column:1/-1}
+.pm-q .chip{min-width:0;min-height:44px;padding:0 12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:var(--soft);font-weight:400;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13.5px}
 .pm-add .btn{flex:1;min-height:44px}
 .pm-note{margin-top:10px}
 .note.pm-auto{max-width:100%;text-align:center;overflow-wrap:anywhere}
@@ -605,6 +610,7 @@ textarea.field{min-height:120px;resize:vertical}
 <section class="sheet" id="perms-sheet" hidden aria-label="Permissions" data-i18n-attr="aria-label:pmTitle"><span class="grab"></span><button class="sx" type="button" aria-label="Close" data-i18n-attr="aria-label:close" data-close-sheet><svg width="18" height="18" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
   <h3 data-i18n="pmTitle">Permissions</h3>
   <p class="state" id="p-load" aria-live="polite"></p>
+  <p class="m-l" id="p-whose" data-i18n="pmWhose" hidden>Whose permissions</p>
   <div class="dirs" id="p-target" role="radiogroup" aria-label="Whose permissions" data-i18n-attr="aria-label:pmWhose" hidden></div>
   <form id="p-form" novalidate hidden>
     <div id="p-block"></div>
@@ -858,6 +864,7 @@ const STR = {
   "pmNone": "None yet — add a rule in the field below",
   "pmEmpty": "Type a rule first, for example Bash(git status:*).",
   "pmAddL": "New rule, as in Claude Code",
+  "pmQuick": "Common rules",
   "pmAddAllow": "Allow",
   "pmAddDeny": "Deny",
   "pmRm": "Remove {r}",
@@ -1173,6 +1180,7 @@ const STR = {
   "pmNone": "Пока пусто — правило добавляется полем ниже",
   "pmEmpty": "Сначала впишите правило, например Bash(git status:*).",
   "pmAddL": "Новое правило, как в Claude Code",
+  "pmQuick": "Частые правила",
   "pmAddAllow": "Разрешить",
   "pmAddDeny": "Запретить",
   "pmRm": "Убрать {r}",
@@ -2069,15 +2077,18 @@ $("s-hist").addEventListener("click", async e => {
 // выбор файла закрывает клавиатуру iPhone, а фокус в поле оставил бы подвал в раскладке клавиатуры: без квоты, поле на полоске «Домой» (владелец 21.10)
 $("s-clip").addEventListener("click", () => { $("s-text").blur(); $("s-file").click(); });
 function renderAtt(){
-  const box = $("s-attach"); box.hidden = !atts.length; box.textContent = "";
-  atts.forEach(a => box.appendChild(attEl(a, a => { atts = atts.filter(q => q !== a); renderAtt(); })));
+  /* сверка вместо пересборки: пересобранные плашки заново играли вход и мигали при удалении соседней (09.11) */
+  const box = $("s-attach"); box.hidden = !atts.length;
+  [...box.children].forEach(el => atts.includes(el._att) || el.remove());
+  const have = new Set([...box.children].map(el => el._att));
+  atts.forEach(a => have.has(a) || box.appendChild(attEl(a, a => { atts = atts.filter(q => q !== a); renderAtt(); })));
   const nAtt = atts.length + [...attDrafts.values()].reduce((n, l) => n + l.length, 0);
   try{ nAtt ? sessionStorage.setItem("cc-att", nAtt) : sessionStorage.removeItem("cc-att"); }catch(e){}  // перезагрузка сбросит черновик — скажем об этом
   autosize(); $("s-text").dispatchEvent(new Event("input"));  // voice.js пересчитает микрофон/«Отправить»
 }
 /* плашка вложения — общая для сессии и «Новой сессии» */
 function attEl(a, onRemove){
-    const el = document.createElement("div"); el.className = "att";
+    const el = document.createElement("div"); el.className = "att"; el._att = a;
     if (a.url){ const im = document.createElement("img"); im.src = a.url; im.alt = ""; el.appendChild(im); }
     else { const n = document.createElement("div"); n.className = "an"; const b = document.createElement("b"); b.textContent = a.file.name; const sz = document.createElement("span"); sz.textContent = a.file.size >= 1048576 ? (a.file.size / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(a.file.size / 1024)) + " KB"; n.append(b, sz); el.appendChild(n); }
     const x = document.createElement("button"); x.type = "button"; x.className = "att-x"; x.setAttribute("aria-label", t("removeAria"));
@@ -2297,16 +2308,21 @@ $("m-form").addEventListener("submit", async e => {
   finally{ save.disabled = false; save.textContent = t("modelSave"); }
 });
 /* права (README «Права»): режим + правила в синтаксисе Claude Code; один блок для своих сессий, бота в группе и ботов */
+/* форма правила как PERM_RULE в sdk_runner.py: Tool или Tool(шаблон) */
+const PM_RULE = /^[A-Za-z][\w-]*(?:\([\s\S]+\))?$/;
+const PM_QUICK = ["Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(npm test:*)", "WebSearch"];
 function pmMake(host, key){
   const st = {mode: "ask", allow: [], deny: [], chat: false, bad: null};
   const modes = () => st.chat ? ["ask", "edits"] : ["ask", "edits", "all"];
   function paint(){
     const ms = modes(), i = Math.max(0, ms.indexOf(st.mode)), id = "pm-in-" + key;
     const list = l => st[l].length ? `<div class="pm-l">${st[l].map((r, j) => `<div class="pm-r${st.bad && st.bad.list === l && st.bad.index === j ? " bad" : ""}"><code>${esc(r)}</code><button type="button" data-rm="${l}" data-j="${j}" aria-label="${esc(t("pmRm", {r}))}"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>`).join("")}</div>` : `<p class="pm-none">${esc(t("pmNone"))}</p>`;
-    host.innerHTML = `<div class="pm-seg" role="radiogroup" aria-label="${esc(t("pmMode"))}"><span class="pm-th" aria-hidden="true" style="width:calc((100% - 6px) / ${ms.length});transform:translateX(${i * 100}%)"></span>${ms.map(m => `<button type="button" role="radio" aria-checked="${m === st.mode}" data-mode="${m}">${esc(t({ask: "pmAsk", edits: "pmEdits", all: "pmAll"}[m]))}</button>`).join("")}</div>
+    const quick = PM_QUICK.filter(r => !st.allow.includes(r) && !st.deny.includes(r));
+    host.innerHTML = `<p class="m-l pm-ml">${esc(t("pmMode"))}</p><div class="pm-seg" role="radiogroup" aria-label="${esc(t("pmMode"))}"><span class="pm-th" aria-hidden="true" style="width:calc((100% - 6px) / ${ms.length});transform:translateX(${i * 100}%)"></span>${ms.map(m => `<button type="button" role="radio" aria-checked="${m === st.mode}" data-mode="${m}">${esc(t({ask: "pmAsk", edits: "pmEdits", all: "pmAll"}[m]))}</button>`).join("")}</div>
       <p class="state">${esc(t({ask: "pmAskD", edits: "pmEditsD", all: "pmAllD"}[st.mode]))}</p>
       <p class="m-l">${esc(t("pmAllow"))}</p>${list("allow")}
       <p class="m-l">${esc(t("pmDeny"))}</p>${list("deny")}
+      ${quick.length ? `<p class="m-l">${esc(t("pmQuick"))}</p><div class="pm-q" role="group" aria-label="${esc(t("pmQuick"))}">${quick.map(r => `<button class="chip" type="button" data-q="${esc(r)}">${esc(r.replace(/^Bash\((.+?):\*\)$/, "$1"))}</button>`).join("")}</div>` : ""}
       <label class="m-l" for="${id}">${esc(t("pmAddL"))}</label>
       <input class="field pm-in" id="${id}" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="Bash(git status:*)">
       <div class="pm-add"><button class="btn" type="button" data-add="allow">${esc(t("pmAddAllow"))}</button><button class="btn" type="button" data-add="deny">${esc(t("pmAddDeny"))}</button></div>
@@ -2321,8 +2337,11 @@ function pmMake(host, key){
       host.querySelector(".pm-seg + .state").textContent = t({ask: "pmAskD", edits: "pmEditsD", all: "pmAllD"}[st.mode]); return; }
     const rm = e.target.closest("[data-rm]");
     if (rm){ st[rm.dataset.rm].splice(+rm.dataset.j, 1); st.bad = null; st.err = ""; paint(); return; }
+    const q = e.target.closest("[data-q]");
+    if (q){ const inp = host.querySelector(".pm-in"); inp.value = q.dataset.q; inp.focus(); return; }  /* частое правило — в поле: «Разрешить» или «Запретить» решает человек */
     const add = e.target.closest("[data-add]");
     if (add){ const inp = host.querySelector(".pm-in"), r = inp.value.trim(); if (!r){ st.err = t("pmEmpty"); paint(); host.querySelector(".pm-in").focus(); return; }
+      if (!PM_RULE.test(r)){ st.err = t("pmErrRule", {r}); paint(); const i2 = host.querySelector(".pm-in"); i2.value = r; i2.focus(); return; }
       const l = add.dataset.add; if (!st[l].includes(r)) st[l].push(r); st.bad = null; st.err = ""; paint(); host.querySelector(".pm-in").focus(); }
   });
   host.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.classList.contains("pm-in")){ e.preventDefault(); host.querySelector('[data-add="allow"]').click(); } });
@@ -2337,7 +2356,7 @@ function pmMake(host, key){
 let perms = null, pmTarget = "sessions";
 const pmSheet = pmMake($("p-block"), "s");
 function pTargetPaint(){
-  $("p-target").hidden = !perms.group_on;
+  $("p-target").hidden = $("p-whose").hidden = !perms.group_on;
   $("p-target").innerHTML = [["sessions", t("mySessions")], ["chat", t("groupBot")]].map(([id, title]) => `<button class="chip" type="button" role="radio" aria-checked="${id === pmTarget}" aria-pressed="${id === pmTarget}" data-t="${id}">${esc(title)}</button>`).join("");
   pmSheet.set(perms[pmTarget], pmTarget === "chat"); $("p-ok").hidden = true;
 }

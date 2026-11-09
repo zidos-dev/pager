@@ -282,6 +282,15 @@ html[data-lab-theme="dark"] .lq,html[data-lab-theme="dark"] .lab-sq{--lq-warn:#f
 .lqt.hot .lqc i{background:var(--danger)}
 .lqt.hot .lqn{color:var(--danger)}
 .lqr{font-size:12px;color:var(--muted);margin-top:5px}
+/* плотная сетка при >2 плитках: срок сброса — в листе квот по тапу */
+html .lq.many:not([hidden]){grid-template-columns:repeat(3,minmax(0,1fr))}
+html .lq.many[data-n="4"]:not([hidden]){grid-template-columns:1fr 1fr}
+.lq.many .lqt{padding:10px 12px}
+.lq.many .lql{font-size:12px}
+.lq.many .lqt .lqn{font-size:24px;letter-spacing:-.5px}
+.lq.many .lqp{font-size:13px}
+.lq.many .lqc{margin-top:6px}
+.lq.many .lqr,.lq.many .lqb{display:none}
 .lqstale{grid-column:1/-1;font-size:12px;color:var(--muted);padding:0 2px}
 /* одометр */
 .lqn{display:inline-flex;font-variant-numeric:tabular-nums;line-height:1.1;height:1.1em;overflow:hidden;align-items:flex-start}

@@ -71,8 +71,11 @@ def case_send(page, ctx, logs, files):
 def case_remove(page, ctx, logs, files):
     opened(page)
     attach(page, files)
+    page.locator("#s-attach .att").nth(0).evaluate("el => { el.dataset.keep = '1' }")
     page.locator("#s-attach .att").nth(1).locator("button.att-x").click()
     expect(page.locator("#s-attach .att")).to_have_count(1)
+    # the remaining tile is the same node: a rebuild replays its entrance animation, it blinks (owner 09.11)
+    check(page.locator("#s-attach .att").nth(0).get_attribute("data-keep") == "1", "removing a tile rebuilt the others")
     page.locator("#s-send").click()
     deadline = time.monotonic() + 6
     while time.monotonic() < deadline and not records(logs["upload"]):

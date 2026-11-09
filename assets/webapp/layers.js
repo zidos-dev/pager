@@ -882,7 +882,7 @@
   };
   function level(v){return v>=85?"hot":v>=60?"warn":"";}
   function tween(i,pct,instant){
-    var tr=i.parentNode,w=tr.clientWidth||1,cur=i.getBoundingClientRect().width/w*100;
+    var tr=i.parentNode,w=tr.getBoundingClientRect().width||1,cur=i.getBoundingClientRect().width/w*100;  // обе дробные: целый clientWidth при дробной колонке давал «разницу» и анимацию ширины на каждом опросе (09.11)
     i.getAnimations().forEach(function(a){a.cancel();});
     i.style.width=pct+"%";
     if(instant||reduced()||Math.abs(cur-pct)<.1)return;
@@ -967,6 +967,7 @@
     });
     Object.keys(tiles).forEach(function(k){if(!r.vals[k])tiles[k].tile.hidden=true;else tiles[k].tile.hidden=false;});
     Object.keys(r.vals).forEach(function(k){if(k.slice(0,2)==="p:")root.appendChild(tiles[k].tile);});  // вынесенные строки — после Claude, в порядке листа
+    var n=Object.keys(r.vals).length;root.classList.toggle("many",n>2);root.dataset.n=n;  // >2 плиток — плотная сетка, иначе квоты занимают пол-экрана телефона (09.11)
     var st=root.querySelector(".lqstale");st.textContent=r.stale;st.hidden=!r.stale;
     return r;
   }

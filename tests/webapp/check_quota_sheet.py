@@ -42,12 +42,24 @@ try:
         check(p.locator('#q-rows [data-pin="codex"]').get_attribute("aria-pressed") == "true", f"{eng}: pinned row shows as pressed")
         check(tiles.count() == 3 and "Codex" in tiles.nth(2).inner_text(), f"{eng}: Codex tile appears after Claude", str([tiles.nth(i).inner_text() for i in range(tiles.count())]))
         check("41" in tiles.nth(2).get_attribute("aria-label"), f"{eng}: tile carries the row's percent", tiles.nth(2).get_attribute("aria-label"))
-        p.keyboard.press("Escape"); p.wait_for_timeout(700)
+        p.keyboard.press("Escape")
+        try: sh.wait_for(state="hidden", timeout=4000)  # the close animation under a loaded host takes longer than a fixed 700 ms
+        except Exception: pass
         check(not sh.is_visible(), f"{eng}: Escape closes the sheet")
         p.reload(); p.wait_for_timeout(1500)
         check(p.locator("#lab-q .lqt:not([hidden])").count() == 3, f"{eng}: the pin survives a reload (server keeps it)")
         lw = p.evaluate("Math.max(...[...document.querySelectorAll('#lab-q .lql')].map(e=>e.scrollWidth-e.clientWidth))")
         check(lw <= 1 or p.evaluate("[...document.querySelectorAll('#lab-q .lql')].every(e=>getComputedStyle(e).textOverflow==='ellipsis')"), f"{eng}: tile labels never overflow", str(lw))
+        # >2 tiles: a dense grid, three in one row (two-column tiles took a third of a phone screen, council 09.11)
+        tops = {round(b["y"]) for b in (t.bounding_box() for t in p.locator("#lab-q .lqt:not([hidden])").all())}
+        check(len(tops) == 1, f"{eng}: three tiles share one row", str(tops))
+        # 1440: columns of fractional width; a poll with the same values must not replay the bar width (idle long frames, kit 09.11)
+        p.set_viewport_size({"width": 1440, "height": 900}); p.wait_for_timeout(600)
+        p.evaluate("window.__bars=0;(function f(){window.__bars+=[...document.querySelectorAll('#lab-q .lqc i')].reduce((n,i)=>n+i.getAnimations().length,0);requestAnimationFrame(f)})()")
+        p.wait_for_timeout(10000)  # one list poll
+        bars = p.evaluate("window.__bars")
+        check(bars == 0, f"{eng}: an unchanged poll does not animate the bars", str(bars))
+        p.set_viewport_size({"width": 393, "height": 659}); p.wait_for_timeout(600)
         p.click("#lab-q"); p.wait_for_timeout(900)
         p.locator('#q-rows [data-pin="codex"]').click(); p.wait_for_timeout(1200)
         check(p.locator("#lab-q .lqt:not([hidden])").count() == 2, f"{eng}: unpinning removes the tile")
