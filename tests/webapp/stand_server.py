@@ -354,6 +354,9 @@ class H(http.server.BaseHTTPRequestHandler):
         u = urllib.parse.urlparse(self.path); q = urllib.parse.parse_qs(u.query); p = u.path
         if p.startswith("/app"):
             return self.static()
+        if p.startswith("/f/"):  # превью файла владельца: портретный кадр с камеры iPhone, как в жизни (1320×2868)
+            b = b'<svg xmlns="http://www.w3.org/2000/svg" width="1320" height="2868"><rect width="1320" height="2868" fill="#8a94a6"/><rect y="1900" width="1320" height="968" fill="#1d2230"/></svg>'
+            self.send_response(200); self.send_header("Content-Type", "image/svg+xml"); self.end_headers(); return self.wfile.write(b)
         if p.startswith("/r/"):  # дневной отчёт: токен — доступ; данные из REPORT_FILE, токен «gone» — устаревшая ссылка
             if p.endswith(".json"):
                 if p == "/r/gone.json" or not os.environ.get("REPORT_FILE"):

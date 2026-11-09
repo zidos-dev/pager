@@ -23,6 +23,9 @@ D = "/home/user/tg-inbox/Фронт сайта (f17b45ca)/2026-10-21/"
 ALBUM = f"Файлы от владельца (2):\n• {D}IMG_5170.png (446 КБ, image/png)\n• {D}IMG_5171.png (434 КБ, image/png)\nВидишь косячок?"
 ONE = "Файл от владельца: /home/user/tg-inbox/Поиск: перенос модели/2026-10-20/IMG_5139.jpeg (5.8 МБ, image/jpeg)"
 PLAIN = "Файл от владельца: /home/user/tg-inbox/2026-10-19/IMG_5000.jpeg (1.2 МБ, image/jpeg)"
+# альбомы из портретных кадров: 9 фото у владельца 09.11 06:56 вышли полосами в метр высотой («это че за хуйня»)
+ALB9 = "Файлы от владельца (9):\n" + "\n".join(f"• {D}IMG_56{i:02d}.jpeg (2.1 МБ, image/jpeg)" for i in range(9))
+ALB3 = "Файлы от владельца (3):\n" + "\n".join(f"• {D}IMG_57{i:02d}.jpeg (2.1 МБ, image/jpeg)" for i in range(3))
 
 
 def check(ok, message):
@@ -40,8 +43,14 @@ def run(pw, engine):
         pv = page.locator("#s-hist [data-pv]")
         paths = pv.evaluate_all("l=>l.map(e=>e.dataset.pv)")
         want = [D + "IMG_5170.png", D + "IMG_5171.png", "/home/user/tg-inbox/Поиск: перенос модели/2026-10-20/IMG_5139.jpeg", "/home/user/tg-inbox/2026-10-19/IMG_5000.jpeg"]
-        check(paths == want, f"previews {paths}, want {want}")
-        check(page.locator("#s-hist .album [data-pv]").count() == 2, "two photos are not an album")
+        check(paths[:4] == want, f"previews {paths[:4]}, want {want}")
+        check(page.locator("#s-hist .album [data-pv]").count() == 2 + 9 + 3, "photos are not albums")
+        page.wait_for_function("[...document.querySelectorAll('#s-hist .album img')].every(i => i.complete && i.naturalWidth)")
+        for a in page.locator("#s-hist .album").evaluate_all("l => l.map(a => { const r = a.getBoundingClientRect(); return {n: a.children.length, w: r.width, h: r.height, tiles: [...a.children].map(c => { const q = c.getBoundingClientRect(); return [q.width, q.height]; })}; })"):
+            check(a["h"] <= a["w"] * 1.02 + 1, f"album of {a['n']} is {a['w']:.0f}×{a['h']:.0f}: taller than wide")
+            check(a["h"] >= a["w"] * .3 and all(w > 40 and h > 40 for w, h in a["tiles"]), f"album of {a['n']} is {a['w']:.0f}×{a['h']:.0f}, tiles {a['tiles'][:3]}: collapsed")
+            if a["n"] != 3:  # у тройки первая плитка во всю высоту
+                check(all(abs(w - h) <= 1.5 for w, h in a["tiles"]), f"album of {a['n']}: tiles not square {a['tiles'][:3]}")
         hist = page.locator("#s-hist").inner_text()
         check("Видишь косячок?" in hist, "caption lost")
         check("tg-inbox" not in hist, "raw file path shown as text")
@@ -56,7 +65,9 @@ def main():
         h = d["session"][SID]["history"]
         h[:] = [{"role": "user", "uuid": "f1", "ts": "2026-10-21T22:54:00.000Z", "text": ALBUM},
                 {"role": "user", "uuid": "f2", "ts": "2026-10-21T22:55:00.000Z", "text": ONE},
-                {"role": "user", "uuid": "f3", "ts": "2026-10-21T22:56:00.000Z", "text": PLAIN}] + h
+                {"role": "user", "uuid": "f3", "ts": "2026-10-21T22:56:00.000Z", "text": PLAIN},
+                {"role": "user", "uuid": "f4", "ts": "2026-10-21T22:57:00.000Z", "text": ALB9},
+                {"role": "user", "uuid": "f5", "ts": "2026-10-21T22:58:00.000Z", "text": ALB3}] + h
         data = Path(tmp) / "demo.json"
         data.write_text(json.dumps(d, ensure_ascii=False))
         server = subprocess.Popen([sys.executable, str(ROOT / "stand_server.py")], env=dict(os.environ, DATA_FILE=str(data), PORT=str(PORT)), stdout=subprocess.DEVNULL)

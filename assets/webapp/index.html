@@ -275,7 +275,7 @@ html.list-scrolled .lbar{opacity:1}html.list-scrolled .top h1{opacity:0}html.loc
 .pvwrap{min-width:0}
 .album{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3px;width:min(300px,100%);margin-left:auto;margin-top:8px;border-radius:14px;overflow:hidden}
 .album.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
-.album .pv{width:100%;height:100%;max-height:none;aspect-ratio:1;object-fit:cover;border-radius:0;margin:0}
+.album .pv{width:100%;height:auto;max-height:none;aspect-ratio:1;object-fit:cover;border-radius:0;margin:0}
 .album .more{display:grid;place-items:center;aspect-ratio:1;background:var(--soft);color:var(--muted);font-weight:600}
 .me .pv{margin-left:auto}
 .pvwrap{align-self:flex-end;max-width:86%}
@@ -374,9 +374,9 @@ textarea.field{min-height:120px;resize:vertical}
 .alist{background:transparent!important;gap:6px!important;overflow:visible!important}
 .arow{border-radius:14px;background:var(--soft)!important}
 .album.a3{grid-template-columns:2fr 1fr;grid-template-rows:1fr 1fr}
-.album.a3 .pv:first-child{grid-row:1/3;aspect-ratio:auto;height:100%}
+.album.a3 .pv:first-child{grid-row:1/3;aspect-ratio:auto;height:0;min-height:100%}  /* высота 0: портретный кадр не раздувает строки, min-height растягивает на обе */
 .pvwrap{display:flex;flex-direction:column;align-items:flex-end;align-self:flex-end;max-width:86%}
-.pvwrap .album{margin-left:0}
+.pvwrap .album{margin-left:0;width:300px;max-width:100%}  /* min(300px,100%) в обёртке по содержимому — цикл, WebKit схлопывал альбом в 0 */
 .lb{background:#000!important}
 .lb .lbx{width:44px;height:44px}
 .toast .ta{color:var(--canvas)!important;font-weight:700;text-decoration:underline;text-underline-offset:3px}
@@ -1706,7 +1706,7 @@ function renderSession(){
         if (mm) media.push(mm); else if (ln.trim()) rest.push(ln.trim());
       }
       const vis = media.filter(mm => mm[3] === "image" || mm[3] === "video"), docs = media.filter(mm => !vis.includes(mm));
-      const one = mm => mm[3] === "video" ? `<video class="mp" data-pv="${esc(mm[1])}" ${vis.length > 1 ? "muted playsinline preload=\"metadata\"" : "controls playsinline preload=\"metadata\""}></video>` : `<img class="mp" alt="" data-pv="${esc(mm[1])}">`;
+      const one = mm => mm[3] === "video" ? `<video class="pv" data-pv="${esc(mm[1])}" ${vis.length > 1 ? "muted playsinline preload=\"metadata\"" : "controls playsinline preload=\"metadata\""}></video>` : `<img class="pv" alt="" data-pv="${esc(mm[1])}">`;
       // несколько фото — компактный альбом, как в Telegram; больше 9 — плитка «+N»
       const grid = vis.length > 1 ? `<div class="album${vis.length === 3 ? " a3" : vis.length >= 5 ? " c3" : ""}">${vis.slice(0, 9).map(one).join("")}${vis.length > 9 ? `<div class="more">+${vis.length - 9}</div>` : ""}</div>` : vis.map(one).join("");
       const dl = docs.map(mm => `<div class="me" style="margin-top:4px"><svg class="ic" aria-hidden="true"><use href="#i-clip"/></svg>${esc(mm[1].split("/").pop())} · ${esc(mm[2])}</div>`).join("");
@@ -1717,8 +1717,8 @@ function renderSession(){
     if (m.role === "output") return `<div class="out">${esc(m.text)}</div>`;
     if (m.role === "note") return `<div class="note">${esc(m.text)}</div>`;
       const media = (m.files || []).filter(f => f.kind === "image" || f.kind === "video").map(f => f.kind === "video"
-      ? `<video class="mp" data-pv="${esc(f.path)}" controls playsinline preload="metadata"></video>`
-      : `<img class="mp" alt="${esc(f.name)}" data-pv="${esc(f.path)}">`).join("");
+      ? `<video class="pv" data-pv="${esc(f.path)}" controls playsinline preload="metadata"></video>`
+      : `<img class="pv" alt="${esc(f.name)}" data-pv="${esc(f.path)}">`).join("");
     const files = (m.files || []).map(f => `<div class="file"><svg class="fi" aria-hidden="true"><use href="#i-file"/></svg><span class="fn">${esc(f.name)} <span style="font-weight:400;color:var(--muted)">${fmtSize(f.size)}</span></span><span class="fa"><button type="button" data-dl="${esc(f.path)}" data-name="${esc(f.name)}">${t("download")}</button><button type="button" data-tg="${esc(f.path)}">${t("toTelegram")}</button></span></div>`).join("");
     if (m.thinking) return `<article class="msg thinking"><div class="thk">${t("thinking")}</div>${m.html || esc(m.text || "")}</article>`;  // ответ не попал в лог — видна только сводка рассуждения
     return `<article class="msg">${m.html || esc(m.text || "")}${media}${files ? `<div class="files">${files}</div>` : ""}</article>`;
