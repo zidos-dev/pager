@@ -13,6 +13,7 @@ import unittest
 import zlib
 import types
 from unittest import mock
+from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
@@ -9727,6 +9728,283 @@ def gmsg(text, mid=10, chat=GROUP, uid=777, name="Анна", **extra):
         m["text"] = text
     m.update(extra)
     return {"update_id": mid, "message": m}
+
+
+class GroupClaimTests(unittest.TestCase):
+    def env(self, enabled=True):
+        e, fake = responder_env(self)
+        e.cfg.group_claim = enabled
+        e.cfg.claim_grace = 120
+        e.bot.tg_chat = FakeTG()
+        e.now = [1000.0]
+        e.bot.clock = lambda: e.now[0]
+        return e, fake
+
+    def ask(self, e, mid=10):
+        e.bot.chat_update(gmsg("@cctg_bot вопрос", mid=mid))
+
+    def press(self, e, action, mid=10, name="Борис", card=None, chat=GROUP, handler=None):
+        if card is None:
+            card = e.bot._resp_queue[0]["claim_mid"]
+        upd = {"callback_query": {"id": "press-" + name, "from": {"id": 888, "first_name": name},
+                                 "data": "cl:%s:%s" % (mid, action),
+                                 "message": {"message_id": card, "chat": {"id": chat, "type": "supergroup"}}}}
+        (handler or e.bot.chat_update)(upd)
+
+    def test_config_defaults_and_environment(self):
+        cfg = cc.Config(env_path="/nonexistent", environ={"HOME": "/tmp"})
+        self.assertIs(cfg.group_claim, False)
+        self.assertEqual(cfg.claim_grace, 120)
+        cfg = cc.Config(env_path="/nonexistent", environ={"HOME": "/tmp", "CC_GROUP_CLAIM": "1",
+                                                         "CC_GROUP_CLAIM_GRACE": "45"})
+        self.assertIs(cfg.group_claim, True)
+        self.assertEqual(cfg.claim_grace, 45)
+
+    def test_owner_question_skips_card(self):
+        e, fake = self.env()
+        owner = sorted(e.bot.cfg.allowed)[0]
+        e.bot.chat_update(gmsg("@cctg_bot вопрос", uid=owner, name="Сергей"))
+        self.assertEqual(e.bot.tg_chat.of("sendMessage"), [])
+        self.assertEqual(len(fake.calls("session.start")), 1)
+
+    def test_disabled_sends_no_card(self):
+        e, fake = self.env(False)
+        self.ask(e)
+        self.assertEqual(e.bot.tg_chat.of("sendMessage"), [])
+        self.assertEqual(len(fake.calls("session.start")), 1)
+
+    def test_card_has_question_author_time_buttons_and_reply(self):
+        e, fake = self.env()
+        self.ask(e)
+        card = e.bot.tg_chat.of("sendMessage")[0]
+        self.assertEqual(card["chat_id"], GROUP)
+        self.assertEqual(card["reply_parameters"]["message_id"], 10)
+        self.assertIn("Задача из чата", card["text"])
+        self.assertIn("вопрос", card["text"])
+        self.assertIn("спросил Анна · " + time.strftime("%H:%M", time.localtime(1000)), card["text"])
+        self.assertEqual(card["reply_markup"]["inline_keyboard"], [[
+            {"text": "Беру", "callback_data": "cl:10:me"},
+            {"text": "Отдать боту", "callback_data": "cl:10:bot"}]])
+        self.assertTrue(e.bot._resp_queue[0]["claim"])
+        self.assertFalse(e.bot._resp_queue[0]["wait"])
+        self.assertEqual(fake.calls("session.start"), [])
+
+    def test_bot_starts_answer_and_removes_buttons(self):
+        e, fake = self.env()
+        self.ask(e)
+        self.press(e, "bot")
+        self.assertEqual(len(fake.calls("session.start")), 1)
+        edit = e.bot.tg_chat.of("editMessageText")[-1]
+        self.assertEqual(edit["text"], "Разбирает бот · ответ придёт в чат")
+        self.assertEqual(edit["reply_markup"], {"inline_keyboard": []})
+        self.assertEqual(e.bot.tg_chat.of("answerCallbackQuery")[-1]["callback_query_id"], "press-Борис")
+
+    def test_me_removes_question_without_model_answer(self):
+        e, fake = self.env()
+        self.ask(e)
+        self.press(e, "me")
+        self.assertEqual(e.bot._resp_queue, [])
+        self.assertIsNone(e.bot._resp_busy)
+        self.assertEqual(fake.calls("session.start"), [])
+        edit = e.bot.tg_chat.of("editMessageText")[-1]
+        self.assertEqual(edit["text"], "Взял Борис · " + time.strftime("%H:%M", time.localtime(1000)))
+        self.assertEqual(edit["reply_markup"], {"inline_keyboard": []})
+
+    def test_second_press_only_gets_private_popup(self):
+        e, fake = self.env()
+        self.ask(e)
+        card = e.bot._resp_queue[0]["claim_mid"]
+        self.press(e, "me", card=card)
+        self.press(e, "bot", name="Вера", card=card)
+        self.assertEqual(len(e.bot.tg_chat.of("editMessageText")), 1)
+        self.assertEqual(len(e.bot.tg_chat.of("sendMessage")), 1)
+        self.assertEqual(e.bot.tg_chat.of("answerCallbackQuery")[-1]["text"], "Уже взял Борис")
+        self.assertEqual(fake.calls("session.start"), [])
+
+    def test_missing_question_gets_resolved_popup(self):
+        e, fake = self.env()
+        self.press(e, "me", card=999)
+        self.assertEqual(e.bot.tg_chat.of("answerCallbackQuery")[-1]["text"], "Уже решено")
+        self.assertEqual(e.bot.tg_chat.of("editMessageText"), [])
+
+    def test_timeout_uses_clock_and_hands_to_bot(self):
+        e, fake = self.env()
+        self.ask(e)
+        e.now[0] += 119
+        e.bot.responder_typing_tick()
+        self.assertEqual(fake.calls("session.start"), [])
+        e.now[0] += 1
+        e.bot.responder_typing_tick()
+        e.bot.responder_typing_tick()
+        self.assertEqual(len(fake.calls("session.start")), 1)
+        edits = e.bot.tg_chat.of("editMessageText")
+        self.assertEqual(len(edits), 1)
+        self.assertEqual(edits[0]["text"], "Никто не взял — отвечает бот")
+        self.assertEqual(edits[0]["reply_markup"], {"inline_keyboard": []})
+
+    def test_card_send_failure_falls_back_to_bot(self):
+        e, fake = self.env()
+        e.bot.tg_chat.fail["sendMessage"] = lambda p: True
+        with mock.patch.object(cc, "log") as log:
+            self.ask(e)
+        self.assertTrue(log.called)
+        self.assertEqual(len(fake.calls("session.start")), 1)
+        self.assertFalse(e.bot._resp_busy.get("claim"))
+
+    def test_edit_failure_does_not_block_bot(self):
+        e, fake = self.env()
+        self.ask(e)
+        e.bot.tg_chat.fail["editMessageText"] = lambda p: True
+        with mock.patch.object(cc, "log") as log:
+            self.press(e, "bot")
+        self.assertTrue(log.called)
+        self.assertEqual(len(fake.calls("session.start")), 1)
+
+    def test_claim_does_not_block_a_later_ready_question(self):
+        e, fake = self.env()
+        self.ask(e)
+        owner = sorted(e.bot.cfg.allowed)[0]
+        e.bot.chat_update(gmsg("@cctg_bot срочно", mid=11, uid=owner, name="Сергей"))
+        self.assertEqual(e.bot._resp_busy["mid"], 11)
+        self.assertEqual(len(fake.calls("session.start")), 1)
+        self.assertTrue(e.bot._resp_queue[0].get("claim"))
+
+    def test_bot_choice_on_a_later_card_runs_before_an_undecided_one(self):
+        e, fake = self.env()
+        self.ask(e)
+        self.ask(e, 11)
+        card = e.bot._resp_queue[1]["claim_mid"]
+        self.press(e, "bot", mid=11, card=card)
+        self.assertEqual(e.bot._resp_busy["mid"], 11)
+        self.assertTrue(e.bot._resp_queue[0].get("claim"))
+
+    def test_card_send_crash_drops_claim(self):
+        e, fake = self.env()
+        e.bot.tg_chat.send_one = mock.Mock(return_value={})  # no message_id: KeyError, not TGError
+        with mock.patch.object(cc, "log"):
+            self.ask(e)
+        self.assertEqual(len(fake.calls("session.start")), 1)
+        self.assertFalse(e.bot._resp_busy.get("claim"))
+
+    def test_media_fetch_does_not_release_claim(self):
+        e, fake = self.env()
+        with mock.patch.object(e.bot, "responder_media", return_value=("image", "")):
+            e.bot.chat_update(gmsg("@cctg_bot вопрос", photo=[{"file_id": "p1"}]))
+        self.assertTrue(e.bot._resp_queue[0]["claim"])
+        self.assertFalse(e.bot._resp_queue[0]["wait"])
+        self.assertEqual(fake.calls("session.start"), [])
+        self.press(e, "bot")
+        self.assertEqual(len(fake.calls("session.start")), 1)
+
+    def test_responder_role_accepts_group_member_press(self):
+        e, fake = self.env()
+        e.cfg.role = "responder"
+        e.bot.tg_chat = e.tg
+        e.bot.handle_update(gmsg("@cctg_bot вопрос"))
+        self.press(e, "me", handler=e.bot.handle_update)
+        self.assertEqual(e.bot._resp_queue, [])
+        self.assertEqual(fake.calls("session.start"), [])
+
+    def test_single_bot_console_accepts_group_member_press(self):
+        e, fake = self.env()
+        e.bot.tg_chat = e.tg
+        e.bot.handle_update(gmsg("@cctg_bot вопрос"))
+        self.press(e, "bot", handler=e.bot.handle_update)
+        self.assertEqual(len(fake.calls("session.start")), 1)
+
+    def test_wrong_chat_or_card_cannot_claim_question(self):
+        e, fake = self.env()
+        self.ask(e)
+        self.press(e, "me", chat=GROUP - 1)
+        self.press(e, "me", card=999)
+        self.assertTrue(e.bot._resp_queue[0]["claim"])
+        self.assertEqual(e.bot.tg_chat.of("editMessageText"), [])
+        self.assertEqual(fake.calls("session.start"), [])
+
+    def test_malformed_callbacks_only_get_a_popup(self):
+        e, fake = self.env()
+        self.ask(e)
+        for mid, action in [("²", "me"), ("bad", "bot"), ("10", "other"), ("", "me")]:
+            self.press(e, action, mid=mid)
+        self.assertEqual(len(e.bot.tg_chat.of("answerCallbackQuery")), 4)
+        self.assertTrue(e.bot._resp_queue[0]["claim"])
+        self.assertEqual(e.bot.tg_chat.of("editMessageText"), [])
+
+    def test_long_question_keeps_text_and_buttons_reply_to_question(self):
+        e, fake = self.env()
+        question = "вопрос " * 580
+        e.bot.chat_update(gmsg("@cctg_bot " + question))
+        cards = e.bot.tg_chat.of("sendMessage")
+        self.assertGreater(len(cards), 1)
+        self.assertIn("".join(question.split()), "".join("".join(p["text"].split()) for p in cards))
+        self.assertEqual(cards[-1]["reply_parameters"]["message_id"], 10)
+        self.assertTrue(cards[-1]["reply_markup"]["inline_keyboard"])
+        self.press(e, "me")
+        self.assertEqual(fake.calls("session.start"), [])
+
+    def test_bot_choice_still_waits_for_media(self):
+        e, fake = self.env()
+        pending = []
+        e.bot._spawn = lambda fn, *args: pending.append((fn, args))
+        e.bot.chat_update(gmsg("@cctg_bot вопрос", photo=[{"file_id": "p1"}]))
+        self.press(e, "bot")
+        self.assertEqual(fake.calls("session.start"), [])
+        self.assertTrue(e.bot._resp_queue[0]["wait"])
+        with mock.patch.object(e.bot, "responder_media", return_value=("image", "")):
+            fn, args = pending[0]
+            fn(*args)
+        self.assertEqual(len(fake.calls("session.start")), 1)
+
+    def test_concurrent_presses_have_one_winner(self):
+        e, fake = self.env()
+        self.ask(e)
+        card = e.bot._resp_queue[0]["claim_mid"]
+        barrier = threading.Barrier(2)
+        def press(name):
+            barrier.wait()
+            self.press(e, "me", name=name, card=card)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            list(pool.map(press, ["Борис", "Вера"]))
+        self.assertEqual(len(e.bot.tg_chat.of("editMessageText")), 1)
+        popups = [p["text"] for p in e.bot.tg_chat.of("answerCallbackQuery") if p.get("text")]
+        self.assertEqual(len(popups), 1)
+        self.assertIn(popups[0], ["Уже взял Борис", "Уже взял Вера"])
+        self.assertEqual(fake.calls("session.start"), [])
+
+    def test_me_and_bot_race_has_one_decision(self):
+        e, fake = self.env()
+        self.ask(e)
+        card = e.bot._resp_queue[0]["claim_mid"]
+        barrier = threading.Barrier(2)
+        def press(action):
+            barrier.wait()
+            self.press(e, action, card=card)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            list(pool.map(press, ["me", "bot"]))
+        edits = e.bot.tg_chat.of("editMessageText")
+        self.assertEqual(len(edits), 1)
+        self.assertEqual(e.bot._resp_queue, [])
+        self.assertEqual(len(fake.calls("session.start")), int(edits[0]["text"].startswith("Разбирает бот")))
+        self.assertEqual(len([p for p in e.bot.tg_chat.of("answerCallbackQuery") if p.get("text")]), 1)
+
+    def test_me_and_timeout_race_has_one_decision(self):
+        e, fake = self.env()
+        self.ask(e)
+        card = e.bot._resp_queue[0]["claim_mid"]
+        e.now[0] += 120
+        barrier = threading.Barrier(2)
+        def decide(timeout):
+            barrier.wait()
+            if timeout:
+                e.bot.responder_typing_tick()
+            else:
+                self.press(e, "me", card=card)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            list(pool.map(decide, [False, True]))
+        edits = e.bot.tg_chat.of("editMessageText")
+        self.assertEqual(len(edits), 1)
+        self.assertEqual(e.bot._resp_queue, [])
+        self.assertEqual(len(fake.calls("session.start")), int(edits[0]["text"] == "Никто не взял — отвечает бот"))
 
 
 class ResponderTests(unittest.TestCase):

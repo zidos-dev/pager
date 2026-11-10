@@ -331,6 +331,15 @@ _RU = {
     "▶️ Do it": "▶️ Выполнить",
     "✖ Remove": "✖ Убрать",
     "The backlog is empty.": "Бэклог пуст.",
+    "Task from chat": "Задача из чата",
+    "asked by %s · %s": "спросил %s · %s",
+    "I'll take it": "Беру",
+    "Give to bot": "Отдать боту",
+    "Bot is handling it · the answer will come to the chat": "Разбирает бот · ответ придёт в чат",
+    "Taken by %s · %s": "Взял %s · %s",
+    "Already taken by %s": "Уже взял %s",
+    "Already resolved": "Уже решено",
+    "Nobody took it — the bot will answer": "Никто не взял — отвечает бот",
     "Queued for the chat.": "Поставил в очередь чата.",
     "Removed from the backlog.": "Убрал из бэклога.",
     "%s asked: «%s»%s. The owner confirmed it: do it now.": "%s просил: «%s»%s. Владелец подтвердил: сделай это сейчас.",
@@ -806,6 +815,11 @@ class Config:
         lang_ = (get("CC_STT_LANG") or "").strip().lower()
         self.stt_lang = lang_ if re.fullmatch(r"[a-z]{2,3}", lang_) else ""  # "" = the bot language
         self.draft_status = get("CC_DRAFT_STATUS") == "1"  # native «typing» draft in the session topic; off unless "1"
+        self.group_claim = get("CC_GROUP_CLAIM") == "1"
+        try:
+            self.claim_grace = max(0, int(get("CC_GROUP_CLAIM_GRACE", "120")))
+        except ValueError:
+            self.claim_grace = 120
 
 
 # ------------------------------------------------------------ pure functions
@@ -4710,6 +4724,7 @@ class Bot:
         self.tg_chat = TG(cfg.responder_token, cfg.api_base) if cfg.responder_token else self.tg
         self._resp_lock = threading.RLock()
         self._resp_queue = []    # questions waiting for the responder session, oldest first
+        self._resp_claimed = {}  # (question, card) -> winner; recent decisions for repeat presses
         self._resp_pulled = 0.0  # when the chat clone was last brought up to date
         self._resp_pull_told = False  # the owner already knows the clone is stuck
         self._resp_busy = None   # the question being answered
@@ -6543,8 +6558,23 @@ class Bot:
                 return
             self._resp_times.append(now)
             rec["wait"] = bool(srcs)  # in the queue at once, so the order holds; answered when its media is in
+            if self.cfg.group_claim and rec["from"] not in self.cfg.allowed:  # the owner's own question goes straight to the bot
+                rec["claim"] = {"ts": now}
             self._resp_queue.append(rec)
             handled[:] = (handled + [m.get("message_id")])[-200:]
+            if rec.get("claim"):
+                text = _t("Task from chat") + "\n\n" + q + "\n\n" + _t("asked by %s · %s") % (
+                    who, time.strftime("%H:%M", time.localtime(m.get("date") or now)))
+                mk = {"inline_keyboard": [[{"text": _t("I'll take it"), "callback_data": "cl:%s:me" % rec["mid"]},
+                                           {"text": _t("Give to bot"), "callback_data": "cl:%s:bot" % rec["mid"]}]]}
+                try:
+                    chunks = split_message(text)
+                    for i, chunk in enumerate(chunks):
+                        rec["claim_mid"] = self.tg_chat.send_one(self.cfg.responder_chat, chunk,
+                            mk if i == len(chunks) - 1 else None, reply_to=rec["mid"])["message_id"]
+                except Exception as e:  # any failure: no card to press, the bot answers as before
+                    log("responder claim send failed: %s" % (e if isinstance(e, TGError) else type(e).__name__))
+                    rec.pop("claim", None)
         try:  # seen at once: the answer may take a while
             self.tg_chat.call("setMessageReaction", {"chat_id": self.cfg.responder_chat, "message_id": m.get("message_id"),
                                                      "reaction": [{"type": "emoji", "emoji": "👀"}]})
@@ -6807,8 +6837,51 @@ class Bot:
         if it:
             self.backlog_show(it)
 
+    def responder_claim_resolve(self, rec, who=None, expired=False):
+        """Called under _resp_lock: record the decision before Telegram or the queue can advance."""
+        rec.pop("claim")
+        put_capped(self._resp_claimed, (rec["mid"], rec["claim_mid"]), who)
+        if who:
+            self._resp_queue.remove(rec)
+            text = _t("Taken by %s · %s") % (who, time.strftime("%H:%M", time.localtime(self.clock())))
+        else:
+            text = _t("Nobody took it — the bot will answer") if expired else _t("Bot is handling it · the answer will come to the chat")
+        try:
+            self.tg_chat.edit(self.cfg.responder_chat, rec["claim_mid"], text, {"inline_keyboard": []})
+        except TGError as e:
+            log("responder claim edit failed: %s" % e)
+
+    def responder_claim_press(self, cq):
+        msg = cq.get("message") or {}
+        parts = (cq.get("data") or "").split(":")
+        toast, decided = _t("Already resolved"), False
+        if len(parts) == 3 and re.fullmatch(r"[0-9]+", parts[1]) and parts[2] in ("me", "bot"):
+            mid, card = int(parts[1]), msg.get("message_id")
+            with self._resp_lock:
+                rec = next((r for r in self._resp_queue if r["mid"] == mid and r.get("claim_mid") == card and r.get("claim")), None)
+                if rec:
+                    who = ((cq.get("from") or {}).get("first_name") or "?") if parts[2] == "me" else None
+                    self.responder_claim_resolve(rec, who)
+                    toast, decided = None, True
+                else:
+                    who = self._resp_claimed.get((mid, card))
+                    if who:
+                        toast = _t("Already taken by %s") % who
+        if cq.get("id"):
+            self.tg_chat.answer(cq["id"], toast)
+        if decided:
+            self.responder_next()
+
     def responder_typing_tick(self):
         """«typing…» in the chat while a question is being answered (not while the owner decides a change)."""
+        expired = False
+        with self._resp_lock:
+            for rec in self._resp_queue:
+                if rec.get("claim") and self.clock() - rec["claim"]["ts"] >= self.cfg.claim_grace:
+                    self.responder_claim_resolve(rec, expired=True)
+                    expired = True
+        if expired:
+            self.responder_next()
         self.responder_park()
         sid = (self.store.data.get("responder") or {}).get("sid")
         if self._resp_busy and self.cfg.responder_chat is not None and (self.known.get(sid) or {}).get("sdk_state") != "blocked":
@@ -6816,6 +6889,12 @@ class Bot:
 
     def chat_update(self, upd):
         """A group update for the shared chat. -> True when handled (groups never reach the console)."""
+        cq = upd.get("callback_query") or {}
+        chat = (cq.get("message") or {}).get("chat") or {}
+        if (self.cfg.group_claim and (cq.get("data") or "").startswith("cl:")
+                and chat.get("id") == self.cfg.responder_chat and chat.get("type") in ("group", "supergroup")):
+            self.responder_claim_press(cq)
+            return True
         edited = "edited_message" in upd  # a mention added by editing is a question too, answered once
         m = upd.get("message") or upd.get("edited_message") or {}
         if self.cfg.responder_chat is not None and (m.get("chat") or {}).get("id") == self.cfg.responder_chat:
@@ -6959,9 +7038,11 @@ class Bot:
 
     def responder_next(self):
         with self._resp_lock:
-            if self._resp_busy or not self._resp_queue or self._resp_queue[0].get("wait"):
+            # a question whose card waits for people is skipped; the first one the bot owns keeps the order
+            i = next((i for i, r in enumerate(self._resp_queue) if not r.get("claim")), None)
+            if self._resp_busy or i is None or self._resp_queue[i].get("wait"):
                 return
-            rec = self._resp_busy = self._resp_queue.pop(0)
+            rec = self._resp_busy = self._resp_queue.pop(i)
             rec["ts"] = self.clock()
         self.responder_pull()
         if self.cfg.responder_engine != "sdk":  # stateless: every question carries the brief and the chat tail
@@ -7554,6 +7635,8 @@ class Bot:
         """The responder role: the group, the owner's 🔐 / backlog buttons and one status line in the owner's private chat."""
         self.note_group(upd)
         if "callback_query" in upd:
+            if self.chat_update(upd):
+                return
             cq = upd["callback_query"]
             msg = cq.get("message") or {}
             if (self.authorized((cq.get("from") or {}).get("id"), (msg.get("chat") or {}).get("type"))
