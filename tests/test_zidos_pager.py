@@ -9820,6 +9820,148 @@ class ResponderTests(unittest.TestCase):
             rec = json.loads(f.readline())
         self.assertEqual((rec["q"], rec["a"], rec["from"]), ("первый", "Ответ один: https://example.com", 777))
 
+    def test_rich_safe_escapes_buttons_keeps_details_and_code(self):
+        self.assertEqual(cc.rich_safe('<tg-button text="x">'), '&lt;tg-button text="x">')
+        self.assertEqual(cc.rich_safe("<details><summary>a</summary>b</details>"),
+                         "<details><summary>a</summary>b</details>")
+        self.assertEqual(cc.rich_safe("<details open><summary>a</summary>b</details>"),
+                         "<details open><summary>a</summary>b</details>")
+        self.assertEqual(cc.rich_safe("<3"), "&lt;3")
+        self.assertEqual(cc.rich_safe("p < 0,05"), "p &lt; 0,05")
+        self.assertEqual(cc.rich_safe("a<b"), "a&lt;b")
+        self.assertEqual(cc.rich_safe("`<a>`"), "`<a>`")
+        self.assertEqual(cc.rich_safe("```<b>```"), "```<b>```")
+        self.assertEqual(cc.rich_safe("```\n<b>\n```"), "```\n<b>\n```")
+        self.assertEqual(cc.rich_safe("use `<a>` and <3"), "use `<a>` and &lt;3")
+
+    def _track_md(self, e):
+        called = []
+        real = e.bot.tg_chat.send_md
+
+        def send_md(*a, **k):
+            called.append((a, k))
+            return real(*a, **k)
+
+        e.bot.tg_chat.send_md = send_md
+        return called
+
+    def test_group_rich_sends_one_rich_message_for_a_table(self):
+        e, _fake = responder_env(self)
+        e.bot.cfg.group_rich = True
+        e.bot.handle_update(gmsg("@cctg_bot вопрос", mid=42))
+        called = self._track_md(e)
+        self.done(e, "s-aabbccdd", "| a | b |\n|---|---|\n| <3 | [rules](https://example.com/r) |")
+        self.assertEqual(called, [])
+        rich = e.tg.of("sendRichMessage")
+        self.assertEqual(len(rich), 1)
+        self.assertEqual(rich[0]["chat_id"], GROUP)
+        self.assertEqual(rich[0]["reply_parameters"], {"message_id": 42, "allow_sending_without_reply": True})
+        body = rich[0]["rich_message"]["markdown"]
+        self.assertIn("|---|", body)
+        self.assertIn("&lt;3", body)
+        self.assertIn("rules (https://example.com/r)", body)
+        self.assertNotIn("](https://example.com/r)", body)
+        self.assertEqual(self.to_group(e), [])
+
+    def test_group_rich_table_falls_back_to_one_send_md(self):
+        e, _fake = responder_env(self)
+        e.bot.cfg.group_rich = True
+        e.tg.errors["sendRichMessage"] = (lambda p: True, "Bad Request: can't parse")
+        e.bot.handle_update(gmsg("@cctg_bot вопрос", mid=7))
+        called = self._track_md(e)
+        with mock.patch.object(cc, "log") as lg:
+            self.done(e, "s-aabbccdd", "| a | b |\n|---|---|\n| 1 | 2 |")
+        self.assertEqual(len(e.tg.of("sendRichMessage")), 1)
+        self.assertEqual(len(called), 1)
+        self.assertEqual(len(self.to_group(e)), 1)
+        self.assertEqual(self.to_group(e)[0]["reply_parameters"]["message_id"], 7)
+        self.assertTrue(any(str(c.args[0]).startswith("responder rich failed:") for c in lg.call_args_list))
+
+    def test_group_rich_timeout_sends_no_second_answer(self):
+        e, _fake = responder_env(self)
+        e.bot.cfg.group_rich = True
+        e.bot.handle_update(gmsg("@cctg_bot вопрос", mid=7))
+        called, real, tried = self._track_md(e), e.tg.call, []
+
+        def call(method, params=None, **kw):
+            if method == "sendRichMessage":
+                tried.append(params)
+                raise cc.TGError("sendRichMessage: TimeoutError")
+            return real(method, params, **kw)
+        e.tg.call = call
+        self.done(e, "s-aabbccdd", "| a | b |\n|---|---|\n| 1 | 2 |")
+        self.assertEqual(len(tried), 1)
+        self.assertEqual(called, [])
+
+    def test_rich_safe_no_button_through_escaped_backticks_or_code(self):
+        self.assertNotIn("<tg-", cc.rich_safe('\\`<tg-button text="x">y</tg-button>\\`'))
+        self.assertNotIn("<TG-", cc.rich_safe('`<TG-BUTTON-ROW>`\n```\n</tg-button>\n```'))
+        self.assertNotIn("</tg-", cc.rich_safe('```\n</tg-button>\n```'))
+        self.assertEqual(cc.rich_safe("`a<b`"), "`a<b`")
+
+    def test_group_rich_without_a_table_uses_send_md(self):
+        e, _fake = responder_env(self)
+        e.bot.cfg.group_rich = True
+        e.bot.handle_update(gmsg("@cctg_bot вопрос", mid=10))
+        called = self._track_md(e)
+        self.done(e, "s-aabbccdd", "просто ответ <3")
+        self.assertEqual(e.tg.of("sendRichMessage"), [])
+        self.assertEqual(len(called), 1)
+        self.assertEqual(len(self.to_group(e)), 1)
+
+    def test_a_table_without_group_rich_uses_send_md(self):
+        e, _fake = responder_env(self)
+        self.assertIs(e.bot.cfg.group_rich, False)
+        e.bot.handle_update(gmsg("@cctg_bot вопрос", mid=10))
+        called = self._track_md(e)
+        self.done(e, "s-aabbccdd", "| a | b |\n|---|---|\n| 1 | 2 |")
+        self.assertEqual(e.tg.of("sendRichMessage"), [])
+        self.assertEqual(len(called), 1)
+        self.assertEqual(len(self.to_group(e)), 1)
+
+    def test_the_rich_hint_is_in_the_prompt_only_with_the_flag(self):
+        phrase = ("Tables, checklists `- [ ]`/`- [x]` and `<details><summary>…</summary>…</details>` "
+                  "render in this chat — use them when clearer (a fight card, work stages, decision options); "
+                  "write no other HTML.")
+        e, _fake = responder_env(self)
+        rec = {"who": "Анна", "from": 777, "q": "вопрос", "mid": 10}
+        off = e.bot.responder_prompt(rec, True)
+        self.assertNotIn("Tables, checklists", off)
+        self.assertIn("Answer briefly; do not make things up.\n\n", off)
+        e.bot.cfg.group_rich = True
+        on = e.bot.responder_prompt(rec, True)
+        self.assertIn(phrase, on)
+        self.assertEqual(off, on.replace(" " + phrase, "", 1))
+
+    def test_group_rich_other_markup_sends_rich_and_a_long_table_does_not(self):
+        for body in ("- [ ] open\n- [x] done",
+                     "<details><summary>a</summary>b</details>",
+                     "| a |\n|:--|\n| 1 |"):
+            e, _fake = responder_env(self)
+            e.bot.cfg.group_rich = True
+            e.bot.handle_update(gmsg("@cctg_bot вопрос", mid=3))
+            called = self._track_md(e)
+            self.done(e, "s-aabbccdd", body)
+            self.assertEqual(len(e.tg.of("sendRichMessage")), 1, body)
+            self.assertEqual(called, [], body)
+            self.assertEqual(e.tg.of("sendRichMessage")[0]["rich_message"]["markdown"], cc.rich_safe(body))
+        e, _fake = responder_env(self)
+        e.bot.cfg.group_rich = True
+        e.bot.handle_update(gmsg("@cctg_bot вопрос", mid=3))
+        called = self._track_md(e)
+        exact = "|---|" + ("x" * (30000 - 5))
+        self.done(e, "s-aabbccdd", exact)
+        self.assertEqual(len(exact), 30000)
+        self.assertEqual(len(e.tg.of("sendRichMessage")), 1)
+        self.assertEqual(called, [])
+        e, _fake = responder_env(self)
+        e.bot.cfg.group_rich = True
+        e.bot.handle_update(gmsg("@cctg_bot вопрос", mid=3))
+        called = self._track_md(e)
+        self.done(e, "s-aabbccdd", "|---|" + ("x" * (30001 - 5)))
+        self.assertEqual(e.tg.of("sendRichMessage"), [])
+        self.assertEqual(len(called), 1)
+
     def test_other_chats_unaddressed_and_non_text_are_ignored(self):
         e, fake = responder_env(self)
         e.bot.handle_update(gmsg("@cctg_bot вопрос", chat=-5))
@@ -11561,6 +11703,12 @@ class DraftStatusTests(unittest.TestCase):
         e.bot.topics_enabled = False
         e.bot.draft_tick()
         self.assertEqual(e.tg.of("sendMessageDraft"), [])
+
+    def test_group_rich_flag_defaults_off(self):
+        off = cc.Config(env_path="/nonexistent", environ={"HOME": "/tmp", "TG_ALLOWED_USERS": "1"})
+        on = cc.Config(env_path="/nonexistent", environ={"HOME": "/tmp", "TG_ALLOWED_USERS": "1", "CC_GROUP_RICH": "1"})
+        self.assertIs(off.group_rich, False)
+        self.assertIs(on.group_rich, True)
 
     def test_working_topic_sends_one_draft_with_ids(self):
         e = self.ready()

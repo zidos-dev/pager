@@ -806,6 +806,7 @@ class Config:
         lang_ = (get("CC_STT_LANG") or "").strip().lower()
         self.stt_lang = lang_ if re.fullmatch(r"[a-z]{2,3}", lang_) else ""  # "" = the bot language
         self.draft_status = get("CC_DRAFT_STATUS") == "1"  # native «typing» draft in the session topic; off unless "1"
+        self.group_rich = get("CC_GROUP_RICH") == "1"  # rich replies in the group chat (tables, checklists, details); off unless "1"
 
 
 # ------------------------------------------------------------ pure functions
@@ -1027,6 +1028,37 @@ def esc(s):
 
 _FENCE = re.compile(r"```[^\n`]*\n?(.*?)```", re.S)
 _ICODE = re.compile(r"`([^`\n]+)`")
+_RICH_LT = re.compile(r"<details open>|<details>|</details>|<summary>|</summary>|<")
+_RICH_TG = re.compile(r"<(?=/?tg-)", re.I)
+
+
+def rich_safe(text):
+    """< → &lt; outside `spans` and ```blocks```, except details/summary tags a rich chat keeps."""
+    body = text or ""
+
+    def plain(s):
+        return _RICH_LT.sub(lambda m: m.group(0) if m.group(0) != "<" else "&lt;", s)
+
+    fences = [(m.start(), m.end()) for m in _FENCE.finditer(body)]
+
+    def covered(pos):
+        return any(a <= pos < b for a, b in fences)
+
+    spans = list(fences)
+    for m in _ICODE.finditer(body):
+        if not covered(m.start()) and body[m.start() - 1:m.start()] != "\\":  # \` is a literal backtick, not code
+            spans.append((m.start(), m.end()))
+    spans.sort()
+    parts, pos = [], 0
+    for a, b in spans:
+        if a < pos:
+            continue
+        parts.append(plain(body[pos:a]))
+        parts.append(body[a:b])
+        pos = b
+    parts.append(plain(body[pos:]))
+    # no tg-* tag (a real button) survives anywhere, code included: our code-span split may differ from Telegram's
+    return _RICH_TG.sub("&lt;", "".join(parts))
 
 
 _CTRL_RE = re.compile("[\x00-\x08\x0b-\x1f\x7f-\x9f]")
@@ -6920,10 +6952,13 @@ class Bot:
                if self.cfg.responder_engine != "sdk" else
                "If it asks to change something, do it: every change, command or file write is sent "
                "to the owner to confirm first, so say what you are about to do.")
+        hint = (" Tables, checklists `- [ ]`/`- [x]` and `<details><summary>…</summary>…</details>` "
+                "render in this chat — use them when clearer (a fight card, work stages, decision options); "
+                "write no other HTML." if self.cfg.group_rich else "")
         return (brief + recent + "A message from %s in the group chat. Answer it fully: questions about the project and "
                 "general ones. %s Answer briefly; do not make "
-                "things up.\n\n%s%s" % (rec["who"] + (" (the owner himself: talk to him directly, never «pass it to the "
-                                                        "owner»)" if rec.get("from") in self.cfg.allowed else ""), act, ("In reply to a message from %s: «%s»\n\n" % rec["ctx"]
+                "things up.%s\n\n%s%s" % (rec["who"] + (" (the owner himself: talk to him directly, never «pass it to the "
+                                                        "owner»)" if rec.get("from") in self.cfg.allowed else ""), act, hint, ("In reply to a message from %s: «%s»\n\n" % rec["ctx"]
                                            if rec.get("ctx") else "") + "".join(x + "\n\n" for x in rec.get("media") or ()), rec["q"]))
 
     def responder_auto(self, sid, req):
@@ -7198,13 +7233,26 @@ class Bot:
             out += "\n\n" + rec["link"]
         out, files = self.responder_files(out)
         self.chat_tail_add(self.chat_name(), out)
-        try:
-            # the model writes markdown: send_md turns it into Telegram HTML (bold, links) like console replies
-            # links as «text (url)»: a chat answer never hides where a link goes
-            self.tg_chat.send_md(self.cfg.responder_chat, re.sub(r"\[([^\]\n]+)\]\((https?://[^)\s]+)\)", r"\1 (\2)", out),
-                                 reply_to=rec["mid"])
-        except TGError as e:
-            log("responder reply failed: %s" % e)
+        # the model writes markdown: send_md turns it into Telegram HTML (bold, links) like console replies
+        # links as «text (url)»: a chat answer never hides where a link goes
+        shown = re.sub(r"\[([^\]\n]+)\]\((https?://[^)\s]+)\)", r"\1 (\2)", out)
+        sent_rich = False
+        if self.cfg.group_rich and len(shown) <= 30000 and (
+                "<details" in shown or re.search(r"^\s*\|?\s*:?-+:?\s*\||^\s*- \[[ xX]\] ", shown, re.M)):
+            try:
+                self.tg_chat._notify(self.cfg.responder_chat, self.tg_chat.call("sendRichMessage", {
+                    "chat_id": self.cfg.responder_chat,
+                    "rich_message": {"markdown": rich_safe(shown)},
+                    "reply_parameters": {"message_id": rec["mid"], "allow_sending_without_reply": True}}), None)
+                sent_rich = True
+            except TGError as e:
+                log("responder rich failed: %s" % e)
+                sent_rich = " HTTP " not in str(e)  # a timeout may have delivered it: no second answer
+        if not sent_rich:
+            try:
+                self.tg_chat.send_md(self.cfg.responder_chat, shown, reply_to=rec["mid"])
+            except TGError as e:
+                log("responder reply failed: %s" % e)
         for path in files:
             name = os.path.basename(path)
             try:
