@@ -2249,7 +2249,7 @@ function mModels(){  // a known family: the models as chips; the field stays for
   const p = mPreset(), cur = $("m-model").value.trim(), list = p.models || [];
   $("m-models").hidden = !list.length;
   $("m-models").innerHTML = pvModels(list, cur, p.labels);
-  pvNow($("m-list"), (p.labels && p.labels[cur]) || cur || $("m-model").placeholder);
+  pvNow($("m-list"), (p.labels && Object.hasOwn(p.labels, cur) && p.labels[cur]) || cur || $("m-model").placeholder);
 }
 /* движки «вход на сервере»: [как зовётся CLI в заметках, команда входа] */
 const LE = {codex: ["Codex", "codex login"], grok: ["Grok", "grok login"], gemini: ["Antigravity", "agy"]};
@@ -2481,7 +2481,7 @@ function bModelPaint(keepModel){
 function bModels(){
   const p = bPreset(), list = p.models || [], cur = $("b-model").value.trim();
   $("b-models").hidden = !list.length; $("b-models").innerHTML = pvModels(list, cur, p.labels);
-  pvNow($("b-prov"), (p.labels && p.labels[cur]) || cur || $("b-model").placeholder);
+  pvNow($("b-prov"), (p.labels && Object.hasOwn(p.labels, cur) && p.labels[cur]) || cur || $("b-model").placeholder);
 }
 function bEdit(b){
   bot = b; bOpen = false; botPick = b.provider; botChat = b.chat == null ? null : b.chat; botPersonaDesc = (b.persona && b.persona.description) || "";

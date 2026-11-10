@@ -10950,7 +10950,7 @@ class EverywhereTests(unittest.TestCase):
 
 
 class WidgetTests(unittest.TestCase):
-    """Bot API 10.4: /live sends a live quota widget to the private chat; the widget asks the bot for fresh numbers."""
+    """Bot API 10.4: /live sends the control-panel widget. Frozen widgets still ask with data "q" and get the quota snapshot."""
 
     def env(self):
         e = Env(self)
@@ -10975,7 +10975,11 @@ class WidgetTests(unittest.TestCase):
         self.assertLessEqual(len(html), 32768)
         self.assertLessEqual(len(zlib.compress(html, 9)), 4096)
         self.assertLessEqual(len(p["chat_data"].encode()), 1024)
-        self.assertEqual(json.loads(p["chat_data"])["h5"], 42.0)
+        d = json.loads(p["chat_data"])
+        self.assertEqual(d["q"], [42.0, 17.0])  # the same quota the old "q" snapshot called h5/d7
+        self.assertIn("c", d)
+        self.assertIn("w", d)
+        self.assertIn(str(d["c"][0]), p["caption"])
         self.assertTrue(p["caption"])  # apps without widgets show the caption
 
     def test_live_falls_back_to_the_quota_panel_when_telegram_refuses_the_widget(self):
@@ -11018,3 +11022,203 @@ class WidgetTests(unittest.TestCase):
         e = self.env()
         e.tg.get_updates(0)
         self.assertIn("widget_query", e.tg.of("getUpdates")[0]["allowed_updates"])
+
+
+class PultWidgetTests(unittest.TestCase):
+    """The /live widget is the owner's control panel: quota, who is waiting, allow or deny from the widget."""
+
+    def env(self):
+        e = Env(self)
+        with open(e.cfg.rate_file, "w") as f:
+            json.dump({"updated_at": time.time() - 60, "five_hour": {"used_percentage": 42.0, "resets_at": time.time() + 3600},
+                       "seven_day": {"used_percentage": 17.0}}, f)
+        return e
+
+    def query(self, uid=1, data="p", chat=True):
+        q = {"id": "wq1", "from": {"id": uid}, "data": data, "message_id": 5}
+        if chat:
+            q["chat"] = {"id": uid, "type": "private"}
+        return {"update_id": 77, "widget_query": q}
+
+    def answered(self, e):
+        return e.tg.of("answerWidgetQuery")[-1]
+
+    def test_live_widget_limits_counts_and_caption(self):
+        e = self.env()
+        mk(e, "s1", "blocked", 1, name="Ждёт")
+        e.bot.handle_update(e.msg("/live", mid=11))
+        w = e.tg.of("sendWidget")
+        self.assertEqual(len(w), 1)
+        p = w[0]
+        html = p["html"].encode()
+        self.assertNotIn(b"\x00", html)
+        self.assertLessEqual(len(html), 32768)
+        self.assertLessEqual(len(zlib.compress(html, 9)), 4096)
+        self.assertIn(b'req("p"', html)
+        self.assertIn(b"W.request(d)", html)
+        self.assertLessEqual(len(p["chat_data"].encode()), 1024)
+        d = json.loads(p["chat_data"])
+        self.assertIn("c", d)
+        self.assertIn("w", d)
+        self.assertEqual(d["c"][0], 1)
+        self.assertIn(str(d["c"][0]), p["caption"])
+
+    def test_p_from_owner_has_perm_row_stranger_and_missing_chat_get_nothing(self):
+        fake = FakeSdk(self)
+        fake.sessions[SID] = fake.session(state="blocked", pending=[perm_req()])
+        e = sdk_env(self, fake)
+        e.bot.handle_update(self.query())
+        d = json.loads(self.answered(e)["data"])
+        row = next(x for x in d["w"] if x[3] == "p")
+        self.assertEqual(row[0], "%s:r-00000001" % SID)
+        e.tg.calls.clear()
+        e.bot.handle_update(self.query(uid=2))
+        self.assertNotIn("data", self.answered(e))
+        e.tg.calls.clear()
+        e.bot.handle_update(self.query(chat=False))
+        self.assertNotIn("data", self.answered(e))
+        self.assertEqual(fake.calls("session.answer"), [])
+
+    def test_q_still_returns_h5_d7(self):
+        e = self.env()
+        e.bot.handle_update(self.query(data="q"))
+        d = json.loads(self.answered(e)["data"])
+        self.assertEqual(d["h5"], 42.0)
+        self.assertEqual(d["d7"], 17.0)
+
+    def test_sdk_allow_once_then_closed_without_another_answer(self):
+        fake = FakeSdk(self)
+        fake.sessions[SID] = fake.session(state="blocked", pending=[perm_req()])
+        e = sdk_env(self, fake)
+        tag = "%s:r-00000001" % SID
+        e.bot.handle_update(self.query(data="y:" + tag))
+        body = json.loads(self.answered(e)["data"])
+        self.assertEqual(body["r"], "ok")
+        self.assertEqual([x for x in body["s"]["w"] if x[3] == "p"], [])  # the answered request has no live button
+        self.assertEqual(fake.calls("session.answer"), [{"id": SID, "req": "r-00000001", "decision": "allow"}])
+        e.bot.handle_update(self.query(data="y:" + tag))
+        self.assertEqual(json.loads(e.tg.of("answerWidgetQuery")[-1]["data"])["r"], "closed")
+        self.assertEqual(fake.calls("session.answer"), [{"id": SID, "req": "r-00000001", "decision": "allow"}])
+
+    def test_tmux_stale_presses_nothing_deny_presses_no_missing_dialog_is_closed(self):
+        e = self.env()
+        mk(e, "s1", "blocked", 1, name="Альфа")
+        e.bot.list_sessions(True)
+        fs = FakeScreen(PERM_FIX)
+        e.bot.tmux = fs.tmux()
+        perm = cc.parse_perm_dialog(PERM_FIX)
+        good = cc.perm_sig(perm)[:8]
+        bad = "00000000" if good != "00000000" else "ffffffff"
+        no = next(o for o in perm["options"] if o["label"].startswith("No"))
+        e.bot.handle_update(self.query(data="n:s1:" + bad))
+        self.assertEqual(json.loads(self.answered(e)["data"])["r"], "stale")
+        self.assertEqual(fs.flat_keys, [])
+        e.bot.handle_update(self.query(data="n:s1:" + good))
+        self.assertEqual(json.loads(e.tg.of("answerWidgetQuery")[-1]["data"])["r"], "no")
+        self.assertEqual(fs.flat_keys, [str(no["n"])])
+        fs.screen = EMPTY_PROMPT
+        e.bot.handle_update(self.query(data="n:s1:" + good))
+        self.assertEqual(json.loads(e.tg.of("answerWidgetQuery")[-1]["data"])["r"], "closed")
+        self.assertEqual(fs.flat_keys, [str(no["n"])])
+
+    def test_tmux_second_allow_while_dialog_still_drawn_presses_once(self):
+        e = self.env()
+        mk(e, "s1", "blocked", 1, name="Альфа")
+        e.bot.list_sessions(True)
+        fs = FakeScreen(PERM_FIX)
+        e.bot.tmux = fs.tmux()
+        good = cc.perm_sig(cc.parse_perm_dialog(PERM_FIX))[:8]
+        e.bot.handle_update(self.query(data="y:s1:" + good))
+        body = json.loads(self.answered(e)["data"])
+        self.assertEqual(body["r"], "ok")
+        self.assertEqual([x for x in body["s"]["w"] if x[3] == "p"], [])
+        e.bot.handle_update(self.query(data="y:s1:" + good))  # the screen still shows the answered dialog
+        self.assertEqual(json.loads(e.tg.of("answerWidgetQuery")[-1]["data"])["r"], "closed")
+        self.assertEqual(fs.flat_keys, ["1"])
+
+    def test_tmux_allow_needs_a_yes_option(self):
+        e = self.env()
+        mk(e, "s1", "blocked", 1, name="Альфа")
+        e.bot.list_sessions(True)
+        screen = PERM_FIX.replace("Yes", "Maybe")
+        fs = FakeScreen(screen)
+        e.bot.tmux = fs.tmux()
+        perm = cc.parse_perm_dialog(screen)
+        self.assertIsNotNone(perm)
+        e.bot.handle_update(self.query(data="y:s1:" + cc.perm_sig(perm)[:8]))
+        self.assertEqual(json.loads(self.answered(e)["data"])["r"], "err")
+        self.assertEqual(fs.flat_keys, [])
+
+    def test_sdk_deny_answers_deny(self):
+        fake = FakeSdk(self)
+        fake.sessions[SID] = fake.session(state="blocked", pending=[perm_req()])
+        e = sdk_env(self, fake)
+        e.bot.handle_update(self.query(data="n:%s:r-00000001" % SID))
+        self.assertEqual(json.loads(self.answered(e)["data"])["r"], "no")
+        self.assertEqual(fake.calls("session.answer"), [{"id": SID, "req": "r-00000001", "decision": "deny"}])
+
+    def test_failed_snapshot_after_action_still_reports_the_decision(self):
+        fake = FakeSdk(self)
+        fake.sessions[SID] = fake.session(state="blocked", pending=[perm_req()])
+        e = sdk_env(self, fake)
+
+        def boom(chat):
+            raise RuntimeError("boom")
+
+        e.bot.pult_state = boom
+        e.bot.handle_update(self.query(data="y:%s:r-00000001" % SID))
+        self.assertEqual(json.loads(self.answered(e)["data"]), {"r": "ok"})
+
+    def test_fit_json_drops_rows_from_the_end_to_1024_bytes(self):
+        e = self.env()
+        rows = [["t%d" % i, "имя " * 20, "строка " * 20, "a", None] for i in range(4)]
+        obj = {"c": [4, 0, 0], "w": rows}
+        self.assertGreater(len(json.dumps(obj, ensure_ascii=False).encode()), 1024)
+        raw = e.bot._fit_json(obj)
+        self.assertLessEqual(len(raw.encode()), 1024)
+        w = json.loads(raw)["w"]
+        self.assertTrue(0 < len(w) < 4)
+        self.assertEqual(w[0][0], "t0")
+
+    def test_stranger_allow_is_answered_without_data_or_action(self):
+        fake = FakeSdk(self)
+        fake.sessions[SID] = fake.session(state="blocked", pending=[perm_req()])
+        e = sdk_env(self, fake)
+        e.bot.handle_update(self.query(uid=2, data="y:%s:r-00000001" % SID))
+        self.assertNotIn("data", self.answered(e))
+        self.assertEqual(fake.calls("session.answer"), [])
+
+    def test_exception_inside_still_answers_the_query(self):
+        e = self.env()
+
+        def boom():
+            raise RuntimeError("boom")
+
+        e.bot.api_quota = boom
+        e.bot.handle_update(self.query(data="p"))
+        self.assertEqual(len(e.tg.of("answerWidgetQuery")), 1)
+
+    def test_long_waiting_list_and_action_stay_within_1024(self):
+        e = self.env()
+        for i in range(30):
+            mk(e, "w%02d" % i, "blocked", i + 1, name="Очень длинное имя сессии номер %02d с подробностями" % i,
+               detail="детали " + ("длинная строка " * 8) + str(i))
+        e.bot.handle_update(self.query(data="p"))
+        raw = self.answered(e)["data"]
+        self.assertLessEqual(len(raw.encode()), 1024)
+        d = json.loads(raw)
+        self.assertEqual(d["c"][0], 30)
+        self.assertLessEqual(len(d["w"]), 4)
+        e.bot.handle_update(self.query(data="y:no-such:abcd"))
+        raw = e.tg.of("answerWidgetQuery")[-1]["data"]
+        self.assertLessEqual(len(raw.encode()), 1024)
+        body = json.loads(raw)
+        self.assertEqual(body["r"], "err")
+        self.assertLessEqual(len(body["s"]["w"]), 4)
+
+    def test_other_data_is_answered_without_data(self):
+        e = self.env()
+        e.bot.handle_update(self.query(data="zzz"))
+        a = self.answered(e)
+        self.assertEqual(a["widget_query_id"], "wq1")
+        self.assertNotIn("data", a)

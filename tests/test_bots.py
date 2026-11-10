@@ -576,6 +576,20 @@ class ResponderRoleTests(unittest.TestCase):
                                                                      "message": {"chat": {"id": 5, "type": "private"}}}})
         self.assertEqual([c[0][0]["data"] for c in cb.call_args_list], ["pr:1", "bl:x:run"])
 
+    def test_stranger_press_gets_a_popup_only_for_them(self):
+        """A group member pressing 🔐 / backlog: a popup to them (the spinner stops), nothing runs, nothing in the group."""
+        with mock.patch.object(self.bot, "on_callback") as cb:
+            self.bot.handle_update({"update_id": 1, "callback_query": {"id": "q5", "data": "pr:1", "from": {"id": 5},
+                                                                     "message": {"chat": {"id": -100500, "type": "supergroup"}}}})
+            self.bot.handle_update({"update_id": 2, "callback_query": {"id": "q6", "data": "zz", "from": {"id": 5},
+                                                                     "message": {"chat": {"id": -100500, "type": "supergroup"}}}})
+        cb.assert_not_called()
+        ans = self.tg.of("answerCallbackQuery")
+        self.assertEqual([a["callback_query_id"] for a in ans], ["q5", "q6"])
+        self.assertEqual(ans[0]["text"], cc._t("Only the owner can press this button."))
+        self.assertNotIn("text", ans[1])
+        self.assertEqual(self.tg.of("sendMessage"), [])
+
     def test_allowed_updates_include_membership(self):
         tg = base.FakeTG()
         tg.get_updates(0)

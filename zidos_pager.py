@@ -104,11 +104,6 @@ _RU = {
     "Cancelled.": "Отменено.",
     "Choose a folder:": "Выберите папку:",
     "Claude quota": "Квота Claude",
-    "Live Claude quota": "Живая квота Claude",
-    "Live quota: refreshes itself while it is on screen. Without widgets: /quota":
-        "Живая квота: обновляется сама, пока на экране. Без виджетов: /quota",
-    "reset at %s": "сброс в %s",
-    "updated at %s": "обновлено в %s",
     "Claude quota\n"
     "No data yet: file not found. It is updated while any Claude Code is open.":
         "Квота Claude\n"
@@ -300,6 +295,20 @@ _RU = {
     "Updated %s": "Обновлено %s",
     "Usage and limits": "Расход и лимиты",
     "Waiting for you": "Ждут вас",
+    "are waiting for you": "ждут вас",
+    "nobody is waiting": "никто не ждёт",
+    "%s working": "%s в работе",
+    "%s done": "%s готово",
+    "Again": "Ещё раз",
+    "Allowed": "Разрешено",
+    "Denied": "Отклонено",
+    "The request is already different": "Запрос уже другой — обновил",
+    "It did not work": "Не вышло",
+    "One second…": "Секунду…",
+    "quota is stale": "квота устарела",
+    "Control panel": "Пульт",
+    "🎛 Control panel: waiting for you — %s · working — %s. Without widgets: /s":
+        "🎛 Пульт: ждут вас — %s · в работе — %s. Без виджетов: /s",
     "🔐 Needs permission": "🔐 Нужно разрешение",
     "%s · group: %s · model: %s": "%s · группа: %s · модель: %s",
     "🔐 %s: needs your permission — %s": "🔐 %s: нужно ваше разрешение — %s",
@@ -595,6 +604,7 @@ _RU = {
     'The subscription quota is not available without Claude Code.': 'Квота подписки недоступна без Claude Code.',
     ' (%d edits), first:': ' (правок: %d), первая:',
     'Where to start the new session? ⚡ via SDK': 'Где запустить новую сессию? ⚡ через SDK',
+    'Only the owner can press this button.': 'Эту кнопку может нажать только владелец.',
 }
 STR = {"ru": _RU, "en": {k: k for k in _RU}}
 
@@ -837,32 +847,58 @@ STALE_QUOTA = 30 * 60
 # Bot API 10.4 widget: fixed HTML in the message, numbers come from the bot (chat_data at sending, then
 # answers to background requests while it is on screen). No network in the sandbox; colors are the bubble's.
 LIVE_WIDGET = """<style>
-body{margin:0;padding:10px 12px}
-.h{font-weight:500;margin-bottom:6px}
-.r{display:flex;align-items:center;gap:10px;margin:6px 0}
-.n{flex:0 0 36%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.b{flex:1;height:6px;border-radius:3px;background:var(--tg-theme-secondary-bg-color)}
-.b i{display:block;height:100%;border-radius:3px;background:var(--tg-theme-button-color)}
-.b i.hot{background:var(--tg-theme-destructive-text-color)}
-.v{min-width:4ch;text-align:right;font-variant-numeric:tabular-nums}
-.s{color:var(--tg-theme-hint-color);font-size:.85em;margin-top:4px}
-</style><div class="h" id="h"></div><div id="rows"></div><div class="s" id="s"></div>
+body{margin:0}
+.sc{padding:14px 14px max(14px,env(safe-area-inset-bottom));color:#fff;background:radial-gradient(110% 80% at 100% 0%,#4256ff 0%,rgba(66,86,255,0) 58%),radial-gradient(90% 70% at 0% 100%,rgba(210,251,74,.22) 0%,rgba(210,251,74,0) 62%),#0b0e1d}
+.mu{color:rgba(255,255,255,.68)}.sm{font-size:.82em}.t{font-variant-numeric:tabular-nums}
+.top{display:flex;gap:10px;align-items:baseline}.e{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.big{font-size:2.6em;font-weight:500;letter-spacing:-.04em;line-height:1.1;margin-top:6px}
+.it{background:rgba(255,255,255,.08);border-radius:16px;padding:10px 12px;margin-top:8px}
+.nm{font-weight:500}.lk{display:flex;align-items:center;min-height:44px;margin:-10px 0 -6px}.lk b{font-weight:400;opacity:.6;padding-left:8px}.ln{font-family:ui-monospace,monospace;font-size:.78em}
+.ac{display:flex;gap:8px;margin-top:8px}
+.cap,.ch{display:flex;align-items:center;justify-content:center;min-height:44px;border-radius:22px;position:relative;overflow:hidden;touch-action:none}
+.cap{flex:1;white-space:nowrap;padding:0 14px;background:#d2fb4a;color:#0b0e1d;font-weight:500}.ch{padding:0 16px;background:rgba(255,255,255,.12)}
+.cap i{position:absolute;left:0;top:0;bottom:0;width:100%;background:#0b0e1d;opacity:.18;transform:scaleX(0);transform-origin:left}
+.cap.go i{transform:scaleX(1);transition:transform .6s linear}.cap span{position:relative}.cap.q{background:rgba(255,255,255,.12);color:#d2fb4a}
+.rs{margin-top:6px;color:#d2fb4a}.ft{margin-top:10px}
+@media (prefers-reduced-motion:reduce){.cap.go i{transition:none}}
+</style>
+<div class="sc"><div class="top"><span class="mu sm e" id="t"></span><span class="mu sm t" id="q"></span></div>
+<div class="big t" id="n"></div><div class="mu" id="nl"></div><div id="L"></div><div class="mu sm t ft" id="f"></div></div>
 <script>
-var W=window.TelegramWidget,L=__L__;
+var W=window.TelegramWidget,L=__L__,S=null,busy=0;
+function $(i){return document.getElementById(i)}
 function el(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}
-function row(n,p){var r=el("div","r"),b=el("div","b"),i=el("i",p>=85?"hot":"");
-i.style.width=Math.max(0,Math.min(100,p||0))+"%";b.appendChild(i);
-r.appendChild(el("div","n",n));r.appendChild(b);r.appendChild(el("div","v",p==null?"\\u2014":Math.round(p)+"%"));return r}
-function draw(t){var d=null;try{d=JSON.parse(t)}catch(e){}if(!d)return;
-var rs=document.getElementById("rows");rs.textContent="";
-rs.appendChild(row(L.h5,d.h5));rs.appendChild(row(L.d7,d.d7));
-(d.p||[]).forEach(function(x){rs.appendChild(row(x[0],x[1]))});
-var s=[];if(d.rs)s.push(L.rs.replace("%s",d.rs));if(d.u)s.push(L.u.replace("%s",d.u));
-document.getElementById("s").textContent=d.st?L.st:s.join(" \\u00b7 ")}
-function ask(){if(!W||!W.isActive)return;W.request("q").then(function(a){draw(a.result)},function(){})}
-document.getElementById("h").textContent=L.t;
-if(W){draw(W.chatData);W.onEvent("activated",ask);ask();setInterval(ask,10000)}
-</script>"""
+function hap(k){try{W.HapticFeedback.notificationOccurred(k)}catch(e){}}
+function pct(v){return v==null?"—":Math.round(v)+" %"}
+function draw(s){if(!s)return;S=s;var c=s.c||[0,0,0],w=s.w||[],b=$("L");
+$("q").textContent=s.st?L.st:L.h5+" "+pct((s.q||[])[0])+" · "+L.d7+" "+pct((s.q||[])[1]);
+$("n").textContent=c[0];$("nl").textContent=c[0]?L.wait:L.none;b.textContent="";row.f=0;
+w.forEach(function(x){b.appendChild(row(x))});
+var f=[];if(c[1])f.push(L.work.replace("%s",c[1]));if(c[2])f.push(L.done.replace("%s",c[2]));if(s.u)f.push(s.u);
+$("f").textContent=f.join(" · ")}
+function row(x){var r=el("div","it"),a=el("div","ac"),h=el("div","nm lk");h.appendChild(el("span","e",x[1]));
+if(x[4]){h.appendChild(el("b",null,"\\u203a"));h.onclick=function(){W.openTelegramLink(x[4])}}r.appendChild(h);
+if(x[2])r.appendChild(el("div","ln mu e",x[2]));
+if(x[3]=="p"){var c=el("div","cap"+(row.f?" q":"")),sp=el("span",null,L.allow),t0=0,arm=0;c.appendChild(el("i"));c.appendChild(sp);row.f=1;
+c.onpointerdown=function(){t0=Date.now();c.classList.add("go")};
+c.onpointercancel=c.onpointerleave=function(){c.classList.remove("go")};
+c.onclick=function(){c.classList.remove("go");
+if(t0&&Date.now()-t0>=550||arm)return act("y:"+x[0],r);arm=1;sp.textContent=L.again;setTimeout(function(){arm=0;sp.textContent=L.allow},4000)};
+var d=el("div","ch",L.deny);d.onclick=function(){act("n:"+x[0],r)};a.appendChild(c);a.appendChild(d)}
+if(a.firstChild)r.appendChild(a);return r}
+function req(d,ok,no){busy=1;try{W.request(d).then(function(a){busy=0;ok(a)},function(e){busy=0;no(e)})}catch(e){busy=0;no(e)}}
+function act(d,r){if(busy){note(r,L.busy);return}
+req(d,function(a){var v=null;try{v=JSON.parse(a.result)}catch(e){}
+if(!v){note(r,L.err);return}hap(v.r=="ok"?"success":"warning");
+note(r,v.m||L[v.r]||L.err);if(v.s)setTimeout(function(){draw(v.s)},1200)},
+function(e){note(r,e&&e.code=="BUSY"?L.busy:L.err)})}
+function note(r,m){var o=r.querySelector(".rs");if(!o){o=el("div","rs");r.appendChild(o)}o.textContent=m}
+function ask(){if(!W||!W.isActive||busy)return;
+req("p",function(a){try{draw(JSON.parse(a.result))}catch(e){}},function(){})}
+$("t").textContent=L.t;
+if(W){try{draw(JSON.parse(W.chatData))}catch(e){}W.onEvent("activated",ask);ask();setInterval(ask,10000)}
+</script>
+"""
 
 
 def panel_title():
@@ -883,7 +919,7 @@ def route_prompt():
 
 
 def bot_commands():
-    return [("s", _t("Session list")), ("new", _t("New session")), ("quota", _t("Claude quota")), ("live", _t("Live Claude quota")),
+    return [("s", _t("Session list")), ("new", _t("New session")), ("quota", _t("Claude quota")), ("live", _t("Control panel")),
             ("screen", _t("Session screen")), ("stop", _t("Stop a session")), ("pwa", _t("App on your phone")),
             ("devices", _t("Devices of the app")), ("help", _t("Help"))]
 
@@ -4609,6 +4645,7 @@ class Bot:
         self._perm_opened = {}    # tmux sid -> when perm_open last opened a window for it
         self._perm_prime = set()  # tmux sids whose window was opened on the first tick: their dialog is not news
         self._perm_pushed = set()  # (sid, req) of SDK requests already pushed
+        self._pult_answered = set()  # (sdk sid, req) already decided from the widget: a repeat does not call the runner
         self.last_forward_text = {}
         self.turn_forwarded = set()
         self.api_lock = threading.RLock()
@@ -4948,6 +4985,32 @@ class Bot:
                 break
         return dirs[:6]
 
+    def panel_groups(self, sessions):
+        """perms, waiting, working, done, old, arch — the buckets the panel draws.
+        Archived and superseded are not waiting, working or done. Active buckets are newest first."""
+        perms, waiting, working, done, old, arch = [], [], [], [], [], []
+        for x in sessions:
+            if self.is_archived(x["id"]):  # a bot mark: not counted as waiting, working or in any counter
+                arch.append((x, None))
+                continue
+            if self.is_old(x["id"]):  # superseded by a continuation — do not show among the active ones
+                old.append((x, None))
+                continue
+            if self.perm_flag(x["id"], x["state"]):  # a permission request blocks the work: its own group on top
+                perms.append((x, None))
+                continue
+            ask = self.session_ask(x) if x["state"] in ("working", "blocked") else None
+            if x["state"] == "blocked" or ask:
+                waiting.append((x, ask))
+            elif x["state"] in ("done", "failed"):
+                done.append((x, None))
+            else:
+                working.append((x, None))
+        for grp in (perms, waiting, working, done, old):
+            grp.sort(key=lambda t: -t[0]["updated"])
+        arch.sort(key=lambda t: -(self.archived_at(t[0]["id"]) or 0))
+        return perms, waiting, working, done, old, arch
+
     def panel_render(self, chat):
         """-> (html, plain, markup) for the current mode, or None if the session list is unavailable."""
         p = self.panel_state(chat)
@@ -5013,27 +5076,7 @@ class Bot:
         sessions = self.list_sessions(True)
         if sessions is None:
             return None
-        perms, waiting, working, done, old, arch = [], [], [], [], [], []
-        for x in sessions:
-            if self.is_archived(x["id"]):  # a bot mark: not counted as waiting, working or in any counter
-                arch.append((x, None))
-                continue
-            if self.is_old(x["id"]):  # superseded by a continuation — do not show among the active ones
-                old.append((x, None))
-                continue
-            if self.perm_flag(x["id"], x["state"]):  # a permission request blocks the work: its own group on top
-                perms.append((x, None))
-                continue
-            ask = self.session_ask(x) if x["state"] in ("working", "blocked") else None
-            if x["state"] == "blocked" or ask:
-                waiting.append((x, ask))
-            elif x["state"] in ("done", "failed"):
-                done.append((x, None))
-            else:
-                working.append((x, None))
-        for grp in (perms, waiting, working, done, old):
-            grp.sort(key=lambda t: -t[0]["updated"])
-        arch.sort(key=lambda t: -(self.archived_at(t[0]["id"]) or 0))
+        perms, waiting, working, done, old, arch = self.panel_groups(sessions)
         counts = []
         if perms:
             counts.append("🔐 %d" % len(perms))
@@ -5643,25 +5686,175 @@ class Bot:
                 return s
             d["p"].pop()
 
+    def pult_quota(self):
+        """(percents, stale flag, clock) from the same place as live_snapshot. No Claude Code or a broken file: empty percents."""
+        if self.claude_missing():
+            return [None, None], 0, None
+        try:
+            q = self.api_quota()
+            upd = q.get("updated")
+            u = datetime.fromtimestamp(upd).strftime("%H:%M") if upd else None
+            return [q.get("h5"), q.get("d7")], (1 if q.get("stale") else 0), u
+        except (ValueError, OSError, OverflowError, TypeError) as e:
+            log("live snapshot: %s" % type(e).__name__)
+            return [None, None], 0, None
+
+    def pult_link(self, chat, sid):
+        """t.me/<bot>/<thread> when topics are on and this chat already has a topic for the session."""
+        if not (self.topics_enabled and self.bot_username) or chat is None:
+            return None
+        topic = self.store.chat(chat)["topics"].get(sid)
+        thread = topic.get("thread") if isinstance(topic, dict) else None
+        return "https://t.me/%s/%s" % (self.bot_username, thread) if thread else None
+
+    def pult_item(self, chat, x, ask, perm):
+        """One widget row: [tag, name, line, kind, link]. kind "p" can be allowed or denied; herdr stays "a"."""
+        sid = x["id"]
+        name = short_keep_tag(self.display_name(sid), 34)
+        link = self.pult_link(chat, sid)
+        if perm and not is_herdr(sid):  # a button only for a request we can name; otherwise the row just links
+            if is_sdk(sid):
+                # the runner lists an answered request until its own event: no button for it
+                pend = [r for r in self.perm_pending(sid) if (sid, str(r["req"])) not in self._pult_answered]
+                tag = "%s:%s" % (sid, pend[0]["req"]) if pend else None
+            else:
+                ent = self._perm_cache.get(sid) or {}
+                tag = "%s:%s" % (sid, perm_sig(ent["perm"])[:8]) if ent.get("perm") else None
+            if tag:
+                return [tag, name, short(self.perm_line(sid), 60), "p", link]
+        if perm:
+            line = self.perm_line(sid)
+        elif ask:
+            line = _t("question: %s") % ask[0]
+        else:
+            line = humanize_detail(x["detail"] or x["result"] or "")
+        return [sid, name, short(line, 60), "a", link]
+
+    def pult_state(self, chat):
+        """The control-panel snapshot: quota, counts, and at most four rows (permissions, then questions)."""
+        qq, st, u = self.pult_quota()
+        sessions = self.list_sessions(True)
+        if sessions:
+            perms, waiting, working, done, _old, _arch = self.panel_groups(sessions)
+        else:
+            perms, waiting, working, done = [], [], [], []
+        rows = []
+        for grp, perm in ((perms, True), (waiting, False)):  # permissions first, then questions; herdr stays kind "a"
+            for x, ask in grp:
+                if len(rows) >= 4:
+                    break
+                rows.append(self.pult_item(chat, x, ask, perm))
+        return {"q": qq, "st": st, "c": [len(perms) + len(waiting), len(working), len(done)], "u": u, "w": rows}
+
+    def _fit_json(self, obj, rows=None):
+        """Compact JSON of at most 1024 bytes; extra widget rows are dropped from the end."""
+        if rows is None:
+            rows = obj.get("w") if isinstance(obj, dict) else None
+        rows = rows if isinstance(rows, list) else []
+        while True:
+            raw = json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
+            if len(raw.encode()) <= 1024 or not rows:
+                return raw
+            rows.pop()
+
     def send_live(self, chat):
-        """The live quota widget in the private chat; the quota panel where Telegram refuses widgets."""
+        """The control panel widget in the private chat; the quota panel where Telegram refuses widgets."""
         if self.claude_missing():
             return self.send_quota(chat)
-        labels = {"t": _t("Live Claude quota"), "h5": _t("5 h"), "d7": _t("7 d"), "rs": _t("reset at %s"),
-                  "u": _t("updated at %s"), "st": _t("⚠️ Data is stale: it is updated while any Claude Code is open.")}
+        labels = {"t": _t("Control panel"), "wait": _t("are waiting for you"), "none": _t("nobody is waiting"),
+                  "work": _t("%s working"), "done": _t("%s done"), "allow": _t("Allow"), "again": _t("Again"),
+                  "deny": _t("Deny"), "ok": _t("Allowed"), "no": _t("Denied"),
+                  "stale": _t("The request is already different"), "closed": _t("Already decided"),
+                  "err": _t("It did not work"), "busy": _t("One second…"), "h5": _t("5 h"), "d7": _t("7 d"),
+                  "st": _t("quota is stale")}
         html = LIVE_WIDGET.replace("__L__", json.dumps(labels, ensure_ascii=False).replace("</", "<\\/"))
         try:
-            self.tg.send_widget(chat, html, _t("Live quota: refreshes itself while it is on screen. "
-                                               "Without widgets: /quota"), self.live_snapshot())
+            data = self._fit_json(self.pult_state(chat))
+            c = json.loads(data)["c"]
+            caption = _t("🎛 Control panel: waiting for you — %s · working — %s. Without widgets: /s") % (c[0], c[1])
+            self.tg.send_widget(chat, html, caption, data)
         except TGError as e:
             log("sendWidget refused: %s" % e)
             self.send_quota(chat)
 
+    def pult_action(self, chat, yn, tag):
+        """Allow (y) or deny (n) one waiting permission request, then a fresh snapshot. The whole answer fits 1024 bytes."""
+        state = {"r": self.pult_decide(yn, tag)}
+        try:  # the decision is made: a failed snapshot must not hide it
+            state["s"] = self.pult_state(chat)
+        except Exception as e:
+            log("pult snapshot: %s" % e)
+            return self._fit_json(state, [])
+        return self._fit_json(state, state["s"]["w"])
+
+    def pult_decide(self, yn, tag):
+        sid, sep, rest = (tag or "").partition(":")
+        if yn not in ("y", "n") or not sep or not sid or not rest or is_herdr(sid):
+            return "err"
+        if is_sdk(sid):
+            return self.pult_sdk(sid, yn, rest)
+        return self.pult_tmux(sid, yn, rest)
+
+    def pult_sdk(self, sid, yn, req):
+        if not is_sdk(sid) or sid not in self.known:
+            return "err"
+        key = (sid, str(req))
+        if key in self._pult_answered:  # the runner still lists it until its own event; do not answer twice
+            return "closed"
+        _http, obj = self.api_perm_sdk(sid, 1 if yn == "y" else 3, req)
+        if not isinstance(obj, dict):
+            return "err"
+        if obj.get("ok") and not obj.get("already"):
+            self._pult_answered.add(key)
+            return "ok" if yn == "y" else "no"
+        if obj.get("code") == "closed" or obj.get("already"):
+            return "closed"
+        return "err"  # api_perm_sdk's error (and bad) — the widget shows «Не вышло»
+
+    def pult_tmux(self, sid, yn, sig):
+        if sid not in self.known or is_sdk(sid) or is_herdr(sid):
+            return "err"
+
+        def select(perm):
+            if perm_sig(perm)[:8] != sig:  # the dialog changed: do not press a key for the old request
+                return "stale", None
+            ans = self._perm_answered.get(sid)  # answered, still drawn for a moment: a second tap must not type into the prompt
+            if ans and ans[0] == perm_sig(perm) and ans[1] > self.clock():
+                return "closed", None
+            if yn == "y":
+                opt = next((o for o in perm["options"] if o["n"] == 1 and re.match(r"yes\b", o["label"], re.I)), None)
+            else:
+                opt = next((o for o in perm["options"] if re.match(r"no\b", o["label"], re.I)), None)
+            return ("press", opt) if opt else ("err", None)
+
+        code, _payload = self.tmux_perm_act(sid, select)
+        if code == "ok":
+            return "ok" if yn == "y" else "no"
+        return code if code in ("stale", "closed", "err") else "err"
+
+    def widget_data(self, q):
+        """JSON for one widget request, or None when the answer must carry no data."""
+        if not self.authorized((q.get("from") or {}).get("id"), (q.get("chat") or {}).get("type")):
+            return None
+        data = q.get("data")
+        if data == "q":  # widgets sent before the control panel: their script is frozen and still asks for the quota
+            return self.live_snapshot()
+        chat = (q.get("chat") or {}).get("id")
+        if data == "p":
+            return self._fit_json(self.pult_state(chat))
+        if isinstance(data, str) and len(data) >= 2 and data[0] in "yn" and data[1] == ":":
+            return self.pult_action(chat, data[0], data[2:])
+        return None
+
     def on_widget_query(self, q):
-        """A request from the live widget: answered every time (else the widget waits for TIMEOUT), data only to the owner."""
+        """A request from a widget: answered every time (else the widget waits for TIMEOUT). Data only for the owner, in private."""
         p = {"widget_query_id": q.get("id")}
-        if self.authorized((q.get("from") or {}).get("id"), (q.get("chat") or {}).get("type")):
-            p["data"] = self.live_snapshot()
+        try:
+            data = self.widget_data(q)
+            if data is not None:
+                p["data"] = data
+        except Exception as e:
+            log("widget query: %s" % e)
         try:
             self.tg.call("answerWidgetQuery", p)
         except TGError as e:
@@ -7174,6 +7367,9 @@ class Bot:
             if (self.authorized((cq.get("from") or {}).get("id"), (msg.get("chat") or {}).get("type"))
                     and (cq.get("data") or "").partition(":")[0] in ("pr", "bl")):
                 self.on_callback(cq, msg)
+            elif cq.get("id"):  # a group member's press: a popup only they see, the spinner stops
+                own = (cq.get("data") or "").partition(":")[0] in ("pr", "bl")
+                self.tg.answer(cq["id"], _t("Only the owner can press this button.") if own else None)
             return
         m = upd.get("message") or upd.get("edited_message") or {}
         ctype = (m.get("chat") or {}).get("type")
@@ -9879,24 +10075,43 @@ class Bot:
         head, body = sdk_input_parts(req.get("tool"), req.get("input"))
         return self.perm_push(sid, str(req.get("tool") or "?"), body or head)
 
+    def tmux_perm_act(self, sid, select, after=None):
+        """One tmux permission key under the session lock. select(dialog) -> ("press", option) or
+        ("stale"|"err", _). A missing dialog is "closed" and drops the cached dialog.
+        -> (code, payload): "ok" with after(dialog) or the option; otherwise the code and the dialog read."""
+        with self.tmux.lock(sid):
+            perm = parse_perm_dialog(self.tmux.capture(sid))
+            if perm is None:
+                self._perm_cache.pop(sid, None)
+                return "closed", None
+            kind, opt = select(perm)
+            if kind != "press":
+                return kind, perm
+            if opt is None or not self.tmux.keys(sid, str(opt["n"])):
+                return "err", perm
+            self.perm_mark_answered(sid, perm)
+            return "ok", after(perm) if after else opt
+
     def perm_press(self, chat, mid, sid, n, h):
         """A Telegram button of a tmux permission dialog: the same label check as in the mini-app."""
         if sid not in self.known or is_sdk(sid) or is_herdr(sid):
             self.popup(chat, _t("This button is outdated."))
             return
-        with self.tmux.lock(sid):
-            perm = parse_perm_dialog(self.tmux.capture(sid))
-            opt = next((o for o in perm["options"] if o["n"] == n), None) if perm else None
-            if perm is None:
-                err = _t("The permission request is already closed.")
-            elif opt is None or perm_label_hash(opt["label"]) != h:
-                err = _t("This button is outdated.")
-            else:
-                err = None if self.tmux.keys(sid, str(n)) else "⚠️ " + _t("The key was not pressed.")
-        if err:
-            self.popup(chat, err, sid=sid)
+
+        def select(perm):
+            opt = next((o for o in perm["options"] if o["n"] == n), None)
+            if opt is None or perm_label_hash(opt["label"]) != h:
+                return "stale", None
+            return "press", opt
+
+        code, opt = self.tmux_perm_act(sid, select)
+        if code == "closed":
+            self.popup(chat, _t("The permission request is already closed."), sid=sid)
             return
-        self.perm_mark_answered(sid, perm)
+        if code != "ok":
+            msg = _t("This button is outdated.") if code == "stale" else "⚠️ " + _t("The key was not pressed.")
+            self.popup(chat, msg, sid=sid)
+            return
         if mid:
             self.tg.edit_markup(chat, mid)
         self.popup(chat, _t("Sent: %s") % short(opt["label"], 60), sid=sid)
@@ -9916,20 +10131,25 @@ class Bot:
             return 400, {"ok": False, "code": "bad", "error": _t("No such option")}
         if not self.is_live(sid):
             return 200, {"ok": False, "code": "stopped", "error": _t("The session is stopped — command not sent")}
-        with self.tmux.lock(sid):
-            perm = parse_perm_dialog(self.tmux.capture(sid))
-            if perm is None:
-                self._perm_cache.pop(sid, None)
-                return 200, {"ok": False, "code": "closed"}
+
+        def select(perm):
             cur = next((o for o in perm["options"] if o["n"] == opt), None)
             if cur is None or cur["label"] != label:
-                return 200, {"ok": False, "code": "stale", "perm": tmux_perm_view(perm)}
-            if not self.tmux.keys(sid, str(opt)):
-                return 200, {"ok": False, "code": "error", "error": _t("The key was not pressed.")}
-            self.perm_mark_answered(sid, perm)
+                return "stale", None
+            return "press", cur
+
+        def after(_perm):
             self.sleep(1.0)
-            new = parse_perm_dialog(self.tmux.capture(sid))
-        return 200, {"ok": True, "perm": tmux_perm_view(new) if new else None}
+            return parse_perm_dialog(self.tmux.capture(sid))
+
+        code, payload = self.tmux_perm_act(sid, select, after)
+        if code == "closed":
+            return 200, {"ok": False, "code": "closed"}
+        if code == "stale":
+            return 200, {"ok": False, "code": "stale", "perm": tmux_perm_view(payload)}
+        if code != "ok":
+            return 200, {"ok": False, "code": "error", "error": _t("The key was not pressed.")}
+        return 200, {"ok": True, "perm": tmux_perm_view(payload) if payload else None}
 
     def api_perm_sdk(self, sid, opt, req):
         """Not under api_lock: the runner call may take a while."""
