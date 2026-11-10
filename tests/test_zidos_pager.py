@@ -11222,3 +11222,297 @@ class PultWidgetTests(unittest.TestCase):
         a = self.answered(e)
         self.assertEqual(a["widget_query_id"], "wq1")
         self.assertNotIn("data", a)
+
+
+class HudWidgetTests(unittest.TestCase):
+    """/live inside a session topic is that session's HUD. Outside, it stays the control panel."""
+
+    def env(self):
+        e = Env(self)
+        with open(e.cfg.rate_file, "w") as f:
+            json.dump({"updated_at": time.time() - 60, "five_hour": {"used_percentage": 42.0, "resets_at": time.time() + 3600},
+                       "seven_day": {"used_percentage": 17.0}}, f)
+        return e
+
+    def query(self, uid=1, data="h:s1", chat=True):
+        q = {"id": "wq1", "from": {"id": uid}, "data": data, "message_id": 5}
+        if chat:
+            q["chat"] = {"id": uid, "type": "private"}
+        return {"update_id": 77, "widget_query": q}
+
+    def answered(self, e):
+        return e.tg.of("answerWidgetQuery")[-1]
+
+    def live(self, sid="s1", state="working", pid=4, detail="правит файл"):
+        e = self.env()
+        t = {"n": 5_000_000.0}
+        e.t = t
+        e.bot.clock = lambda: t["n"]
+        e.bot.known[sid] = {
+            "id": sid, "name": "Раскрой: бэк", "cwd": "/tmp", "state": state, "detail": detail,
+            "result": None, "sessionId": "", "link": "", "updated": t["n"] - 761, "created": t["n"] - 259200,
+            "pid": pid, "model": "sonnet",
+        }
+        return e
+
+    def stops(self, e, result=True):
+        calls = []
+
+        def stop(sid, timeout=30):
+            calls.append(sid)
+            e.stop_timeout = timeout
+            if result is None:
+                raise RuntimeError("boom")
+            return result
+
+        e.bot.stop_session = stop
+        return calls
+
+    def test_live_in_topic_sends_the_hud_with_the_thread_and_sid(self):
+        e = self.env()
+        now = BASE
+        e.bot.clock = lambda: now
+        e.bot.topics_enabled = True
+        e.bot.bot_username = "zpbot"
+        mk(e, "s1", "working", 761 / 60, name="Раскрой: бэк", detail="правит src/api/orders.ts")
+        e.bot.list_sessions(True)
+        e.bot.known["s1"]["created"] = now - 259200  # three days old: the clock counts this state, not the session
+        e.bot.known["s1"]["pid"] = 4
+        e.bot.known["s1"]["model"] = "sonnet"
+        th = e.bot.ensure_topic(1, "s1")
+        e.bot.handle_update(e.msg("/live", thread=th))
+        w = e.tg.of("sendWidget")
+        self.assertEqual(len(w), 1)
+        p = w[0]
+        self.assertEqual(p["message_thread_id"], th)
+        self.assertLessEqual(len(p["chat_data"].encode()), 1024)
+        d = json.loads(p["chat_data"])
+        self.assertEqual(d["id"], "s1")
+        self.assertEqual(d["n"], "Раскрой: бэк")
+        self.assertEqual(d["m"], "Sonnet 5.5")
+        self.assertEqual(d["w"], "работает")
+        self.assertEqual(d["t"], 761)
+        self.assertEqual(d["d"], "правит src/api/orders.ts")
+        self.assertEqual(d["x"], 1)
+        self.assertEqual(d["l"], "https://t.me/zpbot/%s" % th)
+        self.assertIn("Раскрой: бэк", p["caption"])
+        html = p["html"].encode()
+        self.assertIn("Остановить".encode(), html)
+        self.assertIn("Открыть ›".encode(), html)
+        self.assertIn("Остановлена в".encode(), html)
+        self.assertNotIn("пример".encode(), html)
+        self.assertNotIn(b"innerHTML", html)
+        self.assertIn(b'req("h:"+sid', html)
+        self.assertLessEqual(len(zlib.compress(cc.HUD_WIDGET.encode(), 9)), 3800)
+        self.assertLessEqual(len(zlib.compress(html, 9)), 4096)
+
+    def test_live_outside_a_topic_stays_the_control_panel(self):
+        e = self.env()
+        e.bot.topics_enabled = True
+        e.bot.handle_update(e.msg("/live"))
+        w = e.tg.of("sendWidget")
+        self.assertEqual(len(w), 1)
+        p = w[0]
+        self.assertNotIn("message_thread_id", p)
+        self.assertIn(b'req("p"', p["html"].encode())
+        self.assertNotIn(b'req("h:"', p["html"].encode())
+        d = json.loads(p["chat_data"])
+        self.assertIn("c", d)
+        self.assertIn("w", d)
+
+    def test_live_in_topic_falls_back_to_the_card_when_the_widget_is_refused(self):
+        e = self.env()
+        e.bot.topics_enabled = True
+        mk(e, "s1", "working", name="Раскрой: бэк", detail="правит файл")
+        th = e.bot.ensure_topic(1, "s1")
+        e.tg.errors["sendWidget"] = (lambda p: True, "Bad Request: method not found")
+        e.bot.handle_update(e.msg("/live", thread=th))
+        self.assertEqual(len(e.tg.of("sendWidget")), 1)
+        cards = [m for m in e.tg.of("sendMessage") if m.get("message_thread_id") == th and "Раскрой" in m["text"]]
+        self.assertTrue(cards)
+        self.assertNotEqual(e.bot.panel_state(1).get("mode"), "quota")
+
+    def test_h_from_the_owner_is_the_snapshot_stranger_and_missing_chat_get_nothing(self):
+        e = self.live()
+        e.bot.handle_update(self.query())
+        d = json.loads(self.answered(e)["data"])
+        self.assertEqual(d["id"], "s1")
+        self.assertEqual(d["m"], "Sonnet 5.5")
+        self.assertEqual(d["t"], 761)
+        self.assertEqual(d["x"], 1)
+        self.assertEqual(d["h"][0][1], "правит файл")
+        e.tg.calls.clear()
+        e.bot.handle_update(self.query(data="h:missing"))
+        gone = json.loads(self.answered(e)["data"])
+        self.assertEqual(gone["w"], "нет такой сессии")
+        self.assertEqual(gone["x"], 0)
+        self.assertIsNone(gone["l"])
+        self.assertEqual(gone["h"], [])
+        calls = self.stops(e)
+        e.tg.calls.clear()
+        e.bot.handle_update(self.query(uid=2, data="x:s1"))
+        self.assertNotIn("data", self.answered(e))
+        e.tg.calls.clear()
+        e.bot.handle_update(self.query(chat=False, data="h:s1"))
+        self.assertNotIn("data", self.answered(e))
+        e.tg.calls.clear()
+        e.bot.handle_update(self.query(data="h:" + "a" * 63))
+        self.assertNotIn("data", self.answered(e))
+        e.tg.calls.clear()
+        e.bot.handle_update(self.query(data="zzz"))
+        self.assertNotIn("data", self.answered(e))
+        self.assertEqual(calls, [])
+
+    def test_x_stops_a_live_session_once_then_a_repeat_is_closed(self):
+        e = self.live()
+        calls = self.stops(e)
+        e.bot.handle_update(self.query(data="x:s1"))
+        body = json.loads(self.answered(e)["data"])
+        self.assertEqual(body["r"], "ok")
+        self.assertEqual(body["s"]["id"], "s1")
+        self.assertEqual(calls, ["s1"])
+        e.t["n"] += 29
+        e.bot.handle_update(self.query(data="x:s1"))
+        self.assertEqual(json.loads(e.tg.of("answerWidgetQuery")[-1]["data"])["r"], "closed")
+        self.assertEqual(calls, ["s1"])
+        e.t["n"] += 1
+        e.bot.handle_update(self.query(data="x:s1"))
+        self.assertEqual(json.loads(e.tg.of("answerWidgetQuery")[-1]["data"])["r"], "ok")
+        self.assertEqual(calls, ["s1", "s1"])
+
+    def test_x_does_not_stop_a_session_that_is_not_live(self):
+        e = self.live(pid=None)
+        calls = self.stops(e)
+        e.bot.handle_update(self.query(data="x:s1"))
+        self.assertEqual(json.loads(self.answered(e)["data"])["r"], "closed")
+        e.bot.known["s1"]["pid"] = 4
+        e.bot.known["s1"]["state"] = "done"
+        e.bot.handle_update(self.query(data="x:s1"))
+        self.assertEqual(json.loads(e.tg.of("answerWidgetQuery")[-1]["data"])["r"], "closed")
+        e.bot.handle_update(self.query(data="x:missing"))
+        self.assertEqual(json.loads(e.tg.of("answerWidgetQuery")[-1]["data"])["r"], "closed")
+        self.assertEqual(calls, [])
+
+    def test_a_sid_with_a_path_reads_nothing_outside_jobs_dir(self):
+        e = self.live()
+        evil = os.path.join(os.path.dirname(e.cfg.jobs_dir), "evil")
+        os.makedirs(evil, exist_ok=True)
+        with open(os.path.join(evil, "state.json"), "w") as f:
+            json.dump({"name": "SECRET", "state": "working", "model": "opus"}, f)
+        rel = os.path.relpath(evil, e.cfg.jobs_dir)
+        for sid in (rel, evil, "..", "a/b"):
+            e.tg.calls.clear()
+            e.bot.handle_update(self.query(data="h:" + sid))
+            raw = self.answered(e).get("data") or ""
+            self.assertNotIn("SECRET", raw)
+            if raw:
+                self.assertEqual(json.loads(raw)["w"], "нет такой сессии")
+        self.assertEqual(cc.read_job_state(e.cfg.jobs_dir, rel), {})
+
+    def test_x_never_offers_or_runs_stop_for_a_herdr_session(self):
+        e = self.live(sid="h-w1.p2")
+        calls = self.stops(e)
+        e.bot.handle_update(self.query(data="h:h-w1.p2"))
+        self.assertEqual(json.loads(self.answered(e)["data"])["x"], 0)
+        e.bot.handle_update(self.query(data="x:h-w1.p2"))
+        self.assertEqual(json.loads(e.tg.of("answerWidgetQuery")[-1]["data"])["r"], "closed")
+        self.assertEqual(calls, [])
+
+    def test_stop_fits_the_widget_answer_window_and_an_odd_state_fits_1024(self):
+        e = self.live()
+        self.stops(e)
+        e.bot.handle_update(self.query(data="x:s1"))
+        self.assertLessEqual(e.stop_timeout, 12)
+        e.bot.known["s1"]["state"] = "я" * 400
+        e.bot.handle_update(self.query(data="h:s1"))
+        self.assertLessEqual(len(self.answered(e)["data"].encode()), 1024)
+
+    def test_x_false_or_an_exception_is_err_and_a_failed_snapshot_keeps_the_code(self):
+        e = self.live()
+        calls = self.stops(e, False)
+        e.bot.handle_update(self.query(data="x:s1"))
+        body = json.loads(self.answered(e)["data"])
+        self.assertEqual(body["r"], "err")
+        self.assertEqual(body["s"]["id"], "s1")
+        self.assertNotIn("s1", e.bot._hud_stopped)
+        self.assertEqual(calls, ["s1"])
+
+        e = self.live()
+        calls = self.stops(e, None)
+        e.bot.handle_update(self.query(data="x:s1"))
+        self.assertEqual(json.loads(self.answered(e)["data"])["r"], "err")
+        self.assertEqual(calls, ["s1"])
+        self.assertNotIn("s1", e.bot._hud_stopped)
+
+        e = self.live()
+        calls = self.stops(e, True)
+
+        def boom(chat, sid):
+            raise RuntimeError("boom")
+
+        e.bot.hud_state = boom
+        e.bot.handle_update(self.query(data="x:s1"))
+        self.assertEqual(json.loads(self.answered(e)["data"]), {"r": "ok"})
+        self.assertEqual(calls, ["s1"])
+
+    def test_long_lines_fit_in_1024_and_the_same_detail_is_not_stored_twice(self):
+        e = self.live(detail="один")
+        e.bot.known["s1"]["name"] = "Имя " * 40
+        first = e.bot.hud_state(1, "s1")
+        e.t["n"] += 10
+        again = e.bot.hud_state(1, "s1")
+        self.assertEqual(len(e.bot._hud_steps["s1"]), 1)
+        self.assertEqual(again["h"], [[10, "один"]])
+        self.assertEqual(first["h"][0][1], "один")
+        lines = []
+        for i in range(4):
+            line = ("шаг %d " % i) + ("длинная строка " * 20)
+            e.bot.known["s1"]["detail"] = line
+            e.t["n"] += 3
+            lines.append(cc.short(cc.humanize_detail(line), 60))
+            snap = e.bot.hud_state(1, "s1")
+        self.assertEqual([x[1] for x in snap["h"]], list(reversed(lines[-3:])))
+        self.assertEqual(len(e.bot._hud_steps["s1"]), 3)
+        e.bot.handle_update(self.query(data="h:s1"))
+        raw = self.answered(e)["data"]
+        self.assertLessEqual(len(raw.encode()), 1024)
+        d = json.loads(raw)
+        self.assertLessEqual(len(d["n"]), 34)
+        self.assertLessEqual(len(d["d"]), 60)
+        self.assertLessEqual(len(d["h"]), 3)
+        self.assertTrue(d["n"].endswith("…"))
+
+    def test_timer_starts_at_the_first_look_when_the_session_has_no_clock(self):
+        e = self.live()
+        e.bot.known["s1"]["created"] = 0
+        e.bot.known["s1"]["updated"] = 0
+        self.assertEqual(e.bot.hud_state(1, "s1")["t"], 0)
+        e.t["n"] += 30
+        self.assertEqual(e.bot.hud_state(1, "s1")["t"], 30)
+
+    def test_timer_restarts_when_the_state_changes(self):
+        e = self.live()
+        self.assertEqual(e.bot.hud_state(1, "s1")["t"], 761)
+        e.t["n"] += 40
+        e.bot.known["s1"]["state"] = "blocked"
+        self.assertEqual(e.bot.hud_state(1, "s1")["t"], 0)
+        e.t["n"] += 7
+        self.assertEqual(e.bot.hud_state(1, "s1")["t"], 7)
+
+    def test_widget_styles_cover_its_classes(self):
+        css = cc.HUD_WIDGET.split("</style>")[0]
+        for c in ("mu", "sm", "t", "e", "it", "ch", "tm", "st", "rs"):
+            self.assertIn("." + c + "{", css.replace(",.", "{.").replace(" .", "{."), c)
+
+    def test_widget_source_uses_text_and_resets_busy(self):
+        raw = cc.HUD_WIDGET.encode()
+        self.assertNotIn(b"innerHTML", raw)
+        self.assertNotIn(b"\x00", raw)
+        self.assertLessEqual(len(raw), 32768)
+        self.assertLessEqual(len(zlib.compress(raw, 9)), 3800)
+        self.assertIn(b"textContent", raw)
+        self.assertIn(b"W.request(d)", raw)
+        self.assertIn(b"catch(e){busy=0;no(e)}", raw)
+        self.assertIn(b"setInterval(ask,10000)", raw)
+        self.assertIn(b"t0&&(Date.now()-t0>=750||arm)", raw)
+        self.assertIn(b"openTelegramLink", raw)

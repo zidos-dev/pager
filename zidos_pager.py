@@ -27,6 +27,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections import deque
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -309,6 +310,12 @@ _RU = {
     "Control panel": "Пульт",
     "🎛 Control panel: waiting for you — %s · working — %s. Without widgets: /s":
         "🎛 Пульт: ждут вас — %s · в работе — %s. Без виджетов: /s",
+    "Session HUD: %s · %s": "HUD сессии: %s · %s",
+    "Stop": "Остановить",
+    "Open ›": "Открыть ›",
+    "Stopped at %s": "Остановлена в %s",
+    "no such session": "нет такой сессии",
+    "Already stopped": "Уже остановлена",
     "🔐 Needs permission": "🔐 Нужно разрешение",
     "%s · group: %s · model: %s": "%s · группа: %s · модель: %s",
     "🔐 %s: needs your permission — %s": "🔐 %s: нужно ваше разрешение — %s",
@@ -900,6 +907,62 @@ if(W){try{draw(JSON.parse(W.chatData))}catch(e){}W.onEvent("activated",ask);ask(
 </script>
 """
 
+# Session HUD (Bot API 10.4, same sandbox as the control panel). __L__ is the label JSON.
+# The client ticks the clock between polls; a stop needs a hold or a second tap, and a click
+# with no pointerdown leaves t0 at 0 so it does not stop.
+HUD_WIDGET = """<style>
+body{margin:0}
+.sc{padding:14px 14px max(14px,env(safe-area-inset-bottom));color:#fff;background:radial-gradient(110% 80% at 100% 0%,#4256ff 0%,rgba(66,86,255,0) 58%),radial-gradient(90% 70% at 0% 100%,rgba(210,251,74,.22) 0%,rgba(210,251,74,0) 62%),#0b0e1d}
+.mu{color:rgba(255,255,255,.68)}.sm{font-size:.82em}.t{font-variant-numeric:tabular-nums}
+.top{display:flex;gap:10px;align-items:baseline}.e{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.it{background:rgba(255,255,255,.08);border-radius:16px;padding:10px 12px;margin-top:8px}
+.ac{display:flex;gap:8px;margin-top:8px}
+.ch{display:flex;align-items:center;justify-content:center;min-height:44px;border-radius:22px;position:relative;overflow:hidden;touch-action:none;white-space:nowrap;padding:0 16px;background:rgba(255,255,255,.12)}
+.ch i{position:absolute;left:0;top:0;bottom:0;width:100%;background:#fff;opacity:.14;transform:scaleX(0);transform-origin:left}
+.ch.go i{transform:scaleX(1);transition:transform .8s linear}.ch span{position:relative}
+.rs{margin-top:6px;color:#d2fb4a}
+.tm{font-size:2.6em;font-weight:500;letter-spacing:-.04em;line-height:1.1;margin-top:6px}
+.st{display:flex;gap:10px;margin-top:4px}.st b{font-weight:400;flex:0 0 auto}
+@media (prefers-reduced-motion:reduce){.ch.go i{transition:none}}
+</style>
+<div class="sc"><div class="top"><span class="mu sm e" id="nm"></span><span class="mu sm" id="md"></span></div>
+<div class="tm t" id="tm">0:00</div><div id="ph"></div>
+<div class="it" id="hs" style="display:none"></div>
+<div class="ac" id="ac"><div class="ch" id="stop" style="flex:1"><i></i><span id="sl"></span></div><div class="ch" id="op"></div></div>
+<div class="rs" id="rs" hidden></div></div>
+<script>
+var W=window.TelegramWidget,L=__L__,S=null,busy=0,sec=0,run=1,done=0,t0=0,arm=0,sid="";
+function $(i){return document.getElementById(i)}
+function el(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}
+function f2(n){n|=0;return(n<10?"0":"")+n}
+function clk(n){n|=0;var m=f2(n/60%60)+":"+f2(n%60);return n>=3600?(n/3600|0)+":"+m:m}
+function tick(){$("tm").textContent=clk(sec)}
+function draw(s){if(done||!s)return;S=s;if(s.id)sid=s.id;
+$("nm").textContent=s.n||"";var p=[];if(s.m)p.push(s.m);if(s.w)p.push(s.w);$("md").textContent=p.join(" · ");
+if(run){sec=s.t|0;tick()}$("ph").textContent=s.d||"";
+var b=$("hs"),h=s.h||[];b.textContent="";b.style.display=h.length?"":"none";
+h.forEach(function(x){var r=el("div","st sm");r.appendChild(el("b","mu t",clk(x[0])));r.appendChild(el("span","e",x[1]||""));b.appendChild(r)});
+var ks=!!s.x,kl=!!s.l;$("stop").style.display=ks?"":"none";$("op").style.display=kl?"":"none";$("ac").style.display=(ks||kl)?"":"none"}
+function req(d,ok,no){busy=1;try{W.request(d).then(function(a){busy=0;ok(a)},function(e){busy=0;no(e)})}catch(e){busy=0;no(e)}}
+function ask(){if(!W||!W.isActive||busy||done)return;req("h:"+sid,function(a){try{draw(JSON.parse(a.result))}catch(e){}},function(){})}
+function note(m){var r=$("rs");r.hidden=false;r.textContent=m}
+function halt(){if(done)return;if(busy){note(L.busy);return}
+req("x:"+sid,function(a){if(done)return;var v=null;try{v=JSON.parse(a.result)}catch(e){}
+if(!v||v.r!="ok"){note(!v?L.err:(L[v.r]||L.err));return}
+done=1;run=0;$("ac").style.display="none";note(L.at.replace("%s",$("tm").textContent));
+try{W.HapticFeedback.notificationOccurred("success")}catch(e){}},function(e){note(e&&e.code=="BUSY"?L.busy:L.err)})}
+var s=$("stop");s.onpointerdown=function(){t0=Date.now();s.classList.add("go")};
+s.onpointercancel=s.onpointerleave=function(){s.classList.remove("go")};
+s.onclick=function(){s.classList.remove("go");
+if(t0&&(Date.now()-t0>=750||arm)){t0=0;halt();return}
+if(t0){arm=1;$("sl").textContent=L.again;setTimeout(function(){arm=0;if(!done)$("sl").textContent=L.stop},4000)}
+t0=0};
+$("op").onclick=function(){if(!(S&&S.l))return;try{W.openTelegramLink(S.l)}catch(e){}};
+$("sl").textContent=L.stop;$("op").textContent=L.open;tick();
+if(W){try{draw(JSON.parse(W.chatData))}catch(e){}W.onEvent("activated",ask);ask();setInterval(function(){if(run){sec++;tick()}},1000);setInterval(ask,10000)}
+</script>
+"""
+
 
 def panel_title():
     return _t("🎛 Agents")
@@ -1283,6 +1346,8 @@ def fallback_transcript_path(cwd, session_id, home=None):
 
 
 def read_job_state(jobs_dir, sid):
+    if not isinstance(sid, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", sid):
+        return {}  # a session id from a widget is client data: no "/" or ".." out of jobs_dir
     try:
         with open(os.path.join(jobs_dir, sid, "state.json"), encoding="utf-8") as f:
             d = json.load(f)
@@ -3019,7 +3084,8 @@ def sdk_session_dict(x):
     return {"id": x["id"], "name": short_task_name(raw) or x["id"], "cwd": str(x.get("cwd") or ""),
             "state": SDK_STATES.get(st, "working"), "detail": detail, "result": None,
             "sessionId": str(x.get("session_id") or ""), "link": "", "updated": num(x.get("updated")),
-            "created": num(x.get("created")), "pid": None, "busy": None, "name_source": "sdk", "task": raw,
+            "created": num(x.get("created")), "model": str(x.get("model") or ""),
+            "pid": None, "busy": None, "name_source": "sdk", "task": raw,
             "kind": "sdk", "source": "sdk", "sdk_state": st, "cost_usd": cost, "budget_usd": budget,
             "pending": pend, "always": [str(t) for t in (x.get("always") or []) if isinstance(t, str)],
             "auto": (x.get("auto") or [])[-20:]}
@@ -4646,6 +4712,9 @@ class Bot:
         self._perm_prime = set()  # tmux sids whose window was opened on the first tick: their dialog is not news
         self._perm_pushed = set()  # (sid, req) of SDK requests already pushed
         self._pult_answered = set()  # (sdk sid, req) already decided from the widget: a repeat does not call the runner
+        self._hud_steps = {}     # sid -> deque[(clock, line)] of the last 3 different details, oldest at the left
+        self._hud_born = {}      # sid -> (state, since): when the HUD saw the session enter its current state
+        self._hud_stopped = {}   # sid -> clock() of the last stop the HUD reported as ok
         self.last_forward_text = {}
         self.turn_forwarded = set()
         self.api_lock = threading.RLock()
@@ -5777,6 +5846,113 @@ class Bot:
             log("sendWidget refused: %s" % e)
             self.send_quota(chat)
 
+    def _hud_missing(self, sid):
+        if not sid or sid in self.known:
+            return not sid
+        if is_sdk(sid) or is_herdr(sid):
+            return True
+        return not read_job_state(self.cfg.jobs_dir, sid)
+
+    def _hud_model(self, info, sid):
+        raw = info.get("model") or ""
+        if not raw and not is_sdk(sid) and not is_herdr(sid):
+            raw = read_job_state(self.cfg.jobs_dir, sid).get("model") or ""
+        raw = str(raw).strip()
+        return short(model_label(raw), 24) if raw else ""
+
+    def _hud_push(self, sid, line, now):
+        """Remember a changed detail line. Newest step is first; at most three."""
+        ring = self._hud_steps.get(sid)
+        if ring is None:
+            ring = deque(maxlen=3)
+            self._hud_steps[sid] = ring
+        if line and (not ring or ring[-1][1] != line):
+            ring.append((now, line))
+        return [[max(0, int(now - ts)), text] for ts, text in reversed(ring)]
+
+    def hud_state(self, chat, sid):
+        """One HUD snapshot. The wire form is _hud_json (at most 1024 bytes)."""
+        if self._hud_missing(sid):
+            return {"id": sid, "n": "", "w": _t("no such session"), "t": 0, "d": "", "h": [], "x": 0, "l": None}
+        info = self.session_info(sid)
+        now = self.clock()
+        line = short(humanize_detail(info.get("detail") or ""), 60)
+        # the clock counts the current state, not the session's whole life: a reply after three days is not «4320:12»
+        state = info.get("state") or ""
+        seen = self._hud_born.get(sid)
+        if not seen or seen[0] != state:
+            seen = (state, (info.get("updated") or now) if not seen else now)
+            self._hud_born[sid] = seen
+        start = min(seen[1], now)
+        model = self._hud_model(info, sid)
+        snap = {
+            "id": sid,
+            "n": short_keep_tag(self.display_name(sid), 34),
+            "w": short(state_word(info.get("state") or ""), 24),
+            "t": max(0, int(now - start)),
+            "d": line,
+            "h": self._hud_push(sid, line, now),
+            "x": 1 if (sid in self.known and not is_herdr(sid) and self.is_live(sid) and info.get("state") in ("working", "blocked")) else 0,
+            "l": self.pult_link(chat, sid),
+        }
+        if model:
+            snap["m"] = model
+        return snap
+
+    def _hud_json(self, snap):
+        rows = snap.get("h") if isinstance(snap, dict) and isinstance(snap.get("h"), list) else []
+        raw = self._fit_json(snap, rows)
+        if len(raw.encode()) <= 1024 or not isinstance(snap, dict):
+            return raw
+        snap["d"] = short(snap.get("d") or "", 20)
+        snap["n"] = short(snap.get("n") or "", 12)
+        if snap.get("m"):
+            snap["m"] = short(snap["m"], 12)
+        return self._fit_json(snap, rows)
+
+    def send_hud(self, chat, sid, thread):
+        """The session HUD into that session's topic. The card where Telegram refuses widgets."""
+        labels = {"stop": _t("Stop"), "again": _t("Again"), "open": _t("Open ›"),
+                  "at": _t("Stopped at %s"), "closed": _t("Already stopped"),
+                  "err": _t("It did not work"), "busy": _t("One second…")}
+        html = HUD_WIDGET.replace("__L__", json.dumps(labels, ensure_ascii=False).replace("</", "<\\/"))
+        try:
+            snap = self.hud_state(chat, sid)
+            caption = _t("Session HUD: %s · %s") % (snap.get("n") or sid, snap.get("w") or "")
+            self.tg.send_widget(chat, html, caption, self._hud_json(snap), thread=thread)
+        except TGError as e:
+            log("sendWidget refused: %s" % e)
+            self.send_card(chat, sid)
+
+    def hud_stop(self, sid):
+        """Stop from the HUD. A repeat within 30s of ok does not call stop_session again."""
+        now = self.clock()
+        prev = self._hud_stopped.get(sid)
+        if prev is not None and now - prev < 30:
+            return "closed"
+        if sid not in self.known or is_herdr(sid) or not self.is_live(sid) or self.session_info(sid).get("state") not in ("working", "blocked"):
+            return "closed"
+        try:
+            ok = self.stop_session(sid, timeout=12)  # Telegram waits ~15 s for a widget answer
+        except Exception as e:
+            log("hud stop: %s" % type(e).__name__)
+            return "err"
+        if not ok:
+            return "err"
+        self._hud_stopped[sid] = now
+        return "ok"
+
+    def hud_action(self, chat, sid):
+        """Stop, then a fresh snapshot. A failed snapshot must not hide the code."""
+        state = {"r": self.hud_stop(sid)}
+        try:
+            state["s"] = self.hud_state(chat, sid)
+        except Exception as e:
+            log("hud snapshot: %s" % e)
+            return self._fit_json(state, [])
+        rows = state["s"].get("h") if isinstance(state["s"].get("h"), list) else []
+        return self._fit_json(state, rows)
+
     def pult_action(self, chat, yn, tag):
         """Allow (y) or deny (n) one waiting permission request, then a fresh snapshot. The whole answer fits 1024 bytes."""
         state = {"r": self.pult_decide(yn, tag)}
@@ -5844,6 +6020,13 @@ class Bot:
             return self._fit_json(self.pult_state(chat))
         if isinstance(data, str) and len(data) >= 2 and data[0] in "yn" and data[1] == ":":
             return self.pult_action(chat, data[0], data[2:])
+        if not isinstance(data, str) or len(data.encode()) > 64:
+            return None
+        if len(data) >= 3 and data[1] == ":" and data[0] in "hx" and data[2:]:
+            sid = data[2:]
+            if data[0] == "h":
+                return self._hud_json(self.hud_state(chat, sid))
+            return self.hud_action(chat, sid)
         return None
 
     def on_widget_query(self, q):
@@ -6069,11 +6252,11 @@ class Bot:
         """session.send as an action of a button. -> error text or None."""
         return self.tmux.sdk_send(sid, text)[1] or None
 
-    def stop_session(self, sid):
+    def stop_session(self, sid, timeout=30):
         """Stops a session of any kind. -> True when it was stopped."""
         if is_sdk(sid):
             return self.sdk_stop(sid)
-        rc, _ = self.run([self.cfg.claude_bin, "stop", sid], timeout=30)
+        rc, _ = self.run([self.cfg.claude_bin, "stop", sid], timeout=timeout)
         return rc == 0
 
     def card_mk(self, sid, current=False, watched=False, topic=False, old=False, archived=False):
@@ -7589,7 +7772,10 @@ class Bot:
             elif cmd == "/quota":
                 self.send_quota(chat)
             elif cmd == "/live":
-                self.send_live(chat)
+                if tsid:
+                    self.send_hud(chat, tsid, thread)
+                else:
+                    self.send_live(chat)
             elif cmd == "/responder" and arg.strip() in ("on", "off"):
                 self.store.data.setdefault("responder", {})["off"] = arg.strip() == "off"
                 self.store.save()
