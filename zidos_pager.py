@@ -1030,6 +1030,7 @@ _FENCE = re.compile(r"```[^\n`]*\n?(.*?)```", re.S)
 _ICODE = re.compile(r"`([^`\n]+)`")
 _RICH_LT = re.compile(r"<details open>|<details>|</details>|<summary>|</summary>|<")
 _RICH_TG = re.compile(r"<(?=/?tg-)", re.I)
+_RICH_FENCE = re.compile(r"^ {0,3}```[^\n`]*\n.*?^ {0,3}```", re.S | re.M)  # CommonMark: a fence opens and closes a line
 
 
 def rich_safe(text):
@@ -1039,7 +1040,7 @@ def rich_safe(text):
     def plain(s):
         return _RICH_LT.sub(lambda m: m.group(0) if m.group(0) != "<" else "&lt;", s)
 
-    fences = [(m.start(), m.end()) for m in _FENCE.finditer(body)]
+    fences = [(m.start(), m.end()) for m in _RICH_FENCE.finditer(body)]
 
     def covered(pos):
         return any(a <= pos < b for a, b in fences)
@@ -7242,8 +7243,8 @@ class Bot:
             try:
                 self.tg_chat._notify(self.cfg.responder_chat, self.tg_chat.call("sendRichMessage", {
                     "chat_id": self.cfg.responder_chat,
-                    "rich_message": {"markdown": rich_safe(shown)},
-                    "reply_parameters": {"message_id": rec["mid"], "allow_sending_without_reply": True}}), None)
+                    "rich_message": {"markdown": rich_safe(shown)}, **({"reply_parameters": {
+                        "message_id": rec["mid"], "allow_sending_without_reply": True}} if rec.get("mid") else {})}), None)
                 sent_rich = True
             except TGError as e:
                 log("responder rich failed: %s" % e)

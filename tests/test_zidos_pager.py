@@ -9898,6 +9898,9 @@ class ResponderTests(unittest.TestCase):
         self.assertNotIn("<TG-", cc.rich_safe('`<TG-BUTTON-ROW>`\n```\n</tg-button>\n```'))
         self.assertNotIn("</tg-", cc.rich_safe('```\n</tg-button>\n```'))
         self.assertEqual(cc.rich_safe("`a<b`"), "`a<b`")
+        # a ``` inside a line opens no code block (CommonMark): a link tag there stays text
+        self.assertNotIn("<a ", cc.rich_safe('text ```\n\n<a href="https://x.org">y</a>\n\n```'))
+        self.assertEqual(cc.rich_safe("```\n<b>\n```"), "```\n<b>\n```")
 
     def test_group_rich_without_a_table_uses_send_md(self):
         e, _fake = responder_env(self)
