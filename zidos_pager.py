@@ -810,6 +810,8 @@ class Config:
         self.stt_lang = lang_ if re.fullmatch(r"[a-z]{2,3}", lang_) else ""  # "" = the bot language
         self.draft_status = get("CC_DRAFT_STATUS") == "1"  # native «typing» draft in the session topic; off unless "1"
         self.group_rich = get("CC_GROUP_RICH") == "1"  # rich replies in the group chat (tables, checklists, details); off unless "1"
+        self.pult_pin = get("CC_PULT_PIN") == "1"  # the control panel widget pinned in the private chat; off unless "1"
+        self.perm_widget = get("CC_PERM_WIDGET") == "1"  # permission cards as widgets (text on a refusal); off unless "1"
 
 
 # ------------------------------------------------------------ pure functions
@@ -860,7 +862,7 @@ STALE_QUOTA = 30 * 60
 # Bot API 10.4 widget: fixed HTML in the message, numbers come from the bot (chat_data at sending, then
 # answers to background requests while it is on screen). No network in the sandbox; colors are the bubble's.
 LIVE_WIDGET = """<style>
-body{margin:0}
+body{margin:0;background:#0b0e1d}
 .sc{padding:14px 14px max(14px,env(safe-area-inset-bottom));color:#fff;background:radial-gradient(110% 80% at 100% 0%,#4256ff 0%,rgba(66,86,255,0) 58%),radial-gradient(90% 70% at 0% 100%,rgba(210,251,74,.22) 0%,rgba(210,251,74,0) 62%),#0b0e1d}
 .mu{color:rgba(255,255,255,.68)}.sm{font-size:.82em}.t{font-variant-numeric:tabular-nums}
 .top{display:flex;gap:10px;align-items:baseline}.e{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -872,7 +874,7 @@ body{margin:0}
 .cap{flex:1;white-space:nowrap;padding:0 14px;background:#d2fb4a;color:#0b0e1d;font-weight:500}.ch{padding:0 16px;background:rgba(255,255,255,.12)}
 .cap i{position:absolute;left:0;top:0;bottom:0;width:100%;background:#0b0e1d;opacity:.18;transform:scaleX(0);transform-origin:left}
 .cap.go i{transform:scaleX(1);transition:transform .6s linear}.cap span{position:relative}.cap.q{background:rgba(255,255,255,.12);color:#d2fb4a}
-.rs{margin-top:6px;color:#d2fb4a}.ft{margin-top:10px}
+.rs{margin-top:6px;color:#d2fb4a}.nt{margin-top:0}.ft{margin-top:10px}
 @media (prefers-reduced-motion:reduce){.cap.go i{transition:none}}
 </style>
 <div class="sc"><div class="top"><span class="mu sm e" id="t"></span><span class="mu sm t" id="q"></span></div>
@@ -891,7 +893,7 @@ var f=[];if(c[1])f.push(L.work.replace("%s",c[1]));if(c[2])f.push(L.done.replace
 $("f").textContent=f.join(" · ")}
 function row(x){var r=el("div","it"),a=el("div","ac"),h=el("div","nm lk");h.appendChild(el("span","e",x[1]));
 if(x[4]){h.appendChild(el("b",null,"\\u203a"));h.onclick=function(){W.openTelegramLink(x[4])}}r.appendChild(h);
-if(x[2])r.appendChild(el("div","ln mu e",x[2]));
+if(x[2])r.appendChild(el("div",(x[3]=="p"?"ln":"sm")+" mu e",x[2]));
 if(x[3]=="p"){var c=el("div","cap"+(row.f?" q":"")),sp=el("span",null,L.allow),t0=0,arm=0;c.appendChild(el("i"));c.appendChild(sp);row.f=1;
 c.onpointerdown=function(){t0=Date.now();c.classList.add("go")};
 c.onpointercancel=c.onpointerleave=function(){c.classList.remove("go")};
@@ -905,7 +907,8 @@ req(d,function(a){var v=null;try{v=JSON.parse(a.result)}catch(e){}
 if(!v){note(r,L.err);return}hap(v.r=="ok"?"success":"warning");
 note(r,v.m||L[v.r]||L.err);if(v.s)setTimeout(function(){draw(v.s)},1200)},
 function(e){note(r,e&&e.code=="BUSY"?L.busy:L.err)})}
-function note(r,m){var o=r.querySelector(".rs");if(!o){o=el("div","rs");r.appendChild(o)}o.textContent=m}
+function note(r,m){var o=r.querySelector(".rs");if(!o){o=r.querySelector("div.mu.e");if(o){var c0=o.className,t0=o.textContent;o.className="rs sm e nt";
+setTimeout(function(){if(o.isConnected){o.className=c0;o.textContent=t0}},4000)}else{o=el("div","rs");r.appendChild(o)}}o.textContent=m}
 function ask(){if(!W||!W.isActive||busy)return;
 req("p",function(a){try{draw(JSON.parse(a.result))}catch(e){}},function(){})}
 $("t").textContent=L.t;
@@ -966,6 +969,53 @@ t0=0};
 $("op").onclick=function(){if(!(S&&S.l))return;try{W.openTelegramLink(S.l)}catch(e){}};
 $("sl").textContent=L.stop;$("op").textContent=L.open;tick();
 if(W){try{draw(JSON.parse(W.chatData))}catch(e){}W.onEvent("activated",ask);ask();setInterval(function(){if(run){sec++;tick()}},1000);setInterval(ask,10000)}
+</script>
+"""
+
+
+# Permission card widget (Bot API 10.4): the look of the control-panel rows. chat_data is
+# {"t": tag, "n": session, "h": title, "b": body, "l": topic link, "s": null | outcome}; the bot rewrites it on close.
+PERM_WIDGET = """<style>
+body{margin:0;background:#0b0e1d}
+.sc{padding:14px 14px max(14px,env(safe-area-inset-bottom));color:#fff;background:radial-gradient(110% 80% at 100% 0%,#4256ff 0%,rgba(66,86,255,0) 58%),radial-gradient(90% 70% at 0% 100%,rgba(210,251,74,.22) 0%,rgba(210,251,74,0) 62%),#0b0e1d}
+.mu{color:rgba(255,255,255,.68)}.sm{font-size:.82em}
+.e{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.it{background:rgba(255,255,255,.08);border-radius:16px;padding:10px 12px}
+.nm{font-weight:500}.lk{display:flex;align-items:center;min-height:44px;margin:-10px 0 -6px}.lk b{font-weight:400;opacity:.6;padding-left:8px}
+.ln{font-family:ui-monospace,monospace;font-size:.78em;white-space:pre-wrap;word-break:break-word;margin-top:6px;max-height:13.5em;overflow:hidden}
+.ac{display:flex;gap:8px;margin-top:8px}
+.cap,.ch{display:flex;align-items:center;justify-content:center;min-height:44px;border-radius:22px;position:relative;overflow:hidden;touch-action:none}
+.cap{flex:1;white-space:nowrap;padding:0 14px;background:#d2fb4a;color:#0b0e1d;font-weight:500}.ch{padding:0 16px;background:rgba(255,255,255,.12)}
+.cap i{position:absolute;left:0;top:0;bottom:0;width:100%;background:#0b0e1d;opacity:.18;transform:scaleX(0);transform-origin:left}
+.cap.go i{transform:scaleX(1);transition:transform .6s linear}.cap span{position:relative}
+.rs{margin-top:6px;color:#d2fb4a}
+@media (prefers-reduced-motion:reduce){.cap.go i{transition:none}}
+</style>
+<div class="sc" id="v"></div>
+<script>
+var W=window.TelegramWidget,L=__L__,D={},busy=0,loc=null;
+function el(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}
+function hap(k){try{W.HapticFeedback.notificationOccurred(k)}catch(e){}}
+function read(){loc=null;try{D=JSON.parse(W.chatData)||{}}catch(e){D={}}draw()}
+function draw(){var v=document.getElementById("v"),s=loc||D.s;v.textContent="";
+if(s){v.appendChild(el("div","mu",[D.n,s].filter(Boolean).join(" · ")));return}
+var r=el("div","it"),a=el("div","ac"),h=el("div","nm lk");h.appendChild(el("span","e",D.n||""));
+if(D.l){h.appendChild(el("b",null,"\\u203a"));h.onclick=function(){W.openTelegramLink(D.l)}}r.appendChild(h);
+if(D.h)r.appendChild(el("div","mu sm",D.h));if(D.b)r.appendChild(el("div","ln mu",D.b));
+var c=el("div","cap"),sp=el("span",null,L.allow),t0=0,arm=0;c.appendChild(el("i"));c.appendChild(sp);
+c.onpointerdown=function(){t0=Date.now();c.classList.add("go")};
+c.onpointercancel=c.onpointerleave=function(){c.classList.remove("go")};
+c.onclick=function(){c.classList.remove("go");
+if(t0&&Date.now()-t0>=550||arm)return act("y:"+D.t,r);arm=1;sp.textContent=L.again;setTimeout(function(){arm=0;sp.textContent=L.allow},4000)};
+var d=el("div","ch",L.deny);d.onclick=function(){act("n:"+D.t,r)};a.appendChild(c);a.appendChild(d);r.appendChild(a);v.appendChild(r);
+var n=r.querySelector(".ln");if(n&&n.scrollHeight>n.clientHeight+1)n.insertAdjacentElement("afterend",el("div","mu sm","\u2026"))}
+function note(r,m){var o=r.querySelector(".rs");if(!o){o=el("div","rs");r.appendChild(o)}o.textContent=m}
+function act(d,r){if(busy){note(r,L.busy);return}busy=1;
+try{W.request(d).then(function(a){busy=0;var v=null;try{v=JSON.parse(a.result)}catch(e){}
+if(!v){note(r,L.err);return}hap(v.r=="ok"?"success":"warning");
+if(v.r=="ok"||v.r=="no"){loc=v.m||L[v.r];draw()}else note(r,v.m||L[v.r]||L.err)},
+function(e){busy=0;note(r,e&&e.code=="BUSY"?L.busy:L.err)})}catch(e){busy=0;note(r,L.err)}}
+if(W){W.onEvent("chatDataChanged",read);read()}
 </script>
 """
 
@@ -3572,9 +3622,14 @@ class TG:
             p["parse_mode"] = parse_mode
         return self._notify(chat_id, self.call("sendMessage", p), thread)
 
-    def send_widget(self, chat_id, html, caption, chat_data, thread=None):
-        """Bot API 10.4 sendWidget (private chats only in production); raises TGError where it is refused."""
+    def send_widget(self, chat_id, html, caption, chat_data, thread=None, markup=None, silent=False):
+        """Bot API 10.4 sendWidget (private chats only in production); raises TGError where it is refused.
+        No height: the bubble follows the content."""
         p = {"chat_id": chat_id, "html": html, "caption": caption, "chat_data": chat_data, "allow_queries": True}
+        if silent:
+            p["disable_notification"] = True
+        if markup:
+            p["reply_markup"] = markup
         if thread:
             p["message_thread_id"] = thread
         return self._notify(chat_id, self.call("sendWidget", p), thread)
@@ -3711,6 +3766,12 @@ class TG:
         except TGError as e:
             if "not modified" not in str(e):
                 raise
+
+    def edit_widget_data(self, chat_id, message_id, chat_data):
+        return self.call("editMessageWidgetData", {"chat_id": chat_id, "message_id": message_id, "chat_data": chat_data})
+
+    def edit_caption(self, chat_id, message_id, caption):
+        return self.call("editMessageCaption", {"chat_id": chat_id, "message_id": message_id, "caption": caption})
 
     def edit_markup(self, chat_id, message_id, markup=None):
         try:
@@ -4797,6 +4858,7 @@ class Bot:
         self._resp_times = []    # when questions were accepted (the hourly limit)
         self._perm_cache = {}   # tmux sid -> {"perm", "sig", "pushed"}: filled by the background tick
         self._perm_msgs = self.perm_msgs_load()  # (tmux sid, chat) -> the Telegram notice of a dialog: {"mid", "sig", "head"}
+        self._pult_refused = {}  # chat -> until when a refused pinned widget is not retried
         self._perm_answered = {}  # tmux sid -> (sig, expiry) of a dialog we have just answered
         self._perm_opened = {}    # tmux sid -> when perm_open last opened a window for it
         self._perm_prime = set()  # tmux sids whose window was opened on the first tick: their dialog is not news
@@ -5387,7 +5449,8 @@ class Bot:
                     r = self.tg.send_rich(chat, html, plain, markup, thread=p.get("thread"))
                     p["mid"], p["key"] = r["message_id"], key
                     try:
-                        self.tg.pin(chat, p["mid"])
+                        if not self.cfg.pult_pin:  # the pinned control panel keeps the pin
+                            self.tg.pin(chat, p["mid"])
                     except TGError as e:
                         log("pin failed: %s" % e)
                     self.store.save()
@@ -5766,6 +5829,10 @@ class Bot:
             if p.get("flash") and p["flash"]["until"] <= now:
                 p["flash"] = None
             self.panel_publish(uid)
+            try:
+                self.pult_publish(uid)
+            except Exception as e:
+                log("pult_publish error: %s" % e)
 
     def cmd_panel(self, chat, start=False):
         self.panel_mode(chat, "list")
@@ -5889,10 +5956,14 @@ class Bot:
             line = humanize_detail(x["detail"] or x["result"] or "")
         return [sid, name, short(line, 60), "a", link]
 
-    def pult_state(self, chat):
-        """The control-panel snapshot: quota, counts, and at most four rows (permissions, then questions)."""
+    def pult_state(self, chat, sessions=None):
+        """The control-panel snapshot: quota, counts, and at most three rows (permissions, then questions):
+        four rows with buttons outgrow the 600 px widget at a large font. None when the session list failed:
+        zeros would claim «nobody is waiting»."""
+        sessions = self.list_sessions(True) if sessions is None else sessions
+        if sessions is None:
+            return None
         qq, st, u = self.pult_quota()
-        sessions = self.list_sessions(True)
         if sessions:
             perms, waiting, working, done, _old, _arch = self.panel_groups(sessions)
         else:
@@ -5900,7 +5971,7 @@ class Bot:
         rows = []
         for grp, perm in ((perms, True), (waiting, False)):  # permissions first, then questions; herdr stays kind "a"
             for x, ask in grp:
-                if len(rows) >= 4:
+                if len(rows) >= 3:
                     break
                 rows.append(self.pult_item(chat, x, ask, perm))
         return {"q": qq, "st": st, "c": [len(perms) + len(waiting), len(working), len(done)], "u": u, "w": rows}
@@ -5916,25 +5987,97 @@ class Bot:
                 return raw
             rows.pop()
 
+    def widget_labels(self):
+        return {"t": _t("Control panel"), "wait": _t("are waiting for you"), "none": _t("nobody is waiting"),
+                "work": _t("%s working"), "done": _t("%s done"), "allow": _t("Allow"), "again": _t("Again"),
+                "deny": _t("Deny"), "ok": _t("Allowed"), "no": _t("Denied"),
+                "stale": _t("The request is already different"), "closed": _t("Already decided"),
+                "err": _t("It did not work"), "busy": _t("One second…"), "h5": _t("5 h"), "d7": _t("7 d"),
+                "st": _t("quota is stale")}
+
+    def widget_html(self, tpl):
+        return tpl.replace("__L__", json.dumps(self.widget_labels(), ensure_ascii=False).replace("</", "<\\/"))
+
     def send_live(self, chat):
         """The control panel widget in the private chat; the quota panel where Telegram refuses widgets."""
         if self.claude_missing():
             return self.send_quota(chat)
-        labels = {"t": _t("Control panel"), "wait": _t("are waiting for you"), "none": _t("nobody is waiting"),
-                  "work": _t("%s working"), "done": _t("%s done"), "allow": _t("Allow"), "again": _t("Again"),
-                  "deny": _t("Deny"), "ok": _t("Allowed"), "no": _t("Denied"),
-                  "stale": _t("The request is already different"), "closed": _t("Already decided"),
-                  "err": _t("It did not work"), "busy": _t("One second…"), "h5": _t("5 h"), "d7": _t("7 d"),
-                  "st": _t("quota is stale")}
-        html = LIVE_WIDGET.replace("__L__", json.dumps(labels, ensure_ascii=False).replace("</", "<\\/"))
+        html = self.widget_html(LIVE_WIDGET)
+        st = self.pult_state(chat)
+        if st is None:
+            return self.send_quota(chat)
         try:
-            data = self._fit_json(self.pult_state(chat))
+            data = self._fit_json(st)
             c = json.loads(data)["c"]
             caption = _t("🎛 Control panel: waiting for you — %s · working — %s. Without widgets: /s") % (c[0], c[1])
             self.tg.send_widget(chat, html, caption, data)
         except TGError as e:
             log("sendWidget refused: %s" % e)
             self.send_quota(chat)
+
+    def pult_caption(self, sessions):
+        """Counters line of the pinned widget (what clients without widgets show)."""
+        perms, waiting, working, done = (self.panel_groups(sessions)[:4] if sessions else ([], [], [], []))
+        counts = []
+        if perms:
+            counts.append("🔐 %d" % len(perms))
+        if waiting:
+            counts.append(_t("🟡 %d waiting") % len(waiting))
+        if working:
+            counts.append(_t("🔵 %d working") % len(working))
+        if done:
+            counts.append(_t("✅ %d done") % len(done))
+        return " · ".join(counts) if counts else _t("No sessions")
+
+    def pult_publish(self, chat):
+        """CC_PULT_PIN: one pinned control-panel widget in the owner's chat, kept fresh at most every 15 s."""
+        if not self.cfg.pult_pin or chat not in self.cfg.allowed or self.claude_missing():
+            return
+        now = self.clock()
+        if now < self._pult_refused.get(chat, 0):
+            return
+        pins = self.store.data.setdefault("pult_pin", {})
+        st = pins.get(str(chat))
+        if st and st.get("mid") and now - st["ts"] < 15:
+            return
+        sessions = self.list_sessions(True)
+        if sessions is None:  # the list failed: zeros would claim «No sessions»; leave the widget as it is
+            return
+        data, cap = self._fit_json(self.pult_state(chat, sessions)), self.pult_caption(sessions)
+        if not (st and st.get("mid")):
+            try:
+                r = self.tg.send_widget(chat, self.widget_html(LIVE_WIDGET), cap, data, markup=None, silent=True)
+            except TGError as e:
+                log("pinned widget refused: %s" % e)
+                self._pult_refused[chat] = now + 3600
+                return
+            pins[str(chat)] = {"mid": r["message_id"], "cap": cap, "data": data, "ts": now}
+            try:
+                self.tg.pin(chat, r["message_id"])
+            except TGError as e:
+                log("pin failed: %s" % e)
+            self.store.save()
+            return
+        st["ts"] = now  # also when nothing changed: the session list is asked at most every 15 s
+        if data == st["data"] and cap == st["cap"]:
+            return
+        for key, call, val in (("data", self.tg.edit_widget_data, data), ("cap", self.tg.edit_caption, cap)):
+            if val == st[key]:
+                continue
+            try:
+                call(chat, st["mid"], val)
+            except TGError as e:
+                msg = str(e).lower()
+                if "not modified" in msg:
+                    pass
+                elif "not found" in msg or "message_id_invalid" in msg:
+                    st["mid"] = None  # the next tick sends it again
+                    break
+                else:
+                    log("pinned widget edit failed: %s" % e)
+                    break
+            st[key] = val
+        self.store.save()
 
     def _hud_missing(self, sid):
         if not sid or sid in self.known:
@@ -6048,6 +6191,9 @@ class Bot:
         state = {"r": self.pult_decide(yn, tag)}
         try:  # the decision is made: a failed snapshot must not hide it
             state["s"] = self.pult_state(chat)
+            if state["s"] is None:
+                del state["s"]
+                return self._fit_json(state, [])
         except Exception as e:
             log("pult snapshot: %s" % e)
             return self._fit_json(state, [])
@@ -6107,7 +6253,8 @@ class Bot:
             return self.live_snapshot()
         chat = (q.get("chat") or {}).get("id")
         if data == "p":
-            return self._fit_json(self.pult_state(chat))
+            st = self.pult_state(chat)
+            return "null" if st is None else self._fit_json(st)  # draw(null) keeps what is on screen
         if isinstance(data, str) and len(data) >= 2 and data[0] in "yn" and data[1] == ":":
             return self.pult_action(chat, data[0], data[2:])
         if not isinstance(data, str) or len(data.encode()) > 64:
@@ -6446,7 +6593,14 @@ class Bot:
                 self.ensure_topic(chat, sid, perm_only=not self.tracked_c(self.store.chat(chat), sid))
             self.touch_topic(chat, sid)
             markup = self.sdk_perm_markup(chat, rec)
-            r = self._threaded(chat, sid, lambda th: self.tg.send_rich(chat, html, plain, markup, thread=th))
+            r = None
+            if self.cfg.perm_widget:
+                cd = self.perm_card_data(chat, sid, "%s:%s" % (sid, rec["req"]), rec["tool"], rec["desc"])
+                r = self.perm_widget_send(chat, sid, self.sdk_perm_head(rec), cd, markup)
+                if r is not None:
+                    rec["w"], rec["cd"] = 1, cd
+            if r is None:
+                r = self._threaded(chat, sid, lambda th: self.tg.send_rich(chat, html, plain, markup, thread=th))
             rec["mid"] = r.get("message_id") if isinstance(r, dict) else None
             perms[key] = rec
             while len(perms) > SDK_PERM_KEEP:  # closed records go first, open ones only if there is no other way
@@ -6467,11 +6621,14 @@ class Bot:
     def sdk_end_perm(self, rec, note):
         rec["closed"] = True
         if rec.get("mid"):
-            try:
-                what = short(" ".join(str(rec.get("desc") or "").split()), 80)
-                self.tg.edit(rec["chat"], rec["mid"], " · ".join(x for x in ("🔐 " + rec["tool"], what, note) if x))
-            except TGError as e:
-                log("perm close failed: %s" % e)
+            what = short(" ".join(str(rec.get("desc") or "").split()), 80)
+            if rec.get("w"):
+                self.perm_widget_close(rec["chat"], rec["mid"], rec.get("cd") or {}, " · ".join(x for x in ("🔐 " + rec["tool"], what) if x), note)
+            else:
+                try:
+                    self.tg.edit(rec["chat"], rec["mid"], " · ".join(x for x in ("🔐 " + rec["tool"], what, note) if x))
+                except TGError as e:
+                    log("perm close failed: %s" % e)
         self.store.save()
 
     @staticmethod
@@ -10317,7 +10474,7 @@ class Bot:
 
     def perm_msgs_load(self):
         """Notices survive a restart, so the tick still collapses those whose dialog closed while the bot was away."""
-        return {(r["sid"], r["uid"]): {k: r[k] for k in ("mid", "sig", "head")}
+        return {(r["sid"], r["uid"]): {k: r[k] for k in ("mid", "sig", "head", "w", "cd") if k in r}
                 for r in self.store.data.get("perm_msgs", []) if isinstance(r, dict) and {"sid", "uid", "mid"} <= r.keys()}
 
     def perm_msgs_save(self):
@@ -10339,12 +10496,55 @@ class Bot:
                     self.tmux._open_window(sid)
         self.spawn(open_)
 
-    def perm_msg_track(self, uid, sid, ent, r):
+    def perm_card_data(self, chat, sid, tag, head, body, s=None):
+        """chat_data of a permission card widget, at most 1024 bytes: the body is cut, never the tag."""
+        body = "\n".join((body or "").splitlines()[:12])
+        d = {"t": tag, "n": short_keep_tag(self.display_name(sid), 34), "h": short(head, 60), "b": body,
+             "l": self.pult_link(chat, sid), "s": s}
+        while d["b"] and len(json.dumps(d, ensure_ascii=False, separators=(",", ":")).encode()) > 1024:
+            d["b"] = d["b"][:int(len(d["b"]) * 0.8)]
+        return d
+
+    def perm_widget_send(self, chat, sid, caption, cd, markup):
+        """The card as a widget in the session topic (the inline keyboard stays for clients without widgets).
+        -> the sent message, or None where Telegram refuses widgets (the caller sends the text)."""
+        html = self.widget_html(PERM_WIDGET)
+        data = json.dumps(cd, ensure_ascii=False, separators=(",", ":"))
+        first = next((l.strip() for l in str(cd.get("b") or "").splitlines() if l.strip()), "")
+        if first:
+            caption = "%s\n%s" % (caption, short(first, 120))
+        try:
+            r = self._threaded(chat, sid, lambda th: self.tg.send_widget(
+                chat, html, cut_utf16(caption, 1024), data, thread=th, markup=markup))
+            return dict(r, w=1) if isinstance(r, dict) else None  # "w" tells the caller it was a widget
+        except TGError as e:
+            log("perm widget refused: %s" % e)
+            return None
+
+    def perm_widget_close(self, chat, mid, cd, head, note):
+        """The card becomes one line without buttons; if its data cannot be edited, the caption says it."""
+        data = json.dumps(dict(cd, b="", s=note), ensure_ascii=False, separators=(",", ":"))
+        try:
+            self.tg.edit_widget_data(chat, mid, data)
+        except TGError as e:
+            log("perm widget close failed: %s" % e)
+        try:  # always: clients without widgets (Telegram for Mac) show only the caption
+            self.tg.edit_caption(chat, mid, cut_utf16(head + " · " + note, 1024))
+        except TGError as e:
+            log("perm caption close failed: %s" % e)
+        try:
+            self.tg.edit_markup(chat, mid)
+        except TGError as e:
+            log("perm markup close failed: %s" % e)
+
+    def perm_msg_track(self, uid, sid, ent, r, cd=None):
         mid = r.get("message_id") if isinstance(r, dict) else None
         if mid:
             p = ent["perm"]
             self._perm_msgs[(sid, uid)] = {"mid": mid, "sig": ent["sig"],
                                            "head": " · ".join(x for x in ("🔐 " + p["title"], short(p["body"] or p["summary"], 80)) if x)}
+            if cd:
+                self._perm_msgs[(sid, uid)].update(w=1, cd=cd)
             self.perm_msgs_save()
 
     def perm_msgs_close(self, sid, note, only_sig=None):
@@ -10354,6 +10554,9 @@ class Bot:
                 continue
             self._perm_msgs.pop(key, None)
             self.perm_msgs_save()
+            if rec.get("w"):  # by the record, not the flag: a card sent before the flag changed closes as it was sent
+                self.perm_widget_close(key[1], rec["mid"], rec.get("cd") or {}, rec["head"], note)
+                continue
             try:
                 self.tg.edit(key[1], rec["mid"], rec["head"] + " · " + note)
             except TGError as e:
@@ -10372,13 +10575,16 @@ class Bot:
             "\n" + x for x in (p["summary"], p["note"]) if x)
         return text, trim_screen(p["body"], 25, 1500) or None, perm_markup(sid, p)
 
-    def notice_send(self, uid, sid, text, pre, markup, final=False, perm_only=False):
+    def notice_send(self, uid, sid, text, pre, markup, final=False, perm_only=False, card=None):
         """One notification into a chat/topic (a screen excerpt goes into <pre>); it replaces the old one of the session.
         -> the sent message (perm_only: the topic made for it does not subscribe to the session)."""
         if self.topics_enabled:
             self.ensure_topic(uid, sid, perm_only=perm_only)
             self.touch_topic(uid, sid)
-        if pre:
+        r = self.perm_widget_send(uid, sid, text.split("\n")[0], card, markup) if card else None
+        if r is not None:
+            self.remember(uid, [r], sid)
+        elif pre:
             html = esc(text) + "\n\n<pre>%s</pre>" % esc(pre)
             r = self._threaded(uid, sid, lambda th: self.tg.send_rich(uid, html, text + "\n\n" + pre, markup, thread=th))
             self.remember(uid, [r], sid)
@@ -10400,10 +10606,12 @@ class Bot:
             for uid in sorted(self.cfg.allowed):
                 if uid in got or self.question_shown(uid, sid):
                     continue
+                card = (self.perm_card_data(uid, sid, "%s:%s" % (sid, ent["sig"][:8]), p["title"], p["body"] or p["summary"])
+                        if self.cfg.perm_widget else None)
                 try:
                     r = self.notice_send(uid, sid, text, pre, markup,
-                                         perm_only=not self.tracked_c(self.store.chat(uid), sid))
-                    self.perm_msg_track(uid, sid, ent, r)
+                                         perm_only=not self.tracked_c(self.store.chat(uid), sid), card=card)
+                    self.perm_msg_track(uid, sid, ent, r, cd=card if isinstance(r, dict) and r.get("w") else None)
                 except TGError as e:
                     log("perm notice failed: %s" % e)
 

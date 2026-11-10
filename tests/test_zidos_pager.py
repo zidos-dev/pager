@@ -11502,13 +11502,21 @@ class PultWidgetTests(unittest.TestCase):
         self.assertLessEqual(len(raw.encode()), 1024)
         d = json.loads(raw)
         self.assertEqual(d["c"][0], 30)
-        self.assertLessEqual(len(d["w"]), 4)
+        self.assertLessEqual(len(d["w"]), 3)
         e.bot.handle_update(self.query(data="y:no-such:abcd"))
         raw = e.tg.of("answerWidgetQuery")[-1]["data"]
         self.assertLessEqual(len(raw.encode()), 1024)
         body = json.loads(raw)
         self.assertEqual(body["r"], "err")
-        self.assertLessEqual(len(body["s"]["w"]), 4)
+        self.assertLessEqual(len(body["s"]["w"]), 3)
+
+    def test_failed_session_list_keeps_the_screen(self):
+        e = self.env()
+        e.bot.list_sessions = lambda show_all=False: None
+        e.bot.handle_update(self.query(data="p"))
+        self.assertEqual(self.answered(e)["data"], "null")  # draw(null) keeps the numbers, no «nobody is waiting»
+        e.bot.handle_update(self.query(data="y:no-such:abcd"))
+        self.assertEqual(json.loads(self.answered(e)["data"]), {"r": "err"})
 
     def test_other_data_is_answered_without_data(self):
         e = self.env()
@@ -12184,3 +12192,207 @@ class DraftStatusTests(unittest.TestCase):
         e = Env(self)
         e.tg.get_updates(0)
         self.assertIn("stopped_message_generation", e.tg.of("getUpdates")[0]["allowed_updates"])
+
+
+class PultPinTests(unittest.TestCase):
+    """CC_PULT_PIN: one pinned control-panel widget, edited in place at most every 15 s."""
+
+    def env(self, flag=True):
+        e = Env(self)
+        e.t = {"v": BASE}
+        e.bot.clock = lambda: e.t["v"]
+        e.bot.cfg.pult_pin = flag
+        return e
+
+    def names(self, e):
+        return [m for m, _ in e.tg.calls]
+
+    def test_flag_off_sends_nothing(self):
+        e = self.env(False)
+        e.bot.pult_publish(1)
+        self.assertEqual(e.tg.calls, [])
+
+    def test_send_once_and_pin_then_quiet(self):
+        e = self.env()
+        e.bot.pult_publish(1)
+        self.assertEqual(len(e.tg.of("sendWidget")), 1)
+        p = e.tg.of("sendWidget")[0]
+        self.assertTrue(p["disable_notification"])
+        self.assertNotIn("height", p)
+        self.assertNotIn("message_thread_id", p)
+        self.assertEqual(len(e.tg.of("pinChatMessage")), 1)
+        e.tg.calls.clear()
+        e.t["v"] += 60
+        e.bot.pult_publish(1)
+        self.assertEqual(e.tg.calls, [])
+
+    def test_changed_counters_edit_data_and_caption_after_15s(self):
+        e = self.env()
+        e.bot.pult_publish(1)
+        e.tg.calls.clear()
+        mk(e, "s1", "blocked", 1, name="Ждёт")
+        e.t["v"] += 5
+        e.bot.pult_publish(1)
+        self.assertEqual(e.tg.calls, [])
+        e.t["v"] += 15
+        e.bot.pult_publish(1)
+        self.assertEqual(len(e.tg.of("editMessageWidgetData")), 1)
+        self.assertEqual(json.loads(e.tg.of("editMessageWidgetData")[0]["chat_data"])["c"][0], 1)
+        cap = e.tg.of("editMessageCaption")
+        self.assertEqual(len(cap), 1)
+        self.assertIn("1", cap[0]["caption"])
+        self.assertIn("🟡", cap[0]["caption"])
+
+    def test_message_not_found_forgets_it_and_next_call_sends_again(self):
+        e = self.env()
+        e.bot.pult_publish(1)
+        mk(e, "s1", "blocked", 1)
+        e.t["v"] += 20
+        e.tg.errors["editMessageWidgetData"] = (lambda p: True, "Bad Request: message to edit not found")
+        e.bot.pult_publish(1)
+        self.assertIsNone(e.bot.store.data["pult_pin"]["1"]["mid"])
+        e.tg.errors.clear()
+        e.bot.pult_publish(1)
+        self.assertEqual(len(e.tg.of("sendWidget")), 2)
+
+    def test_failed_session_list_leaves_the_widget_alone(self):
+        e = self.env()
+        e.bot.list_sessions = lambda show_all=False: None
+        e.bot.pult_publish(1)
+        self.assertEqual(e.tg.calls, [])  # no «No sessions» widget from a failed list
+        del e.bot.list_sessions
+        e.bot.pult_publish(1)
+        e.tg.calls.clear()
+        mk(e, "s1", "blocked", 1)
+        e.t["v"] += 20
+        e.bot.list_sessions = lambda show_all=False: None
+        e.bot.pult_publish(1)
+        self.assertEqual(e.tg.calls, [])
+
+    def test_refused_send_has_no_text_fallback_and_waits_an_hour(self):
+        e = self.env()
+        e.tg.errors["sendWidget"] = (lambda p: True, "Bad Request: widgets are not supported")
+        e.bot.pult_publish(1)
+        e.t["v"] += 3000
+        e.bot.pult_publish(1)
+        self.assertEqual(self.names(e), ["sendWidget"])
+        e.t["v"] += 700
+        e.bot.pult_publish(1)
+        self.assertEqual(self.names(e), ["sendWidget", "sendWidget"])
+
+    def test_panel_does_not_pin_itself_when_the_flag_is_on(self):
+        e = self.env()
+        e.bot.panel_publish(1)
+        self.assertEqual(len(e.tg.of("sendMessage")), 1)
+        self.assertEqual(e.tg.of("pinChatMessage"), [])
+        e2 = self.env(False)
+        e2.bot.panel_publish(1)
+        self.assertEqual(len(e2.tg.of("pinChatMessage")), 1)
+
+
+class PermWidgetTests(unittest.TestCase):
+    """CC_PERM_WIDGET: the permission card is a widget; the text card stays the fallback and the old records."""
+
+    def env(self, flag=True):
+        w, e, fs = perm_env_unwatched(self, topics=True)
+        e.bot.cfg.perm_widget = flag
+        return e, fs
+
+    def test_widget_card_in_the_topic_with_keyboard_and_tag(self):
+        e, fs = self.env()
+        e.bot.notify_tick()
+        w = e.tg.of("sendWidget")
+        self.assertEqual(len(w), 1)
+        p = w[0]
+        self.assertTrue(p.get("message_thread_id"))
+        self.assertTrue(p["allow_queries"])
+        self.assertNotIn("height", p)
+        self.assertTrue(any(b["callback_data"].startswith("pk:") for b in buttons(p["reply_markup"])))
+        cd = json.loads(p["chat_data"])
+        self.assertEqual(cd["t"], "s1:" + cc.perm_sig(cc.parse_perm_dialog(PERM_FIX))[:8])
+        self.assertIsNone(cd["s"])
+        self.assertLessEqual(len(p["chat_data"].encode()), 1024)
+        self.assertEqual([m for m in e.tg.of("sendMessage") if "🔐" in m["text"]], [])
+        self.assertTrue(e.bot._perm_msgs[("s1", 1)]["w"])
+        first = next(l.strip() for l in cd["b"].splitlines() if l.strip())
+        self.assertEqual(p["caption"].split("\n")[1], cc.short(first, 120))  # Mac shows only the caption
+
+    def test_closed_card_widget_line_has_no_title(self):
+        self.assertIn('[D.n,s].filter(Boolean)', cc.PERM_WIDGET)  # the caption carries the title
+
+    def test_refusal_falls_back_to_the_text_notice(self):
+        e, fs = self.env()
+        e.tg.errors["sendWidget"] = (lambda p: True, "Bad Request: widgets are not supported")
+        e.bot.notify_tick()
+        self.assertEqual(len([m for m in e.tg.of("sendMessage") if "🔐" in m["text"]]), 1)
+        self.assertNotIn("w", e.bot._perm_msgs[("s1", 1)])
+
+    def test_close_of_a_widget_record_edits_data_not_text(self):
+        e, fs = self.env()
+        e.bot.notify_tick()
+        fs.screen = EMPTY_PROMPT
+        e.bot.cfg.perm_widget = False  # the record decides, not the flag
+        e.bot.notify_tick()
+        ed = e.tg.of("editMessageWidgetData")
+        self.assertEqual(len(ed), 1)
+        cd = json.loads(ed[0]["chat_data"])
+        self.assertEqual(cd["s"], "закрыто")
+        self.assertEqual(cd["b"], "")
+        self.assertEqual(e.tg.of("editMessageText"), [])
+        self.assertTrue(e.tg.of("editMessageReplyMarkup"))
+        cap = e.tg.of("editMessageCaption")  # clients without widgets see only the caption: it closes too
+        self.assertEqual(len(cap), 1)
+        self.assertTrue(cap[0]["caption"].endswith("· закрыто"), cap[0]["caption"])
+
+    def test_close_falls_back_to_caption_when_data_edit_fails(self):
+        e, fs = self.env()
+        e.bot.notify_tick()
+        e.tg.errors["editMessageWidgetData"] = (lambda p: True, "Bad Request: nope")
+        fs.screen = EMPTY_PROMPT
+        e.bot.notify_tick()
+        cap = e.tg.of("editMessageCaption")
+        self.assertEqual(len(cap), 1)
+        self.assertTrue(cap[0]["caption"].endswith("· closed") or cap[0]["caption"].endswith("· закрыто"), cap[0]["caption"])
+
+    def test_text_record_still_closes_as_text_with_the_flag_on(self):
+        e, fs = self.env(False)
+        e.bot.notify_tick()
+        e.bot.cfg.perm_widget = True
+        fs.screen = EMPTY_PROMPT
+        e.bot.notify_tick()
+        self.assertEqual(len(e.tg.of("editMessageText")), 1)
+        self.assertEqual(e.tg.of("editMessageWidgetData"), [])
+
+    def test_widget_query_decides_through_the_pult_path_and_closes_the_card(self):
+        e, fs = self.env()
+        e.bot.notify_tick()
+        tag = json.loads(e.tg.of("sendWidget")[0]["chat_data"])["t"]
+        fs.on_key = lambda ks, f: setattr(f, "screen", EMPTY_PROMPT)
+        q = {"update_id": 77, "widget_query": {"id": "wq1", "from": {"id": 1}, "data": "y:" + tag, "message_id": 5,
+                                               "chat": {"id": 1, "type": "private"}}}
+        e.bot.handle_update(q)
+        self.assertEqual(json.loads(e.tg.of("answerWidgetQuery")[-1]["data"])["r"], "ok")
+        self.assertEqual(len(fs.flat_keys), 1)
+        ed = e.tg.of("editMessageWidgetData")
+        self.assertEqual(len(ed), 1)
+        self.assertIsNotNone(json.loads(ed[0]["chat_data"])["s"])
+
+    def test_sdk_card_is_a_widget_and_closes_by_data(self):
+        fake = FakeSdk(self)
+        e = sdk_env(self, fake, watch=False)
+        e.bot.cfg.perm_widget = True
+        e.bot.sdk_on_event({"event": "request.opened", "data": {"id": SID, "request": perm_req()}})
+        w = e.tg.of("sendWidget")
+        self.assertEqual(len(w), 1)
+        self.assertEqual(json.loads(w[0]["chat_data"])["t"], "%s:r-00000001" % SID)
+        e.bot.sdk_on_event({"event": "request.closed", "data": {"id": SID, "req": "r-00000001", "decision": "allow"}})
+        self.assertEqual(len(e.tg.of("editMessageWidgetData")), 1)
+        self.assertEqual(e.tg.of("editMessageText"), [])
+
+    def test_perm_widget_limits(self):
+        html = cc.PERM_WIDGET.encode()
+        self.assertLessEqual(len(zlib.compress(html, 9)), 4096)
+        self.assertLessEqual(len(html), 32768)
+        self.assertIn(b"white-space:pre-wrap", html)
+        self.assertIn(b"chatDataChanged", html)
+        self.assertNotIn(b"setInterval", html)
