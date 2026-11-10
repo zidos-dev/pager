@@ -613,6 +613,9 @@ _RU = {
     ' (%d edits), first:': ' (правок: %d), первая:',
     'Where to start the new session? ⚡ via SDK': 'Где запустить новую сессию? ⚡ через SDK',
     'Only the owner can press this button.': 'Эту кнопку может нажать только владелец.',
+    'This button is out of date.': 'Эта кнопка устарела.',
+    'Already chosen: %s (%s)': 'Уже выбрано: %s (%s)',
+    'Could not save the choice. Try again.': 'Не удалось сохранить выбор. Попробуйте ещё раз.',
 }
 STR = {"ru": _RU, "en": {k: k for k in _RU}}
 
@@ -1060,6 +1063,51 @@ def rich_safe(text):
     parts.append(plain(body[pos:]))
     # no tg-* tag (a real button) survives anywhere, code included: our code-span split may differ from Telegram's
     return _RICH_TG.sub("&lt;", "".join(parts))
+
+
+_RICH_BTN = re.compile(r"^[ \t]*\[\[buttons:([^\[\]\n]*)\]\][ \t]*$", re.M)  # a line [[buttons: A | B | C]]
+
+
+def _btn_opts(raw):
+    """The 2-4 labels (1-32 chars) of a marker line, or None when it is not a valid one."""
+    o = [x.strip() for x in raw.split("|")]
+    return o if 2 <= len(o) <= 4 and all(1 <= len(x) <= 32 for x in o) else None
+
+
+def btn_text(text, paren=True):
+    """Valid markers as plain text «(A / B / C)» for a chat without buttons."""
+    def f(m):
+        o = _btn_opts(m.group(1))
+        return m.group(0) if o is None else ("(%s)" if paren else "%s") % " / ".join(o)
+    return _RICH_BTN.sub(f, text)
+
+
+def _btn_esc(x):
+    return x.replace("&lt;", "<").replace("&", "&amp;").replace("<", "&lt;").replace('"', "&quot;")
+
+
+def rich_buttons(md, qmid, picked=None):
+    """md with every valid marker turned into a row of buttons (a picked one: a single disabled button);
+    also the labels and the question line before each marker."""
+    picked, opts, qs = picked or {}, [], []
+
+    code = [(c.start(), c.end()) for c in _RICH_FENCE.finditer(md)]
+
+    def row(m):
+        o = _btn_opts(m.group(1))
+        if o is None or any(a <= m.start() < b for a, b in code):
+            return m.group(0)
+        i = len(opts)
+        opts.append(o)
+        qs.append(short(md[:m.start()].rstrip().rsplit("\n", 1)[-1], 200))
+        if str(i) in picked:
+            k, who = picked[str(i)]
+            return '<tg-button-row><tg-button type="disabled">✓ %s — %s</tg-button></tg-button-row>' % (
+                _btn_esc(o[k]), _btn_esc(who))
+        return "<tg-button-row>%s</tg-button-row>" % "".join(
+            '<tg-button type="callback_data"%s data="rc:%s:%d:%d">%s</tg-button>' % (
+                ' style="primary"' if k == 0 else "", qmid, i, k, _btn_esc(x)) for k, x in enumerate(o))
+    return _RICH_BTN.sub(row, md), qs, opts
 
 
 _CTRL_RE = re.compile("[\x00-\x08\x0b-\x1f\x7f-\x9f]")
@@ -6955,7 +7003,9 @@ class Bot:
                "to the owner to confirm first, so say what you are about to do.")
         hint = (" Tables, checklists `- [ ]`/`- [x]` and `<details><summary>…</summary>…</details>` "
                 "render in this chat — use them when clearer (a fight card, work stages, decision options); "
-                "write no other HTML." if self.cfg.group_rich else "")
+                "write no other HTML. To let the chat decide, put a line `[[buttons: Да | Нет | Потом]]` right after "
+                "the question (2-4 short options); the bot turns it into buttons and shows who pressed."
+                if self.cfg.group_rich else "")
         return (brief + recent + "A message from %s in the group chat. Answer it fully: questions about the project and "
                 "general ones. %s Answer briefly; do not make "
                 "things up.%s\n\n%s%s" % (rec["who"] + (" (the owner himself: talk to him directly, never «pass it to the "
@@ -7233,25 +7283,38 @@ class Bot:
         if rec.get("link") and not owner:
             out += "\n\n" + rec["link"]
         out, files = self.responder_files(out)
-        self.chat_tail_add(self.chat_name(), out)
+        self.chat_tail_add(self.chat_name(), btn_text(out) if self.cfg.group_rich else out)
         # the model writes markdown: send_md turns it into Telegram HTML (bold, links) like console replies
         # links as «text (url)»: a chat answer never hides where a link goes
         shown = re.sub(r"\[([^\]\n]+)\]\((https?://[^)\s]+)\)", r"\1 (\2)", out)
         sent_rich = False
+        if self.cfg.group_rich and not rec.get("mid"):
+            shown = btn_text(shown, False)  # no message to hang the buttons on
         if self.cfg.group_rich and len(shown) <= 30000 and (
-                "<details" in shown or re.search(r"^\s*\|?\s*:?-+:?\s*\||^\s*- \[[ xX]\] ", shown, re.M)):
+                any(_btn_opts(m.group(1)) for m in _RICH_BTN.finditer(shown)) or "<details" in shown
+                or re.search(r"^\s*\|?\s*:?-+:?\s*\||^\s*- \[[ xX]\] ", shown, re.M)):
+            safe = rich_safe(shown)
+            body, qs, opts = rich_buttons(safe, rec.get("mid"))
             try:
-                self.tg_chat._notify(self.cfg.responder_chat, self.tg_chat.call("sendRichMessage", {
+                res = self.tg_chat._notify(self.cfg.responder_chat, self.tg_chat.call("sendRichMessage", {
                     "chat_id": self.cfg.responder_chat,
-                    "rich_message": {"markdown": rich_safe(shown)}, **({"reply_parameters": {
+                    "rich_message": {"markdown": body}, **({"reply_parameters": {
                         "message_id": rec["mid"], "allow_sending_without_reply": True}} if rec.get("mid") else {})}), None)
                 sent_rich = True
+                if opts and isinstance(res, dict) and res.get("message_id"):
+                    with self._resp_lock:
+                        rc = self.store.data.setdefault("rc", {})
+                        rc[str(rec["mid"])] = {"msg": res["message_id"], "md": safe, "q": qs, "picked": {}, "ts": self.clock()}
+                        for old in sorted(rc, key=lambda x: rc[x].get("ts", 0))[:-200]:
+                            del rc[old]
+                    self.store.save()
             except TGError as e:
                 log("responder rich failed: %s" % e)
                 sent_rich = " HTTP " not in str(e)  # a timeout may have delivered it: no second answer
         if not sent_rich:
             try:
-                self.tg_chat.send_md(self.cfg.responder_chat, shown, reply_to=rec["mid"])
+                self.tg_chat.send_md(self.cfg.responder_chat, btn_text(shown) if self.cfg.group_rich else shown,
+                                     reply_to=rec["mid"])
             except TGError as e:
                 log("responder reply failed: %s" % e)
         for path in files:
@@ -7599,12 +7662,49 @@ class Bot:
         model = self.cfg.responder_engine if self.cfg.responder_engine != "sdk" else env_read(self.cfg.sdk_env).get("CC_SDK_MODEL") or "—"
         return _t("%s · group: %s · model: %s") % (self.chat_name(), group, model)
 
+    def responder_choice(self, cq, msg):
+        """A group member pressed a bot-made answer button: mark the choice in the message, no model turn."""
+        tg = self.tg_chat  # the bot that sent the buttons edits them and answers their presses
+        who = short(" ".join(_CTRL_RE.sub(" ", str((cq.get("from") or {}).get("first_name") or "?")).split()) or "?", 32)
+        stale = _t("This button is out of date.")
+        try:
+            _, qmid, i, k = (cq.get("data") or "").split(":")
+            int(qmid)
+            i, k = int(i), int(k)
+        except ValueError:
+            return tg.answer(cq["id"], stale)
+        with self._resp_lock:  # check and mark only: the network calls go outside the lock
+            e = (self.store.data.get("rc") or {}).get(qmid)
+            opts = rich_buttons(e["md"], qmid)[2] if e else []
+            if not e or e["msg"] != msg.get("message_id") or not (0 <= i < len(opts) and 0 <= k < len(opts[i])):
+                return tg.answer(cq["id"], stale)
+            if str(i) in e["picked"]:
+                a = e["picked"][str(i)]
+                return tg.answer(cq["id"], _t("Already chosen: %s (%s)") % (opts[i][a[0]], a[1]))
+            e["picked"][str(i)] = [k, who]
+            body = rich_buttons(e["md"], qmid, e["picked"])[0]
+        try:
+            tg.call("editMessageText", {"chat_id": msg["chat"]["id"], "message_id": msg["message_id"],
+                                        "rich_message": {"markdown": body}})
+        except TGError as ex:
+            log("responder choice failed: %s" % ex)
+            if " HTTP " in str(ex):  # refused: the choice stays open; a timeout may have shown it, so it stays
+                with self._resp_lock:
+                    if (self.store.data.get("rc") or {}).get(qmid) is e and e["picked"].get(str(i)) == [k, who]:
+                        del e["picked"][str(i)]
+                return tg.answer(cq["id"], _t("Could not save the choice. Try again."))
+        tg.answer(cq["id"])
+        self.chat_tail_add(who, "выбрал «%s» на «%s»" % (opts[i][k], e["q"][i]))
+
     def handle_responder_update(self, upd):
         """The responder role: the group, the owner's 🔐 / backlog buttons and one status line in the owner's private chat."""
         self.note_group(upd)
         if "callback_query" in upd:
             cq = upd["callback_query"]
             msg = cq.get("message") or {}
+            if (self.cfg.group_rich and (cq.get("data") or "").startswith("rc:") and cq.get("id")
+                    and (msg.get("chat") or {}).get("id") == self.cfg.responder_chat):
+                return self.responder_choice(cq, msg)
             if (self.authorized((cq.get("from") or {}).get("id"), (msg.get("chat") or {}).get("type"))
                     and (cq.get("data") or "").partition(":")[0] in ("pr", "bl")):
                 self.on_callback(cq, msg)

@@ -9902,6 +9902,154 @@ class ResponderTests(unittest.TestCase):
         self.assertNotIn("<a ", cc.rich_safe('text ```\n\n<a href="https://x.org">y</a>\n\n```'))
         self.assertEqual(cc.rich_safe("```\n<b>\n```"), "```\n<b>\n```")
 
+    def _rc_env(self, body="Идём?\n[[buttons: Да | Нет | Потом]]"):
+        e, fake = responder_env(self)
+        e.bot.cfg.group_rich = True
+        e.bot.handle_update(gmsg("@cctg_bot вопрос", mid=42))
+        self.done(e, "s-aabbccdd", body)
+        return e, fake
+
+    def _press(self, e, data, chat=GROUP, mid=None, name="Борис", cid="c1"):
+        if mid is None:
+            mid = e.bot.store.data["rc"]["42"]["msg"]
+        e.bot.handle_responder_update({"update_id": 99, "callback_query": {"id": cid, "from": {"id": 555, "first_name": name}, "data": data,
+                                                                 "message": {"message_id": mid, "chat": {"id": chat, "type": "supergroup"}}}})
+
+    def test_button_marker_sends_rich_buttons_and_stores_the_entry(self):
+        e, _fake = self._rc_env()
+        rich = e.tg.of("sendRichMessage")
+        self.assertEqual(len(rich), 1)
+        body = rich[0]["rich_message"]["markdown"]
+        self.assertNotIn("[[buttons", body)
+        self.assertIn('<tg-button-row><tg-button type="callback_data" style="primary" data="rc:42:0:0">Да</tg-button>'
+                      '<tg-button type="callback_data" data="rc:42:0:1">Нет</tg-button>'
+                      '<tg-button type="callback_data" data="rc:42:0:2">Потом</tg-button></tg-button-row>', body)
+        en = e.bot.store.data["rc"]["42"]
+        self.assertEqual((en["msg"], en["picked"], en["q"]), (e.tg.n, {}, ["Идём?"]))
+        self.assertIn("[[buttons: Да | Нет | Потом]]", en["md"])
+        self.assertIn("(Да / Нет / Потом)", e.bot.store.data["chat_tail"][-1]["text"])
+
+    def test_button_marker_label_cannot_inject_a_raw_tag(self):
+        e, _fake = self._rc_env('Ну?\n[[buttons: <tg-button type="x">a | b"c & d]]')
+        body = e.tg.of("sendRichMessage")[0]["rich_message"]["markdown"]
+        self.assertNotIn("<tg-button type=\"x\"", body)
+        self.assertEqual(body.count("<tg-button "), 2)
+        self.assertIn("b&quot;c &amp; d", body)
+
+    def test_button_marker_without_the_flag_goes_out_as_text(self):
+        e, _fake = responder_env(self)
+        e.bot.handle_update(gmsg("@cctg_bot вопрос", mid=42))
+        called = self._track_md(e)
+        self.done(e, "s-aabbccdd", "Идём?\n[[buttons: Да | Нет]]")
+        self.assertEqual(e.tg.of("sendRichMessage"), [])
+        self.assertEqual(len(called), 1)
+        self.assertIn("[[buttons: Да | Нет]]", called[0][0][1])
+        self.assertNotIn("rc", e.bot.store.data)
+        self.assertIn("[[buttons: Да | Нет]]", e.bot.store.data["chat_tail"][-1]["text"])
+
+    def test_invalid_button_marker_stays_text(self):
+        e, _fake = responder_env(self)
+        e.bot.cfg.group_rich = True
+        e.bot.handle_update(gmsg("@cctg_bot вопрос", mid=42))
+        called = self._track_md(e)
+        self.done(e, "s-aabbccdd", "a\n[[buttons: Да]]\n[[buttons: 1 | 2 | 3 | 4 | 5]]")
+        self.assertEqual(e.tg.of("sendRichMessage"), [])
+        self.assertIn("[[buttons: Да]]", called[0][0][1])
+
+    def test_a_press_marks_the_choice_without_a_model_turn(self):
+        e, fake = self._rc_env()
+        mid, before = e.bot.store.data["rc"]["42"]["msg"], len(fake.requests)
+        saved = []
+        with mock.patch.object(e.bot.store, "save", side_effect=lambda: saved.append(
+                dict(e.bot.store.data["rc"]["42"]["picked"]))):
+            self._press(e, "rc:42:0:0")
+        self.assertEqual(saved[-1], {"0": [0, "Борис"]})  # saved with the choice: it survives a restart
+        ed = e.tg.of("editMessageText")
+        self.assertEqual(len(ed), 1)
+        self.assertEqual((ed[0]["chat_id"], ed[0]["message_id"]), (GROUP, mid))
+        body = ed[0]["rich_message"]["markdown"]
+        self.assertIn('<tg-button type="disabled">✓ Да — Борис</tg-button>', body)
+        self.assertNotIn("callback_data", body)
+        self.assertEqual(e.tg.of("answerCallbackQuery")[-1], {"callback_query_id": "c1"})
+        self.assertEqual(e.bot.store.data["chat_tail"][-1]["who"], "Борис")
+        self.assertEqual(e.bot.store.data["chat_tail"][-1]["text"], "выбрал «Да» на «Идём?»")
+        self.assertEqual(len(fake.requests), before)
+
+    def test_a_second_press_gets_already_chosen(self):
+        e, _fake = self._rc_env()
+        self._press(e, "rc:42:0:0")
+        self._press(e, "rc:42:0:1", name="Вера", cid="c2")
+        self.assertEqual(len(e.tg.of("editMessageText")), 1)
+        self.assertEqual(e.tg.of("answerCallbackQuery")[-1]["text"], "Уже выбрано: Да (Борис)")
+
+    def test_a_stale_or_foreign_press_gets_the_outdated_popup(self):
+        e, _fake = self._rc_env()
+        mid = e.bot.store.data["rc"]["42"]["msg"]
+        for kw in ({"chat": -5}, {"mid": mid + 1}):
+            self._press(e, "rc:42:0:0", **kw)
+        self._press(e, "rc:41:0:0")
+        self._press(e, "rc:42:1:0")
+        self._press(e, "rc:42:0:3")
+        self.assertEqual(e.tg.of("editMessageText"), [])
+        self.assertEqual(e.bot.store.data["rc"]["42"]["picked"], {})
+        pops = [c.get("text") for c in e.tg.of("answerCallbackQuery")]  # the foreign chat falls to the generic silent answer
+        self.assertEqual(len(pops), 5)
+        self.assertIsNone(pops[0])
+        self.assertTrue(all(x == cc._t("This button is out of date.") for x in pops[1:]))
+
+    def test_a_failed_edit_leaves_the_choice_open(self):
+        e, _fake = self._rc_env()
+        e.tg.errors["editMessageText"] = (lambda p: True, "Bad Request")
+        with mock.patch.object(cc, "log"):
+            self._press(e, "rc:42:0:0")
+        self.assertEqual(e.bot.store.data["rc"]["42"]["picked"], {})
+        self.assertIn("text", e.tg.of("answerCallbackQuery")[-1])
+
+    def test_an_edit_timeout_keeps_the_choice(self):
+        e, _fake = self._rc_env()
+        real = e.tg.call
+
+        def call(method, params=None, **kw):
+            if method == "editMessageText":
+                raise cc.TGError("editMessageText: TimeoutError")
+            return real(method, params, **kw)
+        e.tg.call = call
+        with mock.patch.object(cc, "log"):
+            self._press(e, "rc:42:0:0")
+        self.assertEqual(e.bot.store.data["rc"]["42"]["picked"], {"0": [0, "Борис"]})
+
+    def test_a_marker_inside_a_code_block_stays_text(self):
+        md, _qs, opts = cc.rich_buttons("```\n[[buttons: Да | Нет]]\n```\nИдём?\n[[buttons: A | B]]", 7)
+        self.assertIn("```\n[[buttons: Да | Нет]]\n```", md)
+        self.assertEqual(opts, [["A", "B"]])
+        self.assertIn('data="rc:7:0:0"', md)
+
+    def test_the_pressers_name_is_cleaned_and_cut(self):
+        e, _fake = self._rc_env()
+        self._press(e, "rc:42:0:0", name="Бо\nрис\x07" + "я" * 60)
+        who = e.bot.store.data["rc"]["42"]["picked"]["0"][1]
+        self.assertNotIn("\n", who)
+        self.assertNotIn("\x07", who)
+        self.assertLessEqual(len(who), 32)
+
+    def test_garbage_button_data_does_not_crash(self):
+        e, _fake = self._rc_env()
+        for d in ("rc:x:y", "rc:42:a:b", "rc:1:2:3:4", "rc:"):
+            self._press(e, d)
+        self.assertEqual(e.tg.of("editMessageText"), [])
+
+    def test_button_entries_are_capped_at_200(self):
+        e, _fake = responder_env(self, rate=1000)
+        e.bot.cfg.group_rich = True
+        for n in range(1, 203):
+            e.bot.clock = (lambda n=n: n)
+            e.bot.handle_update(gmsg("@cctg_bot вопрос", mid=n))
+            self.done(e, "s-aabbccdd", "?\n[[buttons: A | B]]")
+        rc = e.bot.store.data["rc"]
+        self.assertEqual(len(rc), 200)
+        self.assertNotIn("1", rc)
+        self.assertIn("202", rc)
+
     def test_group_rich_without_a_table_uses_send_md(self):
         e, _fake = responder_env(self)
         e.bot.cfg.group_rich = True
@@ -9925,7 +10073,8 @@ class ResponderTests(unittest.TestCase):
     def test_the_rich_hint_is_in_the_prompt_only_with_the_flag(self):
         phrase = ("Tables, checklists `- [ ]`/`- [x]` and `<details><summary>…</summary>…</details>` "
                   "render in this chat — use them when clearer (a fight card, work stages, decision options); "
-                  "write no other HTML.")
+                  "write no other HTML. To let the chat decide, put a line `[[buttons: Да | Нет | Потом]]` right after "
+                  "the question (2-4 short options); the bot turns it into buttons and shows who pressed.")
         e, _fake = responder_env(self)
         rec = {"who": "Анна", "from": 777, "q": "вопрос", "mid": 10}
         off = e.bot.responder_prompt(rec, True)
