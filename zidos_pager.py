@@ -27,6 +27,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import zlib
 from collections import deque
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -804,6 +805,7 @@ class Config:
                                              or os.path.join(home, ".local/state/zidos-pager/stt.sock"))
         lang_ = (get("CC_STT_LANG") or "").strip().lower()
         self.stt_lang = lang_ if re.fullmatch(r"[a-z]{2,3}", lang_) else ""  # "" = the bot language
+        self.draft_status = get("CC_DRAFT_STATUS") == "1"  # native «typing» draft in the session topic; off unless "1"
 
 
 # ------------------------------------------------------------ pure functions
@@ -3420,6 +3422,10 @@ class Tmux:
 
 # --------------------------------------------------------------- Telegram
 
+DRAFTS_PER_TICK = 4  # draft_tick runs every 4 s
+DRAFT_MUTE_MIN = 10  # s a stopped draft stays muted even if state.json moves
+
+
 class TGError(Exception):
     pass
 
@@ -3458,7 +3464,7 @@ class TG:
     def get_updates(self, offset):
         return self.call("getUpdates", {"offset": offset, "timeout": 30,
                                         "allowed_updates": ["message", "edited_message", "callback_query", "my_chat_member",
-                                                            "widget_query"]}, timeout=45)
+                                                            "widget_query", "stopped_message_generation"]}, timeout=45)
 
     @staticmethod
     def _reply(reply_to):
@@ -4687,6 +4693,9 @@ class Bot:
         self.last_forward = {}
         self.reply_to = {}
         self.status = {}
+        self.draft_sent = {}    # sid -> (text, clock) of the last draft that Telegram accepted
+        self.draft_mute = {}    # sid -> (state «updated», clock) of the owner's stop; lifts on a later update or leaving working
+        self.draft_pause = {}   # chat id -> clock until which a failed chat is not tried again
         self.topics_enabled, self.bot_username = False, None
         self._plock = threading.RLock()
         self._ask_cache = {}
@@ -7571,6 +7580,8 @@ class Bot:
             return  # groups belong to the chat bot
         if "edited_message" in upd:
             return  # edits matter only to the group responder
+        if "stopped_message_generation" in upd:
+            return self.on_draft_stopped(upd["stopped_message_generation"])
         if "widget_query" in upd:
             return self.on_widget_query(upd["widget_query"])
         if "callback_query" in upd:
@@ -10910,6 +10921,101 @@ class Bot:
                     self.tg.delete(chat, st["mid"])
                 self.status.pop(key, None)
 
+    @staticmethod
+    def _draft_id(sid):
+        return zlib.crc32(sid.encode()) & 0x7fffffff or 1
+
+    def draft_can_stop(self, sid, info):
+        """Same rule as the HUD stop control: a live session the owner can actually interrupt."""
+        return bool(sid in self.known and not is_herdr(sid) and self.is_live(sid)
+                    and info.get("state") in ("working", "blocked"))
+
+    def draft_tick(self):
+        """Console only, and only with CC_DRAFT_STATUS=1: one native draft per working session topic."""
+        if self.cfg.role != "console" or not self.cfg.draft_status or not self.topics_enabled:
+            return
+        now = self.clock()
+        for uid in self.cfg.allowed:
+            if now < self.draft_pause.get(uid, 0):
+                continue
+            due = []
+            for sid, topic in list(self.store.chat(uid)["topics"].items()):
+                if not isinstance(topic, dict) or topic.get("perm_only") or now < self.draft_pause.get(sid, 0):
+                    continue
+                if (is_sdk(sid) or is_herdr(sid)) and not (sid in self.known and self.is_live(sid)):
+                    continue  # session_info calls an unknown SDK/herdr session «working»: no draft into a dead topic
+                info = self.session_info(sid)
+                if info["state"] != "working":
+                    self.draft_mute.pop(sid, None)
+                    continue
+                mute = self.draft_mute.get(sid)
+                if mute is not None:
+                    if mute[0] == info.get("updated") or now - mute[1] < DRAFT_MUTE_MIN:
+                        continue
+                    if self.draft_mute.get(sid) is mute:  # the poll thread may have muted it again meanwhile
+                        self.draft_mute.pop(sid, None)  # a CLI interrupt leaves state.json «working»: a new update = a new turn
+                if now - self.last_forward.get(sid, float("-inf")) < 6:
+                    continue
+                if (uid, sid) in self.status:
+                    continue
+                text = humanize_detail(info["detail"])[:4096]
+                prev = self.draft_sent.get(sid)
+                if prev is not None and prev[0] == text and now - prev[1] < 20:
+                    continue
+                due.append(((prev or ("", float("-inf")))[1], sid, topic, info, text))
+            # ~1 draft a second per chat on a 4 s tick: the same token carries the real messages; the stalest go first
+            for _, sid, topic, info, text in sorted(due, key=lambda d: d[0])[:DRAFTS_PER_TICK]:
+                try:
+                    self.tg.call("sendMessageDraft", {
+                        "chat_id": uid, "message_thread_id": topic["thread"], "draft_id": self._draft_id(sid),
+                        "text": text, "can_stop": self.draft_can_stop(sid, info)})
+                except Exception as e:
+                    log("draft failed: %s" % e)
+                    if " HTTP 400 " in str(e):  # this topic or session is refused: the others still get theirs
+                        self.draft_pause[sid] = now + 300
+                        continue
+                    self.draft_pause[uid] = now + 300  # rate limit / network: the whole chat waits
+                    break
+                self.draft_sent[sid] = (text, now)
+
+    def draft_interrupt(self, sid):
+        """Soft interrupt. Never session.stop and never `claude stop` — those kill the session."""
+        if is_herdr(sid):
+            return
+        if is_sdk(sid):
+            try:
+                self.sdk.call("session.interrupt", {"id": sid}, timeout=10.0)
+            except SdkError:
+                pass
+            return
+        if self.session_info(sid).get("state") != "working":
+            return
+        with self.tmux.lock(sid):
+            ok, _ = self.tmux.ensure(sid)
+            # state.json may lag: Escape on an open menu would refuse a permission request
+            if ok and not menu_active(self.tmux.capture(sid, ansi=True)):
+                self.tmux.keys(sid, "Escape")
+
+    def on_draft_stopped(self, gen):
+        """Owner pressed stop on the draft in their private topic. Groups and other chats are ignored."""
+        if self.cfg.role != "console" or not self.cfg.draft_status or not isinstance(gen, dict):
+            return
+        chat = gen.get("chat") if isinstance(gen.get("chat"), dict) else {}
+        cid = chat.get("id")
+        if chat.get("type") != "private" or not isinstance(cid, int) or cid not in self.cfg.allowed:
+            return
+        sid = self.sid_of_thread(cid, gen.get("message_thread_id"))
+        if not sid or gen.get("draft_id") != self._draft_id(sid):
+            return
+        self.draft_mute[sid] = (self.session_info(sid).get("updated"), self.clock())
+        self.spawn(self.draft_interrupt_muted, sid)  # tmux.ensure may wait for the window: not in the poll thread
+
+    def draft_interrupt_muted(self, sid):
+        self.draft_interrupt(sid)
+        mute = self.draft_mute.get(sid)
+        if mute is not None:  # state.json may have moved while the turn was being interrupted: mute at what it says now
+            self.draft_mute[sid] = (self.session_info(sid).get("updated"), mute[1])
+
     def notify_tick(self):
         with self._notify_lock:  # the poll loop and the herdr event thread share one state diff: one notification
             self._notify_tick()
@@ -11169,14 +11275,17 @@ class Bot:
         except TGError as e:
             log("remove_old_tracker failed: %s" % e)
         self.greet_missing()
-        for fn, period, name in ((self.forward_tick, 3, "forward"), (self.status_tick, 2, "status"),
-                                 (self.notify_tick, 7, "notify"), (self.tmux.cleanup, 60, "cleanup"),
-                                 (self.topics_tick, 5, "topics"), (self.panel_tick, 15, "panel"), (self.names_tick, 20, "names"),
-                                 (self.chains_scan, 600, "chains"),
-                                 (self.topic_cleanup, 600, "topic_cleanup"), (self.temp_tick, 5, "temp"),
-                                 (self.webapp_tick, 10, "webapp"), (self.outbox_tick, 3, "outbox"),
-                                 (self.inbox_tick, 3600, "inbox"), (self.stopfail_tick, 10, "stopfail"),
-                                 (self.responder_typing_tick, 4, "typing")):
+        loops = [(self.forward_tick, 3, "forward"), (self.status_tick, 2, "status"),
+                 (self.notify_tick, 7, "notify"), (self.tmux.cleanup, 60, "cleanup"),
+                 (self.topics_tick, 5, "topics"), (self.panel_tick, 15, "panel"), (self.names_tick, 20, "names"),
+                 (self.chains_scan, 600, "chains"),
+                 (self.topic_cleanup, 600, "topic_cleanup"), (self.temp_tick, 5, "temp"),
+                 (self.webapp_tick, 10, "webapp"), (self.outbox_tick, 3, "outbox"),
+                 (self.inbox_tick, 3600, "inbox"), (self.stopfail_tick, 10, "stopfail"),
+                 (self.responder_typing_tick, 4, "typing")]
+        if self.cfg.draft_status:
+            loops.append((self.draft_tick, 4, "draft"))
+        for fn, period, name in loops:
             threading.Thread(target=self._loop, args=(fn, period, name), daemon=True).start()
         threading.Thread(target=self.herdr_watch, daemon=True).start()
         threading.Thread(target=self.sdk_watch, daemon=True).start()

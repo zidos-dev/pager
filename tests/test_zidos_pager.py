@@ -11516,3 +11516,371 @@ class HudWidgetTests(unittest.TestCase):
         self.assertIn(b"setInterval(ask,10000)", raw)
         self.assertIn(b"t0&&(Date.now()-t0>=750||arm)", raw)
         self.assertIn(b"openTelegramLink", raw)
+
+
+class DraftStatusTests(unittest.TestCase):
+    """Native Telegram draft (sendMessageDraft) of what a working session is doing. Off unless CC_DRAFT_STATUS=1."""
+
+    @staticmethod
+    def did(sid):
+        return zlib.crc32(sid.encode()) & 0x7fffffff or 1
+
+    def ready(self):
+        e = topic_env(self)
+        e.cfg.draft_status = True
+        e.bot.ensure_topic(1, "a")
+        return e
+
+    def stopped(self, chat, thread, sid, ctype="private", draft=None):
+        return {"update_id": 1, "stopped_message_generation": {
+            "chat": {"id": chat, "type": ctype},
+            "message_thread_id": thread,
+            "draft_id": self.did(sid) if draft is None else draft}}
+
+    def sdk_ready(self):
+        fake = FakeSdk(self)
+        e = sdk_env(self, fake)
+        e.cfg.draft_status = True
+        e.bot.topics_enabled = True
+        e.t = {"v": NOW}
+        e.bot.clock = lambda: e.t["v"]
+        e.bot.known[SID]["detail"] = "читает файл"
+        e.bot.ensure_topic(1, SID)
+        return e, fake
+
+    def test_flag_defaults_off_and_sends_nothing(self):
+        off = cc.Config(env_path="/nonexistent", environ={"HOME": "/tmp", "TG_ALLOWED_USERS": "1"})
+        on = cc.Config(env_path="/nonexistent", environ={"HOME": "/tmp", "TG_ALLOWED_USERS": "1", "CC_DRAFT_STATUS": "1"})
+        self.assertIs(off.draft_status, False)
+        self.assertIs(on.draft_status, True)
+        e = topic_env(self)
+        self.assertIs(e.cfg.draft_status, False)
+        e.bot.ensure_topic(1, "a")
+        e.bot.draft_tick()
+        e.cfg.draft_status = True
+        e.bot.topics_enabled = False
+        e.bot.draft_tick()
+        self.assertEqual(e.tg.of("sendMessageDraft"), [])
+
+    def test_working_topic_sends_one_draft_with_ids(self):
+        e = self.ready()
+        e.job("a", name="Альфа", state="done", detail="читает файл")
+        e.bot.draft_tick()
+        e.job("a", name="Альфа", state="blocked", detail="читает файл")
+        e.bot.draft_tick()
+        self.assertEqual(e.tg.of("sendMessageDraft"), [])
+        e.job("a", name="Альфа", state="working", detail="читает файл")
+        e.bot.draft_tick()
+        e.bot.draft_tick()
+        drafts = e.tg.of("sendMessageDraft")
+        self.assertEqual(len(drafts), 1)
+        self.assertEqual(drafts[0]["chat_id"], 1)
+        self.assertEqual(drafts[0]["message_thread_id"], thread_of(e))
+        self.assertEqual(drafts[0]["draft_id"], self.did("a"))
+        self.assertEqual(drafts[0]["text"], "читает файл")
+        self.assertIs(drafts[0]["can_stop"], False)  # not in known, so the HUD would not offer stop
+
+    def test_no_repeat_within_20s_until_text_changes(self):
+        e = self.ready()
+        e.bot.draft_tick()
+        e.t["v"] += 19
+        e.bot.draft_tick()
+        self.assertEqual(len(e.tg.of("sendMessageDraft")), 1)
+        e.t["v"] += 1
+        e.bot.draft_tick()
+        self.assertEqual(len(e.tg.of("sendMessageDraft")), 2)
+        self.assertEqual(e.tg.of("sendMessageDraft")[-1]["text"], "читает файл")
+        e.job("a", name="Альфа", state="working", detail="пишет код")
+        e.bot.draft_tick()
+        self.assertEqual(len(e.tg.of("sendMessageDraft")), 3)
+        self.assertEqual(e.tg.of("sendMessageDraft")[-1]["text"], "пишет код")
+
+    def test_recent_forward_suppresses_the_draft(self):
+        e = self.ready()
+        e.bot.last_forward["a"] = e.bot.clock()
+        e.bot.draft_tick()
+        self.assertEqual(e.tg.of("sendMessageDraft"), [])
+        e.bot.last_forward["a"] = e.bot.clock() - 6
+        e.bot.draft_tick()
+        self.assertEqual(len(e.tg.of("sendMessageDraft")), 1)
+
+    def test_status_entry_suppresses_the_draft(self):
+        e = self.ready()
+        e.bot.status[(1, "a")] = {"sid": "a"}
+        e.bot.draft_tick()
+        self.assertEqual(e.tg.of("sendMessageDraft"), [])
+        e.bot.status.pop((1, "a"))
+        e.bot.draft_tick()
+        self.assertEqual(len(e.tg.of("sendMessageDraft")), 1)
+
+    def test_perm_only_topic_sends_nothing(self):
+        e = self.ready()
+        e.bot.store.chat(1)["topics"]["a"]["perm_only"] = True
+        e.bot.draft_tick()
+        self.assertEqual(e.tg.of("sendMessageDraft"), [])
+
+    def test_herdr_draft_has_can_stop_false(self):
+        e = self.ready()
+        e.bot.known["a"] = {"id": "a", "name": "Альфа", "state": "working", "detail": "читает файл", "pid": 5,
+                            "cwd": "", "result": None, "sessionId": "", "link": "", "updated": 0}
+        e.bot.draft_tick()
+        self.assertIs(e.tg.of("sendMessageDraft")[-1]["can_stop"], True)
+        e.tg.calls.clear()
+        hid = "h-w1.p2"
+        e.bot.known[hid] = {"id": hid, "name": "Пастух", "state": "working", "detail": "смотрит diff", "pid": 9,
+                            "source": "herdr", "cwd": "", "result": None, "sessionId": "", "link": "", "updated": 0}
+        e.bot.store.chat(1)["topics"][hid] = {"thread": 77}
+        e.bot.draft_tick()
+        drafts = e.tg.of("sendMessageDraft")
+        self.assertEqual(len(drafts), 1)
+        self.assertEqual(drafts[0]["chat_id"], 1)
+        self.assertEqual(drafts[0]["message_thread_id"], 77)
+        self.assertEqual(drafts[0]["draft_id"], self.did(hid))
+        self.assertIs(drafts[0]["can_stop"], False)
+        self.assertEqual(drafts[0]["text"], "смотрит diff")
+
+    def test_empty_detail_is_empty_text_and_long_detail_is_cut(self):
+        e = self.ready()
+        e.job("a", name="Альфа", state="working", detail="   ")
+        e.bot.draft_tick()
+        self.assertEqual(e.tg.of("sendMessageDraft")[0]["text"], "")
+        e.job("a", name="Альфа", state="working", detail="я" * 5000)
+        e.bot.draft_tick()
+        self.assertEqual(e.tg.of("sendMessageDraft")[-1]["text"], "я" * 4096)
+
+    def test_api_failure_400_pauses_only_that_topic(self):
+        e = self.ready()
+        e.job("a", name="Альфа", state="working", detail="читает")
+        e.job("b", name="Бета", state="working", detail="пишет")
+        e.bot.ensure_topic(1, "b")
+        th_a = thread_of(e, "a")
+        e.tg.errors["sendMessageDraft"] = (lambda p: p["message_thread_id"] == th_a, "Bad Request: thread not found")
+        with mock.patch.object(cc, "log") as lg:
+            e.bot.draft_tick()
+            self.assertEqual(lg.call_count, 1)
+            self.assertTrue(lg.call_args[0][0].startswith("draft failed:"))
+            # «a» was tried and refused, «b» still got its draft in the same tick
+            self.assertEqual(sorted(d["message_thread_id"] for d in e.tg.of("sendMessageDraft")), sorted([th_a, thread_of(e, "b")]))
+            e.t["v"] += 20
+            e.bot.draft_tick()  # «a» is paused: no new attempt, no new log line; «b» refreshes
+            self.assertEqual(lg.call_count, 1)
+            self.assertEqual([d["message_thread_id"] for d in e.tg.of("sendMessageDraft")][2:], [thread_of(e, "b")])
+            e.t["v"] += 280
+            e.bot.draft_tick()
+            self.assertEqual(lg.call_count, 2)
+
+    def test_network_or_rate_limit_failure_pauses_the_chat(self):
+        e = self.ready()
+        e.job("a", name="Альфа", state="working", detail="читает")
+        e.job("b", name="Бета", state="working", detail="пишет")
+        e.bot.ensure_topic(1, "b")
+        sent = []
+
+        def boom(method, params=None, timeout=15):
+            if method == "sendMessageDraft":
+                sent.append(params)
+                raise cc.TGError("sendMessageDraft: HTTP 429 Too Many Requests: retry after 5")
+            return cc.TG.call(e.tg, method, params, timeout)
+
+        e.tg.call = boom
+        with mock.patch.object(cc, "log") as lg:
+            e.bot.draft_tick()
+            self.assertEqual((lg.call_count, len(sent)), (1, 1))
+            e.t["v"] += 299
+            e.bot.draft_tick()
+            self.assertEqual((lg.call_count, len(sent)), (1, 1))
+            e.t["v"] += 1
+            e.bot.draft_tick()
+            self.assertEqual((lg.call_count, len(sent)), (2, 2))
+
+    def test_unknown_sdk_or_herdr_topic_gets_no_draft(self):
+        e = self.ready()
+        e.job("a", name="Альфа", state="done", detail="")
+        e.bot.store.chat(1)["topics"]["s-0000dead"] = {"thread": 91}
+        e.bot.store.chat(1)["topics"]["h-w9.p9"] = {"thread": 92}
+        e.bot.draft_tick()
+        self.assertEqual(e.tg.of("sendMessageDraft"), [])
+
+    def test_at_most_four_drafts_per_chat_per_tick_stalest_first(self):
+        e = self.ready()
+        sids = ["a"] + ["s%d" % i for i in range(5)]
+        for i, sid in enumerate(sids):
+            e.job(sid, name="N%d" % i, state="working", detail="шаг")
+            e.bot.ensure_topic(1, sid)
+        e.bot.draft_tick()
+        first = [d["draft_id"] for d in e.tg.of("sendMessageDraft")]
+        self.assertEqual(len(first), 4)
+        e.t["v"] += 4
+        e.bot.draft_tick()
+        second = [d["draft_id"] for d in e.tg.of("sendMessageDraft")][4:]
+        self.assertEqual(len(second), 2)  # the two never sent; the four fresh ones wait their 20 s
+        self.assertTrue(set(second).isdisjoint(first))
+
+    def test_cli_stop_skips_escape_when_a_menu_is_open(self):
+        e = self.ready()
+        calls = []
+        e.bot.tmux.ensure = lambda sid: (True, "")
+        e.bot.tmux.capture = lambda sid, ansi=False: "Do you want to proceed?\n❯ 1. Yes\n  2. No\nEnter to select · Esc to cancel"
+        e.bot.tmux.keys = lambda sid, *ks: calls.append(ks) or True
+        e.bot.handle_update(self.stopped(1, thread_of(e), "a"))
+        self.assertEqual(calls, [])
+
+    def test_stop_from_a_group_or_a_stranger_does_not_interrupt(self):
+        e, fake = self.sdk_ready()
+        th = thread_of(e, SID)
+        before = list(fake.methods())
+        runs = len(e.runs)
+        e.tg.calls.clear()
+        e.bot.handle_update(self.stopped(-100500, th, SID, ctype="supergroup"))
+        e.bot.handle_update(self.stopped(2, th, SID, ctype="private"))
+        e.bot.handle_update(self.stopped(1, th, SID, draft=1 if self.did(SID) != 1 else 2))
+        e.bot.handle_update(self.stopped(1, 99999, SID))
+        self.assertEqual(fake.methods(), before)
+        self.assertNotIn("session.interrupt", fake.methods())
+        self.assertNotIn("session.stop", fake.methods())
+        self.assertEqual(len(e.runs), runs)
+        self.assertEqual(e.tg.of("sendMessage"), [])
+        e.bot.draft_tick()
+        self.assertEqual(len(e.tg.of("sendMessageDraft")), 1)
+        self.assertEqual(e.tg.of("sendMessageDraft")[0]["draft_id"], self.did(SID))
+
+    def test_owner_stop_interrupts_an_sdk_session(self):
+        e, fake = self.sdk_ready()
+        seen = []
+        client = e.bot.sdk
+        orig = client.call
+
+        def wrapped(method, params=None, timeout=2.0):
+            seen.append((method, params, timeout))
+            return orig(method, params, timeout)
+
+        client.call = wrapped
+        e.bot.handle_update(self.stopped(1, thread_of(e, SID), SID))
+        self.assertEqual([s for s in seen if s[0] == "session.interrupt"],
+                         [("session.interrupt", {"id": SID}, 10.0)])
+        self.assertFalse(any(s[0] == "session.stop" for s in seen))
+        self.assertFalse(any(len(a) >= 2 and a[1] == "stop" for a, _ in e.runs))
+
+        e, fake = self.sdk_ready()
+        fake.errors["session.interrupt"] = "busy"
+        e.bot.handle_update(self.stopped(1, thread_of(e, SID), SID))
+        self.assertIn("session.interrupt", fake.methods())
+        self.assertNotIn("session.stop", fake.methods())
+        self.assertFalse(any(len(a) >= 2 and a[1] == "stop" for a, _ in e.runs))
+        e.tg.calls.clear()
+        e.bot.draft_tick()
+        self.assertEqual(e.tg.of("sendMessageDraft"), [])
+
+    def test_stop_mutes_drafts_until_the_session_leaves_working(self):
+        e, _fake = self.sdk_ready()
+        e.bot.handle_update(self.stopped(1, thread_of(e, SID), SID))
+        e.bot.known[SID]["detail"] = "другое"
+        e.bot.draft_tick()
+        self.assertEqual(e.tg.of("sendMessageDraft"), [])
+        e.bot.known[SID]["state"] = "done"
+        e.bot.draft_tick()
+        self.assertEqual(e.tg.of("sendMessageDraft"), [])
+        e.bot.known[SID]["state"] = "working"
+        e.bot.known[SID]["detail"] = "снова"
+        e.bot.draft_tick()
+        drafts = e.tg.of("sendMessageDraft")
+        self.assertEqual(len(drafts), 1)
+        self.assertEqual(drafts[0]["text"], "снова")
+        self.assertEqual(drafts[0]["message_thread_id"], thread_of(e, SID))
+
+    def test_cli_mute_lifts_on_the_next_turn_though_state_json_still_says_working(self):
+        # live 10.11: after Escape the CLI leaves state.json at «working» with the old updatedAt
+        e = self.ready()
+        e.job("a", name="Альфа", state="working", detail="спит", updatedAt="2026-11-10T03:42:59Z")
+        e.bot.tmux.ensure = lambda sid: (True, "")
+        e.bot.tmux.keys = lambda sid, *ks: True
+        e.bot.handle_update(self.stopped(1, thread_of(e), "a"))
+        e.t["v"] += 60
+        e.bot.draft_tick()
+        self.assertEqual(e.tg.of("sendMessageDraft"), [])
+        e.job("a", name="Альфа", state="working", detail="новый ход", updatedAt="2026-11-10T03:50:00Z")
+        e.bot.draft_tick()
+        self.assertEqual([d["text"] for d in e.tg.of("sendMessageDraft")], ["новый ход"])
+
+    def test_state_moving_during_the_interrupt_keeps_the_mute(self):
+        e = self.ready()
+        e.job("a", name="Альфа", state="working", detail="пишет", updatedAt="2026-11-10T03:42:59Z")
+        e.bot.tmux.ensure = lambda sid: (True, "")
+
+        def esc(sid, *ks):  # the session writes state.json once more while Escape lands
+            e.job("a", name="Альфа", state="working", detail="пишет", updatedAt="2026-11-10T03:43:01Z")
+            return True
+
+        e.bot.tmux.keys = esc
+        e.bot.handle_update(self.stopped(1, thread_of(e), "a"))
+        e.t["v"] += 30
+        e.bot.draft_tick()
+        self.assertEqual(e.tg.of("sendMessageDraft"), [])
+
+    def test_mute_holds_at_least_ten_seconds(self):
+        e = self.ready()
+        e.job("a", name="Альфа", state="working", detail="пишет", updatedAt="2026-11-10T03:42:59Z")
+        e.bot.tmux.ensure = lambda sid: (False, "no")
+        e.bot.handle_update(self.stopped(1, thread_of(e), "a"))
+        e.job("a", name="Альфа", state="working", detail="пишет", updatedAt="2026-11-10T03:43:05Z")
+        e.t["v"] += 9
+        e.bot.draft_tick()
+        self.assertEqual(e.tg.of("sendMessageDraft"), [])
+        e.t["v"] += 1
+        e.bot.draft_tick()
+        self.assertEqual(len(e.tg.of("sendMessageDraft")), 1)
+
+    def test_stop_is_ignored_when_the_flag_is_off(self):
+        e = self.ready()
+        e.cfg.draft_status = False
+        calls = []
+        e.bot.tmux.ensure = lambda sid: calls.append(sid) or (True, "")
+        e.bot.handle_update(self.stopped(1, thread_of(e), "a"))
+        e.bot.handle_update({"update_id": 2, "stopped_message_generation": {"chat": {"id": [1], "type": "private"},
+                                                                          "message_thread_id": thread_of(e), "draft_id": 1}})
+        self.assertEqual(calls, [])
+
+    def test_cli_stop_sends_escape_and_does_not_stop_the_session(self):
+        e = self.ready()
+        calls = []
+        e.bot.tmux.ensure = lambda sid: calls.append(("ensure", sid)) or (False, "no")
+        e.bot.tmux.keys = lambda sid, *ks: calls.append(("keys", sid) + ks) or True
+
+        def stop_session(*a, **k):
+            raise AssertionError("stop_session %s" % (a,))
+
+        e.bot.stop_session = stop_session
+        e.bot.handle_update(self.stopped(1, thread_of(e), "a"))
+        self.assertEqual(calls, [("ensure", "a")])
+        calls.clear()
+        e.bot.tmux.ensure = lambda sid: calls.append(("ensure", sid)) or (True, "")
+        e.bot.handle_update(self.stopped(1, thread_of(e), "a"))
+        self.assertEqual(calls, [("ensure", "a"), ("keys", "a", "Escape")])
+        calls.clear()
+        e.job("a", name="Альфа", state="blocked", detail="ждёт")
+        e.bot.handle_update(self.stopped(1, thread_of(e), "a"))
+        self.assertEqual(calls, [])
+        hid = "h-w1.p2"
+        e.bot.known[hid] = {"id": hid, "name": "Пастух", "state": "working", "detail": "x", "source": "herdr",
+                            "pid": 3, "cwd": "", "result": None, "sessionId": "", "link": "", "updated": 0}
+        e.bot.store.chat(1)["topics"][hid] = {"thread": 88}
+        seen = []
+        e.bot.sdk.call = lambda *a, **k: seen.append(a)
+        e.bot.handle_update(self.stopped(1, 88, hid))
+        self.assertEqual((calls, seen), ([], []))
+
+    def test_responder_does_not_send_drafts_or_interrupt(self):
+        e = self.ready()
+        calls = []
+        e.bot.tmux.ensure = lambda sid: calls.append(sid) or (True, "")
+        e.bot.tmux.keys = lambda sid, *ks: calls.append((sid, ks)) or True
+        e.cfg.role = "responder"
+        e.bot.draft_tick()
+        e.bot.handle_update(self.stopped(1, thread_of(e), "a"))
+        self.assertEqual(e.tg.of("sendMessageDraft"), [])
+        self.assertEqual(calls, [])
+
+    def test_allowed_updates_include_stopped_message_generation(self):
+        e = Env(self)
+        e.tg.get_updates(0)
+        self.assertIn("stopped_message_generation", e.tg.of("getUpdates")[0]["allowed_updates"])
