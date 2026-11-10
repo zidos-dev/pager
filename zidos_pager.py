@@ -298,16 +298,27 @@ _RU = {
     "Usage and limits": "Расход и лимиты",
     "Waiting for you": "Ждут вас",
     "are waiting for you": "ждут вас",
-    "nobody is waiting": "никто не ждёт",
+    "nobody is waiting": "Никто не ждёт",
     "%s working": "%s в работе",
     "%s done": "%s готово",
     "Again": "Ещё раз",
-    "Allowed": "Разрешено",
     "Denied": "Отклонено",
-    "The request is already different": "Запрос уже другой — обновил",
+    "The request is already different": "Запрос уже другой",
     "It did not work": "Не вышло",
     "One second…": "Секунду…",
-    "quota is stale": "квота устарела",
+    "quota is stale": "квота на",
+    "No data": "Нет данных",
+    "Refresh": "Обновить",
+    "Session card is lower in the chat": "Карточка сессии ниже в чате",
+    "no connection": "нет связи",
+    "access": "доступ",
+    "Open the session": "Открыть сессию",
+    "Reply in the chat": "Ответить в чате",
+    "All %s": "Все %s",
+    "of": "из",
+    "Back": "Назад",
+    "Forward": "Дальше",
+    "Answer: %s": "Ответ: %s",
     "Control panel": "Пульт",
     "🎛 Control panel: waiting for you — %s · working — %s. Without widgets: /s":
         "🎛 Пульт: ждут вас — %s · в работе — %s. Без виджетов: /s",
@@ -862,57 +873,93 @@ STALE_QUOTA = 30 * 60
 # Bot API 10.4 widget: fixed HTML in the message, numbers come from the bot (chat_data at sending, then
 # answers to background requests while it is on screen). No network in the sandbox; colors are the bubble's.
 LIVE_WIDGET = """<style>
-body{margin:0;background:#0b0e1d}
-.sc{padding:14px 14px max(14px,env(safe-area-inset-bottom));color:#fff;background:radial-gradient(110% 80% at 100% 0%,#4256ff 0%,rgba(66,86,255,0) 58%),radial-gradient(90% 70% at 0% 100%,rgba(210,251,74,.22) 0%,rgba(210,251,74,0) 62%),#0b0e1d}
-.mu{color:rgba(255,255,255,.68)}.sm{font-size:.82em}.t{font-variant-numeric:tabular-nums}
-.top{display:flex;gap:10px;align-items:baseline}.e{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.big{font-size:2.6em;font-weight:500;letter-spacing:-.04em;line-height:1.1;margin-top:6px}
-.it{background:rgba(255,255,255,.08);border-radius:16px;padding:10px 12px;margin-top:8px}
-.nm{font-weight:500}.lk{display:flex;align-items:center;min-height:44px;margin:-10px 0 -6px}.lk b{font-weight:400;opacity:.6;padding-left:8px}.ln{font-family:ui-monospace,monospace;font-size:.78em}
-.ac{display:flex;gap:8px;margin-top:8px}
-.cap,.ch{display:flex;align-items:center;justify-content:center;min-height:44px;border-radius:22px;position:relative;overflow:hidden;touch-action:none}
-.cap{flex:1;white-space:nowrap;padding:0 14px;background:#d2fb4a;color:#0b0e1d;font-weight:500}.ch{padding:0 16px;background:rgba(255,255,255,.12)}
-.cap i{position:absolute;left:0;top:0;bottom:0;width:100%;background:#0b0e1d;opacity:.18;transform:scaleX(0);transform-origin:left}
-.cap.go i{transform:scaleX(1);transition:transform .6s linear}.cap span{position:relative}.cap.q{background:rgba(255,255,255,.12);color:#d2fb4a}
-.rs{margin-top:6px;color:#d2fb4a}.nt{margin-top:0}.ft{margin-top:10px}
-@media (prefers-reduced-motion:reduce){.cap.go i{transition:none}}
+:root{--bg:#f5f6fa;--sf:#fff;--ink:#0f1222;--mu:#5a5d6e;--tn:rgba(15,18,34,.07);--tp:rgba(15,18,34,.16);--ab:#0f1222;--af:#fff;--ok:#0f1222;--g1:rgba(66,86,255,.16);--g2:rgba(210,251,74,.4);--r:16px;--d:.18s}
+@media (prefers-color-scheme:dark){:root{--bg:#0b0e1d;--sf:rgba(255,255,255,.08);--ink:#fff;--mu:rgba(255,255,255,.68);--tn:rgba(255,255,255,.12);--tp:rgba(255,255,255,.26);--ab:#d2fb4a;--af:#0b0e1d;--ok:#d2fb4a;--g1:#4256ff;--g2:rgba(210,251,74,.22)}}
+body{margin:0;background:var(--bg)}
+.sc{padding:14px 14px max(14px,env(safe-area-inset-bottom));color:var(--ink);background:radial-gradient(110% 80% at 100% 0%,var(--g1) 0%,transparent 58%),radial-gradient(90% 70% at 0% 100%,var(--g2) 0%,transparent 62%),var(--bg)}
+button{font:inherit;color:inherit;border:0;margin:0;text-align:left;-webkit-tap-highlight-color:transparent;transition:background-color var(--d)}
+button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.mu{color:var(--mu)}.sm{font-size:.82em}.t{font-variant-numeric:tabular-nums}
+.e{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.top{display:flex;flex-wrap:wrap;gap:0 10px;align-items:baseline;justify-content:space-between}
+.big{font-size:2.2em;font-weight:500;letter-spacing:-.04em;line-height:1.1;padding-right:8px}
+.it{display:flex;align-items:center;gap:8px;width:100%;min-height:48px;background:var(--sf);border-radius:var(--r);padding:8px 12px;margin-top:6px}
+.it:active,.ch:active{background:var(--tp)}.it b{font-weight:400;opacity:.6}.it .e .e{display:block}
+.cd{background:var(--sf);border-radius:var(--r);padding:10px 12px;margin-top:8px;animation:in var(--d) ease-out}
+.nm{font-weight:500;display:flex}.tx{margin-top:4px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;overflow-wrap:anywhere}
+.t2{-webkit-line-clamp:2}.rs.tx{margin-top:4px}.ln{font-family:ui-monospace,monospace;font-size:.78em}
+.ac{display:flex;gap:8px;margin-top:8px}.ac.v{flex-direction:column;gap:6px}.ac:not(.v){flex-wrap:wrap}.ac:not(.v)>*{flex:1 0 auto}
+.cap,.ch{display:flex;align-items:center;justify-content:center;min-height:44px;border-radius:22px;position:relative;overflow:hidden;touch-action:none;white-space:nowrap;padding:0 16px}
+.cap{flex:1;background:var(--ab);color:var(--af);font-weight:500}.ch{background:var(--tn)}.cap:active{opacity:.7}
+.v .ch{justify-content:flex-start}.ch span{overflow:hidden;text-overflow:ellipsis}
+.cap i{position:absolute;left:0;top:0;bottom:0;width:100%;background:var(--af);opacity:.22;transform:scaleX(0);transform-origin:left}
+.cap.go i{transform:scaleX(1);transition:transform .6s linear}.cap span{position:relative}
+.rs{margin-top:6px;color:var(--ok);font-weight:500}
+.pg{display:flex;align-items:center;gap:8px;margin-top:6px}.pg span{flex:1;text-align:center}.pg .ch{min-width:44px;padding:0 14px}
+.ch[disabled]{opacity:.35}.ft{margin-top:10px}
+@keyframes in{from{opacity:0}}
+@media (prefers-reduced-motion:reduce){.cap.go i{transition:none}.cd{animation:none}}
 </style>
-<div class="sc"><div class="top"><span class="mu sm e" id="t"></span><span class="mu sm t" id="q"></span></div>
-<div class="big t" id="n"></div><div class="mu" id="nl"></div><div id="L"></div><div class="mu sm t ft" id="f"></div></div>
+<div class="sc"><div class="top"><div><span class="big t" id="n"></span><span id="nl"></span></div><span class="mu sm t" id="q"></span></div>
+<div id="B"></div><div class="pg sm" id="P"></div><div class="mu sm t ft" id="f"></div></div>
 <script>
-var W=window.TelegramWidget,L=__L__,S=null,busy=0;
+var W=window.TelegramWidget,L=__L__,S=null,busy=0,off=0,bk=[],cr=null,D={},bad=0;
 function $(i){return document.getElementById(i)}
 function el(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}
+function btn(c,x,f){var e=el("button",c);e.appendChild(el("span",null,x));e.onclick=f;return e}
 function hap(k){try{W.HapticFeedback.notificationOccurred(k)}catch(e){}}
-function pct(v){return v==null?"—":Math.round(v)+" %"}
-function draw(s){if(!s)return;S=s;var c=s.c||[0,0,0],w=s.w||[],b=$("L");
-$("q").textContent=s.st?L.st:L.h5+" "+pct((s.q||[])[0])+" · "+L.d7+" "+pct((s.q||[])[1]);
-$("n").textContent=c[0];$("nl").textContent=c[0]?L.wait:L.none;b.textContent="";row.f=0;
-w.forEach(function(x){b.appendChild(row(x))});
-var f=[];if(c[1])f.push(L.work.replace("%s",c[1]));if(c[2])f.push(L.done.replace("%s",c[2]));if(s.u)f.push(s.u);
-$("f").textContent=f.join(" · ")}
-function row(x){var r=el("div","it"),a=el("div","ac"),h=el("div","nm lk");h.appendChild(el("span","e",x[1]));
-if(x[4]){h.appendChild(el("b",null,"\\u203a"));h.onclick=function(){W.openTelegramLink(x[4])}}r.appendChild(h);
-if(x[2])r.appendChild(el("div",(x[3]=="p"?"ln":"sm")+" mu e",x[2]));
-if(x[3]=="p"){var c=el("div","cap"+(row.f?" q":"")),sp=el("span",null,L.allow),t0=0,arm=0;c.appendChild(el("i"));c.appendChild(sp);row.f=1;
+function pj(a){try{return JSON.parse(a.result)}catch(e){return null}}
+function req(d,ok,no,n){if(busy){if((n||0)>8)return no({code:"BUSY"});return setTimeout(function(){req(d,ok,no,(n||0)+1)},250)}
+busy=1;try{W.request(d).then(function(a){busy=0;ok(a)},function(e){busy=0;no(e)})}catch(e){busy=0;no(e)}}
+function head(){var s=S,c=s?s.c||[0,0,0]:0,q=[],f=[];
+if(!s){$("n").textContent="";$("nl").textContent=L.nodata;$("q").textContent=$("f").textContent="";return}
+$("n").textContent=c[0]||"";$("nl").textContent=c[0]?L.wait:L.none;
+[[0,L.h5],[1,L.d7]].forEach(function(p){var v=(s.q||[])[p[0]];if(v!=null)q.push(p[1]+" "+Math.round(v)+" %")});
+if(s.st&&q.length)q.push(L.st+(s.u?" "+s.u:""));$("q").textContent=q.join(" · ");
+if(c[1])f.push(L.work.replace("%s",c[1]));if(c[2])f.push(L.done.replace("%s",c[2]));if(bad>2)f.push(L.off);
+$("f").textContent=f.join(" · ");pager()}
+function pager(){var p=$("P"),w=S&&S.w||[],n=S?S.c[0]:0,i=cr?w.indexOf(cr):-1;p.textContent="";
+if(!S){p.appendChild(btn("ch",L.retry,ask));return}
+if(n<=(i<0?0:1)&&!off)return;
+var a=btn("ch","‹",function(){step(-1)}),z=btn("ch","›",function(){step(1)});
+a.setAttribute("aria-label",L.prev);z.setAttribute("aria-label",L.next);
+a.disabled=!off&&i<1;z.disabled=off+i+1>=n;
+p.appendChild(a);p.appendChild(el("span","mu t",(i<0?"…":off+i+1)+" "+L.of+" "+n));p.appendChild(z)}
+function step(k){var w=S.w||[],i=w.indexOf(cr)+k;
+if(i>=0&&i<w.length&&(k>0||cr))return open(w[i]);
+if(k>0)page(off+w.length,function(){bk.push(off)},0);else if(bk.length)page(bk[bk.length-1],function(){bk.pop()},1)}
+function page(o,done,last){req("p:"+o,function(a){var v=pj(a);if(!v||!(v.w||[]).length)return;done();S=v;off=o;
+cr=v.w[last?v.w.length-1:0];draw();if(cr)more(cr)},function(){})}
+function draw(){head();var b=$("B"),w=S&&S.w||[];b.textContent="";
+if(!cr&&w.length)cr=w[0];
+if(cr)b.appendChild(card(cr));pager()}
+function open(x){cr=x;draw();more(x)}
+function more(x){req("d:"+x[0],function(a){var v=pj(a);if(v&&v.d){var n=JSON.stringify(v.d)!=JSON.stringify(D[x[0]]);D[x[0]]=v.d;if(n&&cr==x)draw()}},function(){})}
+function card(x){var d=D[x[0]]||{},r=el("div","cd"),h=el("div","nm"),o=d.o||[],sid=x[0].split(":")[0],lk=d.l||x[4];
+h.appendChild(el("span","e",x[1]));r.appendChild(h);
+if(d.t||x[2])r.appendChild(el("div",(x[3]=="p"?"ln":"sm")+" mu tx"+(o.length>3?" t2":""),d.t||x[2]));
+var a=el("div","ac"+(x[3]=="p"?"":" v"));
+if(x[3]=="p"){var c=el("button","cap"),sp=el("span",null,L.allow),t0=0,arm=0;c.appendChild(el("i"));c.appendChild(sp);
 c.onpointerdown=function(){t0=Date.now();c.classList.add("go")};
 c.onpointercancel=c.onpointerleave=function(){c.classList.remove("go")};
 c.onclick=function(){c.classList.remove("go");
 if(t0&&Date.now()-t0>=550||arm)return act("y:"+x[0],r);arm=1;sp.textContent=L.again;setTimeout(function(){arm=0;sp.textContent=L.allow},4000)};
-var d=el("div","ch",L.deny);d.onclick=function(){act("n:"+x[0],r)};a.appendChild(c);a.appendChild(d)}
-if(a.firstChild)r.appendChild(a);return r}
-function req(d,ok,no){busy=1;try{W.request(d).then(function(a){busy=0;ok(a)},function(e){busy=0;no(e)})}catch(e){busy=0;no(e)}}
-function act(d,r){if(busy){note(r,L.busy);return}
-req(d,function(a){var v=null;try{v=JSON.parse(a.result)}catch(e){}
-if(!v){note(r,L.err);return}hap(v.r=="ok"?"success":"warning");
-note(r,v.m||L[v.r]||L.err);if(v.s)setTimeout(function(){draw(v.s)},1200)},
+a.appendChild(c);a.appendChild(btn("ch",L.deny,function(){act("n:"+x[0],r)}))}
+o.forEach(function(t,k){a.appendChild(btn("ch",t,function(){act("a:"+d.h+":"+(k+1)+":"+sid,r)}))});
+r.appendChild(a);
+var g=btn(x[3]=="p"||o.length?"ch":"cap",(x[3]=="p"?L.open:L.chat)+" ›",function(){if(lk)W.openTelegramLink(lk);else act("o:"+sid,r)});
+if(x[3]=="p"){g.style.marginTop="6px";g.style.width="100%";r.appendChild(g)}else a.appendChild(g);
+return r}
+function act(d,r){note(r,L.busy);
+req(d,function(a){var v=pj(a);if(!v){note(r,L.err);return}hap(v.r=="ok"||v.r=="sent"?"success":"warning");
+note(r,v.m||L[v.r]||L.err);if(v.s)setTimeout(function(){S=v.s;off=0;bk=[];cr=null;D={};draw();if(cr)more(cr)},1200)},
 function(e){note(r,e&&e.code=="BUSY"?L.busy:L.err)})}
-function note(r,m){var o=r.querySelector(".rs");if(!o){o=r.querySelector("div.mu.e");if(o){var c0=o.className,t0=o.textContent;o.className="rs sm e nt";
-setTimeout(function(){if(o.isConnected){o.className=c0;o.textContent=t0}},4000)}else{o=el("div","rs");r.appendChild(o)}}o.textContent=m}
+function note(r,m){var o=r.querySelector(".tx");if(!o){o=el("div","tx");r.insertBefore(o,r.children[1])}o.className="rs sm tx";o.textContent=m}
 function ask(){if(!W||!W.isActive||busy)return;
-req("p",function(a){try{draw(JSON.parse(a.result))}catch(e){}},function(){})}
-$("t").textContent=L.t;
-if(W){try{draw(JSON.parse(W.chatData))}catch(e){}W.onEvent("activated",ask);ask();setInterval(ask,10000)}
+req("p:"+off,function(a){var v=pj(a);if(!v){bad++;head();return}bad=0;var t=cr&&cr[0];
+if(off&&!(v.w||[]).length){off=0;bk=[];busy=0;return ask()}S=v;
+if(t){var m=(v.w||[]).filter(function(x){return x[0]==t})[0];if(m){m[2]=cr[2];cr=m;return head()}cr=null}draw();if(cr)more(cr)},function(){bad++;head()})}
+if(W){try{S=JSON.parse(W.chatData)}catch(e){}draw();if(cr)more(cr);W.onEvent("activated",ask);ask();setInterval(ask,10000)}
 </script>
 """
 
@@ -2785,6 +2832,12 @@ def parse_perm_dialog(pane):
     return {"title": head[0] if head else "", "summary": " ".join(head[1:]),
             "body": "\n".join(l[ind:].rstrip() for l in body), "note": " ".join(note_lines),
             "question": lines[qi].strip(), "options": opts, "selected": selected}
+
+
+def pult_qhash(question, labels):
+    """8 hex chars of the question text and its option labels. Short enough that a:<h>:<k>:<sid> fits in 64 bytes."""
+    raw = json.dumps([question, list(labels)], ensure_ascii=False, separators=(",", ":")).encode()
+    return hashlib.sha256(raw).hexdigest()[:8]
 
 
 def perm_sig(perm):
@@ -5956,25 +6009,37 @@ class Bot:
             line = humanize_detail(x["detail"] or x["result"] or "")
         return [sid, name, short(line, 60), "a", link]
 
-    def pult_state(self, chat, sessions=None):
-        """The control-panel snapshot: quota, counts, and at most three rows (permissions, then questions):
-        four rows with buttons outgrow the 600 px widget at a large font. None when the session list failed:
-        zeros would claim «nobody is waiting»."""
+    def _pult_wait(self, chat, sessions=None):
+        """Every waiting row (permissions, then questions), plus quota and the working/done counts.
+        None when the session list failed: zeros would claim «nobody is waiting»."""
         sessions = self.list_sessions(True) if sessions is None else sessions
         if sessions is None:
             return None
         qq, st, u = self.pult_quota()
+        meta, working, done = [], 0, 0
         if sessions:
-            perms, waiting, working, done, _old, _arch = self.panel_groups(sessions)
+            perms, waiting, wg, dg, _old, _arch = self.panel_groups(sessions)
+            working, done = len(wg), len(dg)
+            for grp, perm in ((perms, True), (waiting, False)):  # permissions first; herdr stays kind "a"
+                for x, ask in grp:
+                    meta.append((self.pult_item(chat, x, ask, perm), x, ask, perm))
+        return meta, qq, st, u, working, done
+
+    def pult_state(self, chat, sessions=None, off=None):
+        """Control-panel snapshot. off is None: the legacy "p" answer, at most 3 rows (widgets already sent).
+        An int: "p:<off>", up to 4 rows from that offset. c[0] is always the full wait count.
+        None when the session list failed."""
+        packed = self._pult_wait(chat, sessions)
+        if packed is None:
+            return None
+        meta, qq, st, u, working, done = packed
+        rows = [m[0] for m in meta]
+        if off is None:
+            shown = rows[:3]
         else:
-            perms, waiting, working, done = [], [], [], []
-        rows = []
-        for grp, perm in ((perms, True), (waiting, False)):  # permissions first, then questions; herdr stays kind "a"
-            for x, ask in grp:
-                if len(rows) >= 3:
-                    break
-                rows.append(self.pult_item(chat, x, ask, perm))
-        return {"q": qq, "st": st, "c": [len(perms) + len(waiting), len(working), len(done)], "u": u, "w": rows}
+            o = off if isinstance(off, int) and off >= 0 else 0
+            shown = rows[o:o + 4]
+        return {"q": qq, "st": st, "c": [len(rows), working, done], "u": u, "w": shown}
 
     def _fit_json(self, obj, rows=None):
         """Compact JSON of at most 1024 bytes; extra widget rows are dropped from the end."""
@@ -5988,12 +6053,16 @@ class Bot:
             rows.pop()
 
     def widget_labels(self):
-        return {"t": _t("Control panel"), "wait": _t("are waiting for you"), "none": _t("nobody is waiting"),
+        return {"wait": _t("are waiting for you"), "none": _t("nobody is waiting"),
+                "nodata": _t("No data"), "retry": _t("Refresh"),
                 "work": _t("%s working"), "done": _t("%s done"), "allow": _t("Allow"), "again": _t("Again"),
-                "deny": _t("Deny"), "ok": _t("Allowed"), "no": _t("Denied"),
+                "deny": _t("Deny"), "ok": _t("Done"), "no": _t("Denied"),
                 "stale": _t("The request is already different"), "closed": _t("Already decided"),
+                "sent": _t("Session card is lower in the chat"),
                 "err": _t("It did not work"), "busy": _t("One second…"), "h5": _t("5 h"), "d7": _t("7 d"),
-                "st": _t("quota is stale")}
+                "st": _t("quota is stale"), "off": _t("no connection"), "perm": _t("access"),
+                "open": _t("Open the session"), "chat": _t("Reply in the chat"),
+                "all": _t("All %s"), "of": _t("of"), "prev": _t("Back"), "next": _t("Forward")}
 
     def widget_html(self, tpl):
         return tpl.replace("__L__", json.dumps(self.widget_labels(), ensure_ascii=False).replace("</", "<\\/"))
@@ -6003,7 +6072,7 @@ class Bot:
         if self.claude_missing():
             return self.send_quota(chat)
         html = self.widget_html(LIVE_WIDGET)
-        st = self.pult_state(chat)
+        st = self.pult_state(chat, off=0)
         if st is None:
             return self.send_quota(chat)
         try:
@@ -6029,6 +6098,17 @@ class Bot:
             counts.append(_t("✅ %d done") % len(done))
         return " · ".join(counts) if counts else _t("No sessions")
 
+    def pult_retire(self, chat, mid):
+        """Unpin and delete the previous pinned widget. A failure is logged and does not abort the new pin."""
+        try:
+            self.tg.call("unpinChatMessage", {"chat_id": chat, "message_id": mid})
+        except TGError as e:
+            log("unpin pinned widget: %s" % e)
+        try:
+            self.tg.call("deleteMessage", {"chat_id": chat, "message_id": mid})
+        except TGError as e:
+            log("delete pinned widget: %s" % e)
+
     def pult_publish(self, chat):
         """CC_PULT_PIN: one pinned control-panel widget in the owner's chat, kept fresh at most every 15 s."""
         if not self.cfg.pult_pin or chat not in self.cfg.allowed or self.claude_missing():
@@ -6043,19 +6123,25 @@ class Bot:
         sessions = self.list_sessions(True)
         if sessions is None:  # the list failed: zeros would claim «No sessions»; leave the widget as it is
             return
-        data, cap = self._fit_json(self.pult_state(chat, sessions)), self.pult_caption(sessions)
-        if not (st and st.get("mid")):
+        html = self.widget_html(LIVE_WIDGET)
+        ver = hashlib.sha256(html.encode()).hexdigest()[:12]
+        data, cap = self._fit_json(self.pult_state(chat, sessions, off=0)), self.pult_caption(sessions)
+        # HTML of a sent widget never changes. A pin with no "ver", or a different one, is sent again.
+        if not (st and st.get("mid") and st.get("ver") == ver):
+            old = st.get("mid") if st else None
             try:
-                r = self.tg.send_widget(chat, self.widget_html(LIVE_WIDGET), cap, data, markup=None, silent=True)
+                r = self.tg.send_widget(chat, html, cap, data, markup=None, silent=True)
             except TGError as e:
                 log("pinned widget refused: %s" % e)
                 self._pult_refused[chat] = now + 3600
                 return
-            pins[str(chat)] = {"mid": r["message_id"], "cap": cap, "data": data, "ts": now}
+            pins[str(chat)] = {"mid": r["message_id"], "cap": cap, "data": data, "ts": now, "ver": ver}
             try:
                 self.tg.pin(chat, r["message_id"])
             except TGError as e:
                 log("pin failed: %s" % e)
+            if old and old != r["message_id"]:
+                self.pult_retire(chat, old)
             self.store.save()
             return
         st["ts"] = now  # also when nothing changed: the session list is asked at most every 15 s
@@ -6244,6 +6330,157 @@ class Bot:
             return "ok" if yn == "y" else "no"
         return code if code in ("stale", "closed", "err") else "err"
 
+    def perm_full(self, sid, rest):
+        """Full command or description of the open permission (the card line is the short form)."""
+        if is_sdk(sid):
+            pend = [r for r in self.perm_pending(sid) if str(r.get("req")) == str(rest)] or self.perm_pending(sid)
+            if pend:
+                tool = str(pend[0].get("tool") or "")
+                text = sdk_input_text(tool, pend[0].get("input"))
+                if tool and text:
+                    return "%s: %s" % (tool, text)
+                return tool or text or self.perm_line(sid)
+        else:
+            p = (self._perm_cache.get(sid) or {}).get("perm")
+            if p:
+                body = p.get("body") or p.get("summary") or p.get("question") or ""
+                title = p.get("title") or ""
+                if title and body:
+                    return "%s: %s" % (title, body)
+                return title or body or self.perm_line(sid)
+        return self.perm_line(sid)
+
+    def pult_choice(self, session):
+        """(question, up to 4 labels) when the session has exactly one single-choice question, else None."""
+        if not session or session.get("state") not in ("working", "blocked"):
+            return None
+        parts = self.ask_parts(session)
+        if not parts:
+            return None
+        cur, step, n = parts
+        if n != 1 or step != 0 or cur.get("multi"):
+            return None
+        # button k presses key k: an empty label must not be skipped, or later options shift
+        labels = [o.get("label") or "" for o in (cur.get("options") or [])][:4]
+        if not labels or not all(labels):
+            return None
+        return cur.get("question") or "", labels
+
+    def pult_detail(self, chat, tag):
+        """Detail of one waiting row, or None. o and h only for a single single-choice question."""
+        packed = self._pult_wait(chat)
+        if not packed:
+            return None
+        for item, x, ask, _perm in packed[0]:
+            if item[0] != tag:
+                continue
+            link = self.pult_link(chat, x["id"])
+            if item[3] == "p":
+                sid, _, rest = tag.partition(":")
+                return {"t": self.perm_full(sid or x["id"], rest), "l": link}
+            choice = self.pult_choice(x)
+            if choice:
+                question, labels = choice
+                return {"t": question, "o": labels, "h": pult_qhash(question, labels), "l": link}
+            # the row line is cut to 60 chars; the card shows the whole line (pult_detail_json trims to 1024 bytes)
+            text = (ask[0] if ask else "") or humanize_detail(x["detail"] or x["result"] or "") or item[2] or ""
+            return {"t": text, "l": link}
+        return None
+
+    def pult_detail_json(self, chat, tag):
+        """{"d": ...} of at most 1024 bytes. Unknown tag is {} (the widget keeps the short line)."""
+        d = self.pult_detail(chat, tag)
+        if not d:
+            return "{}"
+        obj = {"d": d}
+
+        def raw():
+            return json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
+
+        t = d.get("t") or ""
+        while len(t) > 40 and len(raw().encode()) > 1024:
+            t = t[:-20]
+            d["t"] = t
+        if len(raw().encode()) > 1024:
+            d.pop("o", None)
+            d.pop("h", None)
+        if len(raw().encode()) > 1024:
+            d["t"] = (d.get("t") or "")[:60]
+            d["l"] = None
+        return raw()
+
+    def _pult_reply(self, chat, code, message=None):
+        """Action answer plus a p:0 snapshot. The snapshot is dropped from the end until the answer fits 1024 bytes."""
+        state = {"r": code}
+        if message:
+            state["m"] = message
+        try:
+            snap = self.pult_state(chat, off=0)
+            if snap is not None:
+                state["s"] = snap
+                return self._fit_json(state, snap["w"])
+        except Exception as e:
+            log("pult snapshot: %s" % type(e).__name__)
+        return self._fit_json(state, [])
+
+    def pult_answer(self, chat, h, k, sid):
+        """Option k (from 1) of the open question, by the same path as a question button in the chat."""
+        try:
+            n = int(k)
+        except (TypeError, ValueError):
+            return self._pult_reply(chat, "err")
+        try:
+            q = self.api_question_obj(chat, sid)
+        except Exception as e:
+            log("pult answer: %s" % type(e).__name__)
+            return self._pult_reply(chat, "err")
+        if not q or q.get("closed") or q.get("waiting"):
+            return self._pult_reply(chat, "closed")
+        info = None
+        packed = self._pult_wait(chat)
+        if packed:
+            for _item, x, _ask, _perm in packed[0]:
+                if x["id"] == sid:
+                    info = x
+                    break
+        choice = self.pult_choice(info) if info else None
+        if not choice or pult_qhash(choice[0], choice[1]) != h:
+            return self._pult_reply(chat, "stale")
+        labels = choice[1]
+        if not 1 <= n <= len(labels):
+            return self._pult_reply(chat, "err")
+        try:
+            ok, _err, code = self.question_do(chat, q, "o", q.get("step") or 0, "%d:%d" % (q.get("step") or 0, n))
+        except Exception as e:
+            log("pult answer: %s" % type(e).__name__)
+            return self._pult_reply(chat, "err")
+        if not ok:
+            return self._pult_reply(chat, code if code in ("closed", "stale") else "err")
+        return self._pult_reply(chat, "ok", _t("Answer: %s") % labels[n - 1])
+
+    def pult_has_session(self, sid):
+        if not isinstance(sid, str) or not sid or len(sid) > 64:
+            return False
+        if sid in self.known:
+            return True
+        if is_sdk(sid) or is_herdr(sid):
+            return False
+        return bool(read_job_state(self.cfg.jobs_dir, sid))
+
+    def pult_open(self, chat, sid):
+        """The session card in the chat. A reply to it is routed by msgmap, the same way as a card from the panel."""
+        if not self.pult_has_session(sid):
+            return self._fit_json({"r": "err"}, [])
+        try:
+            self.send_card(chat, sid)
+        except TGError as e:
+            log("pult card: %s" % e)
+            return self._fit_json({"r": "err"}, [])
+        except Exception as e:
+            log("pult card: %s" % type(e).__name__)
+            return self._fit_json({"r": "err"}, [])
+        return self._fit_json({"r": "sent"}, [])
+
     def widget_data(self, q):
         """JSON for one widget request, or None when the answer must carry no data."""
         if not self.authorized((q.get("from") or {}).get("id"), (q.get("chat") or {}).get("type")):
@@ -6259,6 +6496,18 @@ class Bot:
             return self.pult_action(chat, data[0], data[2:])
         if not isinstance(data, str) or len(data.encode()) > 64:
             return None
+        if data.startswith("p:") and data[2:].isdigit():
+            st = self.pult_state(chat, off=int(data[2:]))
+            return "null" if st is None else self._fit_json(st)
+        if data.startswith("d:") and data[2:]:
+            return self.pult_detail_json(chat, data[2:])
+        if data.startswith("a:"):
+            parts = data.split(":", 3)
+            if len(parts) == 4 and parts[1] and parts[2] and parts[3]:
+                return self.pult_answer(chat, parts[1], parts[2], parts[3])
+            return None
+        if data.startswith("o:") and data[2:]:
+            return self.pult_open(chat, data[2:])
         if len(data) >= 3 and data[1] == ":" and data[0] in "hx" and data[2:]:
             sid = data[2:]
             if data[0] == "h":

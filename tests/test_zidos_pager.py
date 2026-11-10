@@ -11348,7 +11348,7 @@ class PultWidgetTests(unittest.TestCase):
         self.assertNotIn(b"\x00", html)
         self.assertLessEqual(len(html), 32768)
         self.assertLessEqual(len(zlib.compress(html, 9)), 4096)
-        self.assertIn(b'req("p"', html)
+        self.assertIn(b'req("p:"', html)
         self.assertIn(b"W.request(d)", html)
         self.assertLessEqual(len(p["chat_data"].encode()), 1024)
         d = json.loads(p["chat_data"])
@@ -11616,7 +11616,7 @@ class HudWidgetTests(unittest.TestCase):
         self.assertEqual(len(w), 1)
         p = w[0]
         self.assertNotIn("message_thread_id", p)
-        self.assertIn(b'req("p"', p["html"].encode())
+        self.assertIn(b'req("p:"', p["html"].encode())
         self.assertNotIn(b'req("h:"', p["html"].encode())
         d = json.loads(p["chat_data"])
         self.assertIn("c", d)
@@ -12288,6 +12288,188 @@ class PultPinTests(unittest.TestCase):
         e2 = self.env(False)
         e2.bot.panel_publish(1)
         self.assertEqual(len(e2.tg.of("pinChatMessage")), 1)
+
+
+class PultV2Tests(unittest.TestCase):
+    """Control panel, one card: p:<off>, d:, a:, o:, and a new pin when the widget HTML changes."""
+
+    def env(self):
+        return Env(self)
+
+    def query(self, uid=1, data="p:0", chat=True):
+        q = {"id": "wq1", "from": {"id": uid}, "data": data, "message_id": 5}
+        if chat:
+            q["chat"] = {"id": uid, "type": "private"}
+        return {"update_id": 77, "widget_query": q}
+
+    def answered(self, e):
+        return e.tg.of("answerWidgetQuery")[-1]
+
+    def ask(self, e, data, uid=1):
+        e.bot.handle_update(self.query(uid=uid, data=data))
+        raw = self.answered(e).get("data")
+        if raw is not None:
+            self.assertLessEqual(len(raw.encode()), 1024)
+        return raw
+
+    def put_question(self, e, sid="s1", closed=False, waiting=False):
+        qs = cc.normalize_questions({"questions": [Q_SIZE]})
+        e.bot.store.data.setdefault("questions", {})["1:toolu_%s" % sid] = {
+            "chat": 1, "sid": sid, "tool_id": "toolu_%s" % sid, "questions": qs,
+            "name": sid, "step": 0, "marks": {}, "answers": {},
+            "closed": closed, "waiting": waiting, "mid": None}
+        return qs
+
+    def test_p_offset_keeps_full_count_and_legacy_p_stays_at_three(self):
+        fake = FakeSdk(self)
+        fake.sessions[SID] = fake.session(state="blocked", pending=[perm_req()])
+        e = sdk_env(self, fake)
+        for i in range(1, 6):
+            mk(e, "b%d" % i, "blocked", i, name="Ждёт %d" % i)
+        mk(e, "work", "working", 8, name="В работе")
+        mk(e, "fin", "done", 9, name="Готово")
+        raw = self.ask(e, "p:0")
+        d = json.loads(raw)
+        self.assertEqual(d["c"], [6, 1, 1])
+        self.assertEqual(len(d["w"]), 4)
+        self.assertEqual(d["w"][0][3], "p")
+        self.assertTrue(d["w"][0][0].startswith(SID))
+        raw4 = self.ask(e, "p:4")
+        d4 = json.loads(raw4)
+        self.assertEqual(d4["c"][0], 6)
+        self.assertEqual(len(d4["w"]), 2)
+        self.assertNotIn("p", [row[3] for row in d4["w"]])
+        self.assertEqual([row[0] for row in d4["w"]], ["b4", "b5"])
+        legacy = json.loads(self.ask(e, "p"))
+        self.assertEqual(legacy["c"][0], 6)
+        self.assertLessEqual(len(legacy["w"]), 3)
+        self.assertEqual(legacy["w"][0][0], d["w"][0][0])
+
+    def test_p_offset_long_list_fits_and_a_failed_list_is_null(self):
+        e = self.env()
+        for i in range(30):
+            mk(e, "w%02d" % i, "blocked", i + 1, name="Очень длинное имя сессии номер %02d с подробностями" % i,
+               detail="детали " + ("длинная строка " * 8) + str(i))
+        raw = self.ask(e, "p:0")
+        d = json.loads(raw)
+        self.assertEqual(d["c"][0], 30)
+        self.assertLessEqual(len(d["w"]), 4)
+        self.assertGreater(len(d["w"]), 0)
+        e.bot.list_sessions = lambda show_all=False: None
+        self.assertEqual(self.ask(e, "p:0"), "null")
+        self.assertEqual(self.ask(e, "p"), "null")
+
+    def test_d_for_permission_and_for_a_question_with_options(self):
+        fake = FakeSdk(self)
+        fake.sessions[SID] = fake.session(state="blocked", pending=[perm_req()])
+        e = sdk_env(self, fake)
+        tag = "%s:r-00000001" % SID
+        perm = json.loads(self.ask(e, "d:" + tag))
+        self.assertIn("ls -la", perm["d"]["t"])
+        self.assertIn("Bash", perm["d"]["t"])
+        self.assertNotIn("o", perm["d"])
+        self.assertNotIn("h", perm["d"])
+        self.assertIn("l", perm["d"])
+        mk(e, "s1", "working", 1, name="Вопрос")
+        self.put_question(e, "s1")
+        body = json.loads(self.ask(e, "d:s1"))
+        self.assertEqual(body["d"]["t"], "Размер?")
+        self.assertEqual(body["d"]["o"], ["S", "M", "L"])
+        self.assertEqual(body["d"]["h"], cc.pult_qhash("Размер?", ["S", "M", "L"]))
+        self.assertIn("l", body["d"])
+        self.assertEqual(self.ask(e, "d:no-such"), "{}")
+
+    def test_a_ok_stale_and_closed(self):
+        e = self.env()
+        mk(e, "s1", "working", 1, name="Вопрос")
+        self.put_question(e, "s1")
+        fs = FakeScreen(MENU_S)
+        fs.on_key = lambda ks, f: setattr(f, "screen", EMPTY_PROMPT)
+        e.bot.tmux = fs.tmux()
+        h = json.loads(self.ask(e, "d:s1"))["d"]["h"]
+        bad = "00000000" if h != "00000000" else "ffffffff"
+        stale = json.loads(self.ask(e, "a:%s:2:s1" % bad))
+        self.assertEqual(stale["r"], "stale")
+        self.assertIn("s", stale)
+        self.assertEqual(fs.flat_keys, [])
+        ok = json.loads(self.ask(e, "a:%s:2:s1" % h))
+        self.assertEqual(ok["r"], "ok")
+        self.assertEqual(ok["m"], "Ответ: M")
+        self.assertIn("s", ok)
+        self.assertEqual(fs.flat_keys, ["2"])
+        closed = json.loads(self.ask(e, "a:%s:2:s1" % h))
+        self.assertEqual(closed["r"], "closed")
+        self.assertEqual(fs.flat_keys, ["2"])
+        mk(e, "s2", "working", 2, name="Закрыт")
+        self.put_question(e, "s2", closed=True)
+        self.assertEqual(json.loads(self.ask(e, "a:%s:1:s2" % h))["r"], "closed")
+        self.assertEqual(fs.flat_keys, ["2"])
+
+    def test_option_with_an_empty_label_gives_no_buttons(self):
+        # the widget sends k by its own list: a dropped empty label would shift every later option
+        e = self.env()
+        mk(e, "s1", "working", 1, name="Вопрос")
+        qs = self.put_question(e, "s1")
+        qs[0]["options"][1]["label"] = ""
+        body = json.loads(self.ask(e, "d:s1"))
+        self.assertNotIn("o", body["d"])
+        self.assertNotIn("h", body["d"])
+
+    def test_d_gives_the_full_detail_not_the_short_row_line(self):
+        e = self.env()
+        long = "жду ответа: " + "очень подробное пояснение " * 6 + "конец"
+        mk(e, "b1", "blocked", 1, name="Ждёт", detail=long)
+        row = json.loads(self.ask(e, "p:0"))["w"][0]
+        self.assertLessEqual(len(row[2]), 60)
+        self.assertTrue(json.loads(self.ask(e, "d:b1"))["d"]["t"].endswith("конец"))
+
+    def test_o_sends_the_card_or_err(self):
+        e = self.env()
+        mk(e, "s1", "working", 1, name="Карточка")
+        self.assertEqual(json.loads(self.ask(e, "o:s1"))["r"], "sent")
+        self.assertIn("s1", e.bot.store.data["msgmap"].values())
+        e.tg.calls.clear()
+        self.assertEqual(json.loads(self.ask(e, "o:no-such-session"))["r"], "err")
+        self.assertEqual(e.tg.of("sendMessage"), [])
+        e.tg.errors["sendMessage"] = (lambda p: True, "Bad Request: chat not found")
+        self.assertEqual(json.loads(self.ask(e, "o:s1"))["r"], "err")
+
+    def test_pin_republishes_when_the_version_is_missing_and_stays_when_it_matches(self):
+        e = self.env()
+        e.t = {"v": BASE}
+        e.bot.clock = lambda: e.t["v"]
+        e.bot.cfg.pult_pin = True
+        e.bot.pult_publish(1)
+        pin = e.bot.store.data["pult_pin"]["1"]
+        self.assertEqual(len(pin["ver"]), 12)
+        old = pin["mid"]
+        del pin["ver"]
+        e.t["v"] += 20
+        e.tg.calls.clear()
+        e.tg.errors["deleteMessage"] = (lambda p: True, "Bad Request: can't delete")
+        e.bot.pult_publish(1)
+        self.assertEqual(len(e.tg.of("sendWidget")), 1)
+        self.assertEqual(len(e.tg.of("pinChatMessage")), 1)
+        self.assertEqual(len(e.tg.of("unpinChatMessage")), 1)
+        self.assertEqual(len(e.tg.of("deleteMessage")), 1)
+        new = e.bot.store.data["pult_pin"]["1"]
+        self.assertNotEqual(new["mid"], old)
+        self.assertEqual(len(new["ver"]), 12)
+        e.tg.errors.clear()
+        e.tg.calls.clear()
+        e.t["v"] += 20
+        e.bot.pult_publish(1)
+        self.assertEqual(e.tg.of("sendWidget"), [])
+        self.assertEqual(e.tg.of("deleteMessage"), [])
+
+    def test_stranger_gets_no_page_detail_or_card(self):
+        e = self.env()
+        mk(e, "s1", "blocked", 1)
+        for data in ("p:0", "d:s1", "o:s1", "a:abcd1234:1:s1"):
+            e.tg.calls.clear()
+            e.bot.handle_update(self.query(uid=2, data=data))
+            self.assertNotIn("data", self.answered(e))
+        self.assertEqual(e.tg.of("sendMessage"), [])
 
 
 class PermWidgetTests(unittest.TestCase):
