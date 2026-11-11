@@ -9862,6 +9862,8 @@ class Bot:
             if not isinstance(r, dict) or not isinstance(r.get("title"), str) or not r["title"].strip():
                 continue
             pct, rs = r.get("pct"), r.get("reset")
+            if isinstance(rs, (int, float)) and 0 < rs <= now:  # window already reset: the stored percent is stale
+                pct = rs = None
             rows.append({"id": str(r.get("id") or len(rows))[:40], "title": r["title"].strip()[:60],
                          "sub": str(r.get("sub") or "")[:80],
                          "pct": max(0.0, min(100.0, float(pct))) if isinstance(pct, (int, float)) else None,
@@ -9893,6 +9895,7 @@ class Bot:
         rows, upd = self.status_rows()
         can = bool(cfg.status_refresh)
         return {"rows": rows, "updated": upd, "claude": self.api_quota(), "can_refresh": can, "refreshed": refreshed,
+                "min_interval": cfg.status_min_interval,
                 "next_at": self._status_at + cfg.status_min_interval if can and self._status_at else None,
                 "pins": self.quota_pins()}
 

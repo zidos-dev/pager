@@ -26,6 +26,7 @@ function setup() {
     toast: value => effects.push(['toast', value]), answered: () => {},
     push(value) { sandbox.view = value; }, setMode() {}, quotaLine() {}, autosize() {}, clearAtt() {}, renderAtt() {}, atts: [], MODES: {send: 'message'}, appReloading: false,
     renderPermission() {},
+    histHold: false, peelHash() {}, setSessionAddr() {},  // l5: адрес #s= ведёт openSession, здесь не проверяется
     renderSession() { rendered.push(sandbox.sess.id); vm.runInContext('renderQuestion()', context); },
     view: 'session', current: 'a', sess: {id: 'a', question: q},
     data: {sessions: [{id: 'a'}, {id: 'b'}]}, lastHist: '',

@@ -215,6 +215,8 @@ html[data-lab-theme="dark"] .lab-ask-scrim{background:rgba(0,0,0,.3)}
 .lab-ask-btn{flex:1 1 0;min-width:120px;min-height:48px;border-radius:16px;padding:10px 14px;font:inherit;font-size:15.5px;font-weight:550;color:inherit;
   background:color-mix(in srgb,var(--glass-ink) 7%,transparent);transition:box-shadow 120ms var(--m-fade)}
 .lab-ask-btn:active{box-shadow:inset 0 0 0 999px var(--press)}
+.lab-ask-quote:active{box-shadow:inset 0 0 0 999px var(--press)}  /* тон нажатия цитаты и пилюли, как у соседних (Fable Н6) */
+.lab-ask-pill:active{box-shadow:inset 0 0 0 999px var(--press),var(--glass-edge),var(--glass-shadow)}
 .lab-ask-btn.pri:active,.lab-ask-btn.picked:active,.lab-ask-opt.picked.pressed,.lab-ask-root.permission .perm-yes.pressed{box-shadow:inset 0 0 0 999px color-mix(in srgb,var(--lab-lime-ink) 22%,transparent)}  /* лайм: темнее, а не ink поверх */
 .lab-ask-btn.pri{flex-basis:100%;background:var(--lab-lime);color:var(--lab-lime-ink);font-weight:650}
 .lab-ask-btn.picked{background:var(--lab-lime);color:var(--lab-lime-ink)}

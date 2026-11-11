@@ -828,6 +828,7 @@
   }
   var pillRO=window.ResizeObserver?new ResizeObserver(placePill):null;
   D.addEventListener("keydown",function(e){
+    if(e.key==="Escape"&&e.target.closest&&e.target.closest("#q-row")) return; // Escape в поиске закрывает только поиск
     if(S.root&&S.own&&S.state==="open"&&S.sheet.contains(e.target)&&e.key==="Enter"&&(e.metaKey||e.ctrlKey)){
       e.preventDefault(); e.stopImmediatePropagation(); sendOwn(); return;
     }

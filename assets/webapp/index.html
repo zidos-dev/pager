@@ -148,7 +148,8 @@ html.kb #session-screen .sfoot .squota{display:none}
 #s-tobot{margin-left:0;margin-right:0}
 .tobot .cnt{position:absolute;top:-6px;right:-6px;min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:var(--lab-lime);color:var(--lab-lime-ink);font-size:12px;font-weight:600;line-height:20px;text-align:center;font-variant-numeric:tabular-nums}
 html:has(.lab-ask-root[data-state="pill"]) #s-tobot{margin-bottom:62px}  /* пилюля вопроса стоит по центру над полем: кнопка выше неё */
-.tobot:active,.skeys button:active,.snext button:active{background:color-mix(in srgb,var(--ink) 16%,var(--panel))}
+.tobot:active,.snext button:active{background:color-mix(in srgb,var(--ink) 16%,var(--panel))}
+.skeys button:active{background:color-mix(in srgb,var(--ink) 24%,var(--panel))}  /* ΔL* ≥15 на светлой, как у карточек (Fable Н5) */
 .snext{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px;margin-bottom:6px;padding:0 4px 0 16px;border-radius:22px;background:var(--glass-cap);-webkit-backdrop-filter:var(--glass-fx);backdrop-filter:var(--glass-fx);box-shadow:var(--shadow);font-size:14px;color:var(--muted)}
 .snext button{flex:none;min-height:44px;padding:0 14px;border-radius:22px;color:var(--ink);font:inherit;font-weight:600}
 .skeys{display:flex;gap:6px;margin-bottom:6px}
@@ -182,10 +183,11 @@ html:has(.lab-ask-root[data-state="pill"]) #s-tobot{margin-bottom:62px}  /* пи
 .chipbar .chip{scroll-snap-align:start}
 .chipbar .chips{scroll-padding-inline:12px}
 .tbtns{display:flex;gap:8px}
+.qrow{margin-top:8px}
 .iconbtn svg{display:block}
 .iconbtn.plus{background:var(--action);color:var(--action-ink)}
 .lsec{font-size:15px;font-weight:600;color:var(--ink);letter-spacing:-.1px;margin:16px 0 4px}
-.lsec:first-child{margin-top:0}  /* the list's own top padding keeps it 24 px under the quota tiles */
+.lsec:first-child,.list-off:first-child + .lsec{margin-top:0}  /* строка «Нет связи» — первый ребёнок, но вне потока: у секции не появляется верхний отступ 16 px */
 .dot{width:9px;height:9px;border-radius:50%;margin-top:6px;background:var(--muted)}
 .dot.wait{background:#e8a33d}.dot.work{background:#3e8cf5}.dot.done{background:#34b26a}.dot.fail{background:var(--danger)}.dot.ask{background:#e8a33d;box-shadow:0 0 0 3px color-mix(in srgb,#e8a33d 25%,transparent)}
 .sc{grid-row:1/3;align-self:start;width:32px;height:32px;border-radius:50%;background:var(--soft);display:grid;place-items:center}
@@ -209,6 +211,10 @@ html.list-scrolled .lbar{opacity:1}html.list-scrolled .top h1{opacity:0}html.loc
   #session-screen .session-header{background:color-mix(in srgb,var(--panel) 72%,transparent)}
   #session-screen .msg:not(.thinking){background:var(--soft);box-shadow:none}
   html[data-view="list"] .pane-empty{display:grid;place-items:center;position:fixed;left:404px;right:12px;top:12px;bottom:12px;border-radius:28px;background:var(--panel);color:var(--muted);font-size:15px}
+  html[data-view="new"] #new-screen{left:404px;right:12px;top:12px;width:auto;height:calc(100dvh - 24px);border-radius:28px;background:var(--panel);overflow:auto}  /* «Новая сессия» в правой панели, список слева */
+  html[data-view="new"] #new-screen .navbar{display:none}
+  html[data-view="new"] #new-screen .block{background:transparent;box-shadow:none}  /* панель уже белая: вторая плитка того же тона не нужна */
+  html[data-view="new"] .fab{left:416px;right:24px;bottom:24px;max-width:668px;margin:0 auto}  /* по ширине колонки формы */
   .lbar{width:404px;right:auto}
 }
 .sum{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:4px;color:var(--muted);font-size:14px}
@@ -233,7 +239,7 @@ html.list-scrolled .lbar{opacity:1}html.list-scrolled .top h1{opacity:0}html.loc
 .chip[aria-pressed="true"]{background:var(--action);color:var(--action-ink)}
 .chip .n{opacity:.65;margin-left:4px;font-variant-numeric:tabular-nums}
 /* карточки */
-.list{display:grid;gap:8px;padding:24px 0 96px}  /* 24 from the quota tiles to the first label or card, on every tab */
+.list{display:grid;gap:8px;padding:24px 0 96px;position:relative}  /* 24 from the quota tiles to the first label or card, on every tab */
 /* полка «ждут вас»: карточки вбок над списком; карточка — настоящая .card[data-id], раскрытие растёт из неё */
 .card{display:grid;grid-template-columns:32px minmax(0,1fr) auto;gap:2px 12px;align-items:center;background:var(--panel);border-radius:var(--r);box-shadow:var(--shadow);padding:9px 16px;text-align:left;width:100%}
 .st{font-size:15px;line-height:1.35}
@@ -246,7 +252,10 @@ html.list-scrolled .lbar{opacity:1}html.list-scrolled .top h1{opacity:0}html.loc
 .tag.cur{color:var(--ink)}
 .empty{color:var(--muted);text-align:center;padding:48px 16px}
 .empty p{margin:0}
-.list-off{margin:0;padding:2px 0 8px;color:var(--muted);font-size:13px;line-height:1.35;text-align:center}
+/* «Нет связи» вне потока: в потоке строка сдвигала карточки на 52 px (Fable Н7) */
+.list-off{position:absolute;left:0;right:0;top:2px;margin:0;color:var(--muted);font-size:13px;line-height:1.35;text-align:center;pointer-events:none}  /* в верхнем отступе списка (24 px): не налезает на секцию */
+.send-hint{display:none;margin:6px auto 0;padding:0 2px;color:var(--muted);font-size:13px;line-height:1.35}
+@media (min-width:1000px){.send-hint{display:block}}  /* тихая подпись под полем только на широком экране */
 .list>[data-new]{width:100%}
 .cw{position:relative;border-radius:var(--r);touch-action:pan-y}
 .cw .ca{position:absolute;inset:0 0 0 auto;width:112px;display:flex;padding-left:8px}
@@ -521,12 +530,14 @@ textarea.field{min-height:120px;resize:vertical}
 <symbol id="i-check" viewBox="0 0 24 24"><path d="m6 12.5 4 4 8-9" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="9.5" rx="2.6" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
 <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5.5" cy="12" r="1.9" fill="currentColor"/><circle cx="12" cy="12" r="1.9" fill="currentColor"/><circle cx="18.5" cy="12" r="1.9" fill="currentColor"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M16 16l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
 <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16.5h12l-1.4-2V10a4.6 4.6 0 0 0-9.2 0v4.5L6 16.5Zm4 2.5a2 2 0 0 0 4 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
 <symbol id="i-bell-off" viewBox="0 0 24 24"><path d="M6 16.5h12l-1.4-2V10a4.6 4.6 0 0 0-9.2 0v4.5L6 16.5Zm4 2.5a2 2 0 0 0 4 0M4 4l16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/></symbol>
 </defs></svg>
 <main id="list-screen" class="screen">
   <header class="top">
-    <div class="topbar"><h1 data-i18n="sessions">Sessions</h1><span class="tbtns"><button class="iconbtn" type="button" id="bots-btn" aria-label="Bots" data-i18n-attr="aria-label:botsTitle"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 8V5M9.5 13.5h.01M14.5 13.5h.01"/><circle cx="12" cy="4" r="1"/></svg></button><button class="iconbtn" type="button" id="perms-btn" aria-label="Permissions" data-i18n-attr="aria-label:pmTitle"><svg width="22" height="22" aria-hidden="true"><use href="#i-lock"/></svg></button><button class="iconbtn" type="button" id="model-btn" aria-label="Model" data-i18n-attr="aria-label:modelTitle"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M18 7h2M4 17h2M11 17h9"/><circle cx="15.5" cy="7" r="2.5"/><circle cx="8.5" cy="17" r="2.5"/></svg></button><button class="iconbtn" type="button" id="push-btn" hidden aria-label="Notifications on this device" data-i18n-attr="aria-label:pushDevice"><svg width="22" height="22"><use href="#i-bell-off"/></svg></button><button class="iconbtn plus" type="button" id="new-btn" hidden aria-label="New session" data-i18n-attr="aria-label:newSession"><svg width="22" height="22"><use href="#i-plus"/></svg></button></span></div>
+    <div class="topbar"><h1 data-i18n="sessions">Sessions</h1><span class="tbtns"><span hidden id="list-menu-src"><button class="iconbtn" type="button" id="bots-btn" aria-label="Bots" data-i18n-attr="aria-label:botsTitle"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 8V5M9.5 13.5h.01M14.5 13.5h.01"/><circle cx="12" cy="4" r="1"/></svg></button><button class="iconbtn" type="button" id="perms-btn" aria-label="Permissions" data-i18n-attr="aria-label:pmTitle"><svg width="22" height="22" aria-hidden="true"><use href="#i-lock"/></svg></button><button class="iconbtn" type="button" id="model-btn" aria-label="Model" data-i18n-attr="aria-label:modelTitle"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M18 7h2M4 17h2M11 17h9"/><circle cx="15.5" cy="7" r="2.5"/><circle cx="8.5" cy="17" r="2.5"/></svg></button></span><button class="iconbtn" type="button" id="q-btn" aria-label="Search" data-i18n-attr="aria-label:searchTitle" aria-controls="q-row" aria-expanded="false"><svg width="22" height="22" aria-hidden="true"><use href="#i-search"/></svg></button><button class="iconbtn" type="button" id="list-more" aria-label="More" data-i18n-attr="aria-label:moreTitle" aria-haspopup="menu" aria-expanded="false" aria-controls="session-menu"><svg width="24" height="24" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" type="button" id="push-btn" hidden aria-label="Notifications on this device" data-i18n-attr="aria-label:pushDevice"><svg width="22" height="22"><use href="#i-bell-off"/></svg></button><button class="iconbtn plus" type="button" id="new-btn" hidden aria-label="New session" data-i18n-attr="aria-label:newSession"><svg width="22" height="22"><use href="#i-plus"/></svg></button></span></div>
+    <div class="qrow" id="q-row" hidden><input class="field" id="q-field" type="search" enterkeyhint="search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" aria-label="Search" data-i18n-attr="aria-label:searchTitle;placeholder:searchPh" placeholder="Name or folder"></div>
     <div class="sum" id="sum" hidden><span data-i18n="loading">Loading…</span></div>
     <div class="quota" id="quota" hidden></div>
   </header>
@@ -554,6 +565,7 @@ textarea.field{min-height:120px;resize:vertical}
   <div class="skeys" id="s-keys" hidden><button type="button" data-k="y">y</button><button type="button" data-k="n">n</button><button type="button" data-k="enter" aria-label="Enter">⏎</button><button type="button" data-k="esc">Esc</button><button type="button" id="s-screen" data-i18n="keyScreen">Screen</button></div>
   <div id="s-attach" hidden></div>
   <div class="compose"><button class="slash" type="button" id="s-slash" aria-label="Claude Code commands" data-i18n-attr="aria-label:slashAria"><svg width="22" height="22"><use href="#i-slash"/></svg></button><button class="clip" type="button" id="s-clip" aria-label="Attach files" data-i18n-attr="aria-label:attachAria"><svg width="22" height="22"><use href="#i-clip"/></svg></button><input type="file" id="s-file" multiple hidden><textarea id="s-text" rows="1" placeholder="Message" aria-label="Message to the session" data-i18n-attr="aria-label:messageAria"></textarea><button class="send" type="button" id="s-send" aria-label="Send" data-i18n-attr="aria-label:send" disabled><svg width="22" height="22"><use href="#i-up"/></svg></button></div>
+  <p class="send-hint" id="s-hint"></p>
   <div class="squota" id="s-quota" hidden></div>
  </div>
 </main>
@@ -561,7 +573,7 @@ textarea.field{min-height:120px;resize:vertical}
 <main id="new-screen" class="screen" hidden>
   <div class="navbar" data-nav hidden><button class="back" type="button" data-back><svg width="26" height="26"><use href="#i-back"/></svg><span data-i18n="sessions">Sessions</span></button><span class="nt" data-i18n="newSession">New session</span></div>
   <header class="head"><h2 data-i18n="newSession">New session</h2><div class="state" data-i18n="newIntro">Describe a task — Claude Code will start a background session.</div></header>
-  <section class="block"><label for="n-text" class="state" style="display:block;margin:0 0 8px" data-i18n="task">Task</label><textarea class="field" id="n-text" placeholder="For example: check last night's nginx logs and tell me if there were any 5xx" data-i18n-attr="placeholder:taskPh"></textarea>
+  <section class="block"><label for="n-text" class="state" style="display:block;margin:0 0 8px" data-i18n="task">Task</label><textarea class="field" id="n-text" placeholder="For example: check last night's nginx logs and tell me if there were any 5xx" data-i18n-attr="placeholder:taskPh"></textarea><p class="send-hint" id="n-hint"></p>
     <div class="natt"><button class="clip" type="button" id="n-clip" aria-label="Attach files" data-i18n-attr="aria-label:attachAria"><svg width="22" height="22"><use href="#i-clip"/></svg></button><input type="file" id="n-file" multiple hidden><div id="n-attach" hidden></div></div>
     <div class="state" style="margin-top:12px" data-i18n="folder">Folder</div><div class="dirs" id="n-dirs"></div>
     <div id="n-other" hidden><input class="field" id="n-path" type="text" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" placeholder="~/code/project" aria-label="Folder path" data-i18n-attr="aria-label:pathAria" aria-controls="n-hints"><div id="n-hints" role="listbox" aria-label="Folders" data-i18n-attr="aria-label:folder"></div><div class="state" id="n-nodir" data-i18n="noDir" hidden>No such folder</div></div>
@@ -723,6 +735,10 @@ const STR = {
   "sessions": "Sessions",
   "modelTitle": "Model",
   "qTitle": "Quotas",
+  "moreTitle": "More",
+  "searchTitle": "Search",
+  "searchPh": "Name or folder",
+  "noResults": "Nothing found",
   "qRefresh": "Refresh",
   "qPin": "Show {n} in the header",
   "qAt": "Data as of {t}",
@@ -839,6 +855,8 @@ const STR = {
   "message": "Message",
   "messageAria": "Message to the session",
   "send": "Send",
+  "sendHint": "Ctrl+Enter — send",
+  "sendHintMac": "⌘+Enter — send",
   "session": "Session",
   "newIntro": "Describe a task — Claude Code will start a background session.",
   "task": "Task",
@@ -1046,6 +1064,10 @@ const STR = {
   "sessions": "Сессии",
   "modelTitle": "Модель",
   "qTitle": "Квоты",
+  "moreTitle": "Ещё",
+  "searchTitle": "Поиск",
+  "searchPh": "Название или папка",
+  "noResults": "Ничего не найдено",
   "qRefresh": "Обновить",
   "qPin": "Показывать {n} в шапке",
   "qAt": "Данные на {t}",
@@ -1162,6 +1184,8 @@ const STR = {
   "message": "Сообщение",
   "messageAria": "Сообщение в сессию",
   "send": "Отправить",
+  "sendHint": "Ctrl+Enter — отправить",
+  "sendHintMac": "⌘+Enter — отправить",
   "session": "Сессия",
   "newIntro": "Опишите задачу — Claude Code запустит фоновую сессию.",
   "task": "Задача",
@@ -1385,6 +1409,8 @@ function applyI18n(){
   document.querySelectorAll("[data-i18n-html]").forEach(el => { el.innerHTML = t(el.dataset.i18nHtml); });
   document.querySelectorAll("[data-i18n-attr]").forEach(el => el.dataset.i18nAttr.split(";").forEach(p => { const i = p.indexOf(":"); el.setAttribute(p.slice(0, i), t(p.slice(i + 1))); }));
   const st = document.getElementById("s-text"); if (st) st.placeholder = t(MODES[st.dataset.mode || "send"]);
+  const hint = t(/Macintosh|Mac OS X|iPhone|iPad/.test(navigator.userAgent) ? "sendHintMac" : "sendHint");
+  document.querySelectorAll(".send-hint").forEach(el => { el.textContent = hint; });
   if (sess) $("a-arch").textContent = t((sess.group === "archived" || sess.group === "old") ? "unarchiveAct" : "archiveIt");
   else $("a-arch").textContent = t("archiveIt");
   $("a-watch").innerHTML = `${t("notifications")}${sess ? ` <span class="aval">${t(sess.watched ? "watchOn" : "watchOff")}</span>` : ""}`;
@@ -1457,7 +1483,7 @@ function api(path, body){
 /* ---------- список ---------- */
 const GROUPS = [["wait","gWait"],["work","gWork"],["done","done"],["arch","gArch"]];
 const inGroup = (s, g) => g === "arch" ? (s.group === "old" || s.group === "archived") : s.group === g;
-let filter = "act", data = null, view = "list", current = null;
+let query = "", filter = "act", data = null, view = "list", current = null;
 try{ filter = localStorage.getItem("cc-filter") || "act"; }catch(e){}
 if (!["act","wait","work","done","arch"].includes(filter)) filter = filter === "old" ? "arch" : "act";
 
@@ -1511,13 +1537,14 @@ function renderList(){
   listHTML($("sum"), parts.join("") || `<span>${t("noSessions")}</span>`);
   if (document.querySelector(".cw.open")) return;  // квота обновляется и при открытом свайпе
   const chips = [["act",t("gActive"), cnt("wait") + cnt("work")]].concat(GROUPS.map(([g,k]) => [g,t(k),S.filter(s => inGroup(s, g)).length]));
-  listHTML($("chips"), chips.map(([k,lbl,n]) => `<button class="chip" type="button" data-f="${k}" aria-pressed="${k === filter}">${lbl}<span class="n">${n}</span></button>`).join(""));
-  let rows = filter === "act" ? S.filter(s => s.group === "wait").concat(S.filter(s => s.group === "work")) : S.filter(s => inGroup(s, filter));
-  const bulk = filter === "done" && rows.length ? `<button class="btn" type="button" id="arch-all" style="width:100%">${t("archAll", {n: rows.length})}</button>` : "";
+  listHTML($("chips"), chips.map(([k,lbl,n]) => `<button class="chip" type="button" data-f="${k}" aria-pressed="${!query.trim() && k === filter}">${lbl}<span class="n">${n}</span></button>`).join(""));
+  const qq = query.trim().toLowerCase();  // поиск идёт по всем группам: название и папка, без учёта регистра
+  let rows = qq ? S.filter(s => (nameOf(s) + " " + (s.cwd || "")).toLowerCase().includes(qq)) : filter === "act" ? S.filter(s => s.group === "wait").concat(S.filter(s => s.group === "work")) : S.filter(s => inGroup(s, filter));
+  const bulk = !qq && filter === "done" && rows.length ? `<button class="btn" type="button" id="arch-all" style="width:100%">${t("archAll", {n: rows.length})}</button>` : "";
   const nWait = S.filter(s => s.group === "wait" || s.perm).length;
   const card = s => {
     const tags = [];
-    if (s.current) tags.push(`<span class="tag cur">${t("curVer")}</span>`);
+    if (s.current && S.some(o => o.into && o.into.id === s.id)) tags.push(`<span class="tag cur">${t("curVer")}</span>`);
     if (s.group === "old" && s.into) tags.push(`<span class="tag">${esc(t("contIn", {name: String(s.into.name).replace(/^🗂\s*/, "")}))}</span>`);
     if (s.group === "archived") tags.push(`<span class="tag">${t("stArchived")}</span>`);
     if (s.watched) tags.push(`<span class="tag">${t("watchedTag")}</span>`);
@@ -1529,15 +1556,16 @@ function renderList(){
   // «Активные» — два раздела: сначала то, что ждёт вас
   let body;
   // ждущие — обычными строками, группами наверху: сначала разрешения, затем остальное ожидание (решение владельца 19.10)
-  const pm = (filter === "act" || filter === "wait") ? rows.filter(s => s.perm) : [];
+  const pm = (!qq && (filter === "act" || filter === "wait")) ? rows.filter(s => s.perm) : [];
   const permSec = pm.length ? `<div class="lsec">${t("secPerm", {n: pm.length})}</div>` + pm.map(card).join("") : "";
   if (pm.length) rows = rows.filter(s => !s.perm);
-  if (filter === "act" || filter === "wait"){
+  if (!qq && (filter === "act" || filter === "wait")){
     const w = rows.filter(s => s.group === "wait"), k = filter === "act" ? rows.filter(s => s.group === "work") : [];
     body = permSec + (w.length ? `<div class="lsec">${t("secWait", {n: w.length})}</div>` + w.map(card).join("") : "") + (k.length ? `<div class="lsec">${t("secWork", {n: k.length})}</div>` + k.map(card).join("") : "");
   } else body = permSec + rows.map(card).join("");
   let main;
   if (rows.length || pm.length) main = body;
+  else if (qq) main = `<div class="empty">${t("noResults")}</div>`;
   else if (filter === "act"){
     const recent = S.filter(s => s.group === "done").sort((a, b) => (b.updated || 0) - (a.updated || 0)).slice(0, 3);
     main = `<div class="empty"><p>${t("emptyAct")}</p></div>` + recent.map(card).join("") + `<button class="btn pri" type="button" data-new>${t("newSession")}</button>`;
@@ -1548,7 +1576,16 @@ function renderList(){
   if (ac){ const l = ac.offsetLeft - 12, r = ac.offsetLeft + ac.offsetWidth + 12 - cb.clientWidth;
     if (l < cb.scrollLeft) cb.scrollLeft = Math.max(0, l); else if (r > cb.scrollLeft) cb.scrollLeft = r;
     cb.classList.toggle("scrolled", cb.scrollLeft > 4); }
+  maybeOpenWaiting();
 }
+/* поиск: поле по кнопке в шапке (закрытое не отнимает места у ждущих); закрытие очищает запрос */
+function openSearch(on){
+  $("q-row").hidden = !on; $("q-btn").setAttribute("aria-expanded", String(on));
+  if (on) $("q-field").focus(); else { $("q-field").value = ""; if (query){ query = ""; renderList(); } }
+}
+$("q-btn").addEventListener("click", () => openSearch($("q-row").hidden));
+$("q-field").addEventListener("input", () => { query = $("q-field").value; renderList(); });
+$("q-field").addEventListener("keydown", e => { if (e.key === "Escape"){ e.preventDefault(); e.stopPropagation(); openSearch(false); $("q-btn").focus(); } });
 $("chips").addEventListener("scroll", () => $("chips").classList.toggle("scrolled", $("chips").scrollLeft > 4), {passive: true});
 $("chips").addEventListener("click", e => { const b = e.target.closest(".chip"); if (!b) return; filter = b.dataset.f; try{ localStorage.setItem("cc-filter", filter); }catch(x){} haptic(); renderList(); });
 /* смахивание карточки влево — действие «В архив» */
@@ -1683,7 +1720,7 @@ function paintNav(v, x){
 }
 function settleNav(v){ const top = layerOf(v), below = belowOf(v); if (top){ top.style.transform = ""; top.classList.remove("moving"); } if (below){ below.style.transform = ""; below.style.willChange = ""; } navDim().style.opacity = "0"; navX = 0; }
 const WIDE = matchMedia("(min-width:1000px)");
-const panel = v => WIDE.matches && v === "session";  // сессия — правая панель, а не слой поверх списка
+const panel = v => WIDE.matches && (v === "session" || v === "new");  // сессия и «Новая сессия» — правая панель, не слой поверх списка
 function push(v){
   if (navAnim) navAnim.stop();
   const W = window.innerWidth; show(v);
@@ -1720,16 +1757,61 @@ const HD = {list: 0, gate: 0, session: 1, new: 1, sub: 2};
 /* iPhone с экрана «Домой»: свайп от края у PWA — «назад» по истории (снимок прошлой записи, потом popstate и сворачивание;
    владелец 20.10 10:41). Кнопки «назад» у такого окна нет — записей не кладём, свайп достаётся нашему обработчику и морфу. */
 const IOS_PWA = (navigator.standalone === true || matchMedia("(display-mode: standalone)").matches) && (/iP(hone|ad|od)/.test(navigator.userAgent) || /Mac/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);  // iPadOS называет себя Mac
-let histDepth = 0, histSilent = false;
+let histDepth = 0, histSilent = false, histHold = false, skipPane = false, ignoreHash = false;
 function syncHist(v){
-  if (IOS_PWA) return;
+  if (IOS_PWA || histHold) return;  // автооткрытие первой ждущей не кладёт запись: следующий клик по карточке — ровно +1
   const d = HD[v] || 0;
   while (histDepth < d) history.pushState({d: ++histDepth}, "");
-  if (histDepth > d){ const n = histDepth - d; histDepth = d; histSilent = true; history.go(-n); }
+  if (histDepth > d){ const n = histDepth - d; histDepth = d; histSilent = true; ignoreHash = true; history.go(-n); }
 }
+/* Адрес #s=<id> / #new живёт на текущей записи (replaceState). На записи списка (# depth 0) хеша маршрута нет, иначе «назад» снова открывает сессию. */
+function writeHash(params){
+  if (!STANDALONE) return;
+  const parts = [];
+  params.forEach((v, k) => { parts.push(v === "" ? encodeURIComponent(k) : encodeURIComponent(k) + "=" + encodeURIComponent(v)); });
+  const hash = parts.length ? "#" + parts.join("&") : "";
+  const next = location.pathname + location.search + hash;
+  if (next === location.pathname + location.search + location.hash) return;
+  history.replaceState(history.state, "", next);
+}
+function peelHash(key){
+  if (!STANDALONE || histDepth !== 0) return;
+  const p = new URLSearchParams(location.hash.replace(/^#/, ""));
+  if (!p.has(key)) return;
+  p.delete(key); writeHash(p);
+}
+function setSessionAddr(id){
+  if (!STANDALONE || histHold || !id) return;
+  const p = new URLSearchParams(location.hash.replace(/^#/, ""));
+  p.delete("new"); p.set("s", id); writeHash(p);
+}
+function setNewAddr(){
+  if (!STANDALONE || histHold) return;
+  const p = new URLSearchParams(location.hash.replace(/^#/, ""));
+  if (p.has("new") && !p.has("s")) return;
+  p.delete("s"); p.set("new", ""); writeHash(p);
+}
+function clearRouteHash(){
+  const p = new URLSearchParams(location.hash.replace(/^#/, ""));
+  if (!p.has("s") && !p.has("new")) return;
+  p.delete("s"); p.delete("new"); writeHash(p);
+}
+function maybeOpenWaiting(){
+  if (skipPane || histHold || !WIDE.matches || view !== "list" || $("q-field").value || !$("shade").hidden) return;
+  const hp = new URLSearchParams(location.hash.replace(/^#/, ""));
+  if (hp.has("s") || hp.has("new")) return;
+  const S = (data && data.sessions) || [];
+  const first = S.find(s => s.perm) || S.find(s => s.group === "wait");
+  if (!first) return;
+  histHold = true;
+  try { openSession(first.id); }
+  finally { histHold = false; }
+}
+WIDE.addEventListener("change", () => { if (view === "list") maybeOpenWaiting(); else if (view === "session" && histDepth === 0) syncHist(view); });
 let listY = 0;  // прокрутка списка под слоем: фокус поля сессии обнуляет окно (iOS-клавиатура), а морф и список ждут прежнюю
 const keepListY = () => { if (scrollY !== listY) window.scrollTo(0, listY); };
 function show(v){
+  if (v === "list" && view !== "list" && view !== "gate") skipPane = true;  // возврат к списку не открывает первую ждущую сразу снова
   if (view === "list" && v !== "list" && v !== "gate" && !panel(v)) listY = scrollY;
   view = v;
   // список остаётся под открытыми слоями (для перехода и свайпа назад); сессия — под сабтаском
@@ -1741,6 +1823,7 @@ function show(v){
   if (tg){ v === "list" || OWN_BACK ? tg.BackButton.hide() : tg.BackButton.show(); }
   mainButton();
   if (v === "list") stashDraft();
+  if (IOS_PWA && (v === "list" || v === "gate")) clearRouteHash();  // у PWA одна запись: уход со слоя снимает #s, перезагрузка не возвращает сессию
   if (STANDALONE) syncHist(v);
   if (v === "gate") window.scrollTo(0, 0);  // слои лежат поверх списка — его прокрутка сохраняется
   listScrolled();
@@ -2028,7 +2111,8 @@ async function openSession(id){
   const own = ownAnswerRequests.get(id);
   if (own) sess = {...own.session};
   draftOut = false; $("s-text").value = drafts.get(id) || ""; atts = attDrafts.get(id) || []; attDrafts.delete(id); renderAtt(); setMode("send"); $("s-text").blur();
-  push("session"); renderSession(); quotaLine(); haptic();
+  if (!histHold && view !== "session") peelHash("s");  // запись списка без #s: одно «назад» не открывает сессию снова
+  push("session"); if (!histHold) setSessionAddr(id); renderSession(); quotaLine(); haptic();
   autosize();  // высоту поля меряем на видимом экране: на скрытом scrollHeight врёт и восстановленный черновик обрезан
   await loadSession();
   setTimeout(() => { const b = $("s-body"); b.scrollTop = b.scrollHeight; }, 50);
@@ -2486,13 +2570,18 @@ function quotaPaint(q){
   const pin = r => r.id == null || r.pct == null ? `<span class="qpin-x"></span>`
     : `<button class="iconbtn qpin" type="button" data-pin="${esc(r.id)}" aria-pressed="${pins.includes(r.id)}" aria-label="${esc(t("qPin", {n: r.title + (r.sub ? " " + r.sub : "")}))}"><svg width="20" height="20" aria-hidden="true"><use href="#i-${pins.includes(r.id) ? "check" : "plus"}"/></svg></button>`;
   listHTML($("q-rows"), rows.map(r => `<div class="qr"><span><span class="bn">${esc(r.title)}</span>${r.sub ? `<span class="bm">${esc(r.sub)}</span>` : ""}</span><span class="qp${r.hot || r.pct >= 85 ? " hot" : ""}">${pct(r.pct)}</span>${pin(r)}</div>`).join(""));
-  const upd = Math.max(q.updated || 0, c.updated || 0);
+  const upd = q.updated || c.updated || 0;  // the oldest shown data: the status file's mtime, Claude's time only without rows
   $("q-at").textContent = !rows.length ? t("qEmpty") : q.next_at && q.next_at > Date.now() / 1000 && upd ? t("qNext", {t: hm(upd), n: hm(q.next_at)}) : upd ? t("qAt", {t: hm(upd)}) : "";
   $("q-refresh").hidden = !q.can_refresh;
 }
 async function openQuota(){
-  try{ quotaPaint(await api("quota")); }catch(e){ listHTML($("q-rows"), ""); $("q-at").textContent = t("qErr"); $("q-refresh").hidden = true; }
+  let q = null;
+  try{ quotaPaint(q = await api("quota")); }catch(e){ listHTML($("q-rows"), ""); $("q-at").textContent = t("qErr"); $("q-refresh").hidden = true; }
   sheet("quota-sheet", true);
+  // stale rows: refresh in the background once (the server rate-limits and locks); a failure leaves the shown sheet as is
+  if (q && q.can_refresh && q.updated && Date.now() / 1000 - q.updated > (q.min_interval || 300) && !(q.next_at && q.next_at > Date.now() / 1000)){
+    try{ quotaPaint(await api("quota/refresh", {})); }catch(e){}
+  }
 }
 // плитки квоты рисует layers.js (#lab-q) поверх скрытого #quota: тап по любой из них открывает лист
 document.addEventListener("click", e => { if (e.target.closest("#lab-q, #quota")) openQuota(); });
@@ -2713,7 +2802,11 @@ function nModels(m){  // Claude Code (TUI) и модели SDK-провайде�
 $("n-model").addEventListener("click", e => { if (e.target.closest("[data-pv]")){ nOpen = !nOpen; nPaint();
     if (nOpen) $("n-model").scrollIntoView({block: "end", behavior: RM ? "auto" : "smooth"}); return; }  /* раскрытый список не прячется под «Запустить» */ const b = e.target.closest("[data-p]"); if (b){ nPick = b.dataset.p; nOpen = false; nPaint(); haptic(); } });
 async function openNew(instant){
-  if (instant) show("new"); else push("new");  // диплинк при загрузке: экран сразу, без перехода от невиданного списка
+  if (view !== "new"){
+    if (!histHold && histDepth === 0){ peelHash("s"); peelHash("new"); }
+    if (instant) show("new"); else push("new");  // диплинк при загрузке: экран сразу, без перехода от невиданного списка
+    setNewAddr();
+  }
   nReset(); nModels(null);
   try{ const r = await api("dirs"); dirHome = (r.dirs || [])[0] || null; nModels(r.models);
     $("n-dirs").innerHTML = (dirHome ? `<button class="chip" type="button" data-d="h" aria-pressed="true">${dirHome === "~" ? t("homeDir") : esc(dirHome)}</button>` : "") + `<button class="chip" type="button" data-d="o" aria-pressed="false">${t("otherDir")}</button>`;
@@ -2761,7 +2854,7 @@ async function launch(){
       if (!res.ok) r = {error: res.status === 401 ? t("authMsg") : r.error || (res.status === 413 ? t("tooBig") : t("notStarted"))};
     } else r = await api("new", body);
     /* форму чистит следующее открытие: пустая форма в уезжающем экране выглядит сбоем */
-    if (r.ok){ haptic("ok"); toast(t("launched")); await loadList(); if (r.id){ settleNav("new"); show("list"); openSession(r.id); } else pop(); } else toast(r.error || t("notStarted")); }
+    if (r.ok){ haptic("ok"); toast(t("launched")); await loadList(); if (r.id){ settleNav("new"); openSession(r.id); } else pop(); } else toast(r.error || t("notStarted")); }
   catch(e){ toast(t("launchFail")); }
   finally{ launching = false; try{ tg && tg.MainButton.hideProgress(); }catch(e){} mainButton(); }
 }
@@ -2810,7 +2903,7 @@ const goBack = () => {
 document.querySelectorAll("[data-back]").forEach(b => b.addEventListener("click", goBack));
 window.addEventListener("scroll", () => { const y = window.scrollY > 70; document.querySelectorAll("[data-nav],[data-nav-sub]").forEach(n => n.classList.toggle("scrolled", y)); }, {passive: true});
 window.addEventListener("popstate", () => {
-  if (histSilent){ histSilent = false; return; }  // это наш history.go() после закрытия слоя
+  if (histSilent){ histSilent = false; setTimeout(() => { ignoreHash = false; }, 300); return; }  // это наш history.go() после закрытия слоя
   if (!STANDALONE || view === "list"){ document.dispatchEvent(new Event("session:back", {cancelable:true})); return; }
   histDepth = Math.max(0, histDepth - 1);
   const v0 = view; goBack();
@@ -2822,7 +2915,7 @@ function openFromHash(h){
   const sid = new URLSearchParams(String(h || "").replace(/^[^#]*#?/, "")).get("s");
   if (sid && view !== "gate" && sid !== current) openSession(sid);
 }
-window.addEventListener("hashchange", () => openFromHash(location.hash));
+window.addEventListener("hashchange", () => { if (ignoreHash){ ignoreHash = false; return; } openFromHash(location.hash); });
 if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", e => { if (e.data && e.data.type === "open") openFromHash(e.data.url); });
 if (tg){ tg.BackButton.onClick(() => goBack()); }
 // ссылки в ответах: внутри Telegram target=_blank в WebView может не открыться — через openLink
@@ -2830,7 +2923,7 @@ document.addEventListener("click", e => {
   const a = e.target.closest && e.target.closest(".msg a[href]"); if (!a || !tg || !/^https?:/i.test(a.href)) return;
   e.preventDefault(); try{ tg.openLink(a.href); }catch(x){ window.open(a.href, "_blank", "noopener"); }
 });
-document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("lb").hidden){ closeLightbox(); return; } if (e.key === "Escape" && !$("shade").hidden){ closeSheets(); return; } if (e.key === "Escape" && view !== "list"){ show("list"); loadList(); } if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && view === "session") sendText(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("lb").hidden){ closeLightbox(); return; } if (e.key === "Escape" && !$("shade").hidden){ closeSheets(); return; } if (e.key === "Escape" && view !== "list"){ show("list"); loadList(); return; } if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey){ if (view === "session"){ e.preventDefault(); sendText(); } else if (view === "new"){ e.preventDefault(); launch(); } } });
 
 /* высота экрана = видимая область: на iPhone открытая клавиатура не уменьшает окно, только видимую часть */
 const vv = window.visualViewport;
@@ -2891,7 +2984,7 @@ async function poll(){
     if (!document.hidden){
       tick++;
       if (view === "sub"){ if (tick % 2 === 0) await loadSub(); }
-      else if (view === "session"){ if (!busyPoll){ busyPoll = true; try{ await loadSession(); }finally{ busyPoll = false; } } if (tick % 12 === 0) await loadList(); }
+      else if (view === "session"){ if (!busyPoll){ busyPoll = true; try{ await loadSession(); }finally{ busyPoll = false; } } if (tick % (WIDE.matches ? 3 : 12) === 0) await loadList(); }
       else if (view === "list" && tick % 3 === 0) await loadList();
     }
   }catch(e){ /* Запросы могут прерваться при уходе со страницы. */ }

@@ -96,6 +96,9 @@ def form(page, lang):
     check(new == {"text": "look at these", "cwd": first, "files": ["shot.png", "notes.txt"]}, f"launch as the stand saw it: {new}")
     # the form is clean when opened after a launch
     expect(page.locator("#new-screen")).to_be_hidden()
+    expect(page.locator("#session-screen")).to_be_visible()  # the stand answers {ok, id} like the bot: launch ends in the new session
+    if not page.locator("#new-btn").is_visible():
+        page.locator("#session-screen [data-back]").first.click()
     page.locator("#new-btn").click()
     expect(page.locator("#n-text")).to_have_value("")
     expect(page.locator("#n-attach")).to_be_hidden()

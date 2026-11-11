@@ -7,6 +7,7 @@ import time
 DATA = os.environ.get("DATA_FILE", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "stand", "demo2.json"))
 R = json.load(open(DATA))
 DATA_LOCK = threading.Lock()
+NEW = []  # sessions launched through POST /api/new
 
 
 # lists of the model sheet: the shape of the real api_model (presets with models; empty list = one preset model)
@@ -24,9 +25,11 @@ PINS = []  # строки квот, вынесенные в шапку (серв
 def quota_pinned():
     return [r for r in quota_status(False)["rows"] if r["id"] in PINS and r["pct"] is not None]
 
+FILE_AGE = [float(os.environ.get("QUOTA_FILE_AGE", "240"))]  # age of the status file; a refresh rewrites it
 def quota_status(refreshed):
     now = time.time()
-    return {"claude": R["sessions"]["quota"], "can_refresh": True, "refreshed": refreshed, "updated": now - 240, "pins": list(PINS),
+    if refreshed: FILE_AGE[0] = 240.0
+    return {"claude": dict(R["sessions"]["quota"], updated=now - 30), "can_refresh": True, "refreshed": refreshed, "updated": now - FILE_AGE[0], "min_interval": 300, "pins": list(PINS),
             "next_at": now + 60 if refreshed else None, "rows": [
                 {"id": "codex", "title": "Codex", "sub": "week", "pct": 41.0, "reset": "Thu 09:00", "hot": False},
                 {"id": "glm", "title": "GLM", "sub": "5 h", "pct": 88.0, "reset": "23:10", "hot": True},
@@ -171,7 +174,13 @@ class H(http.server.BaseHTTPRequestHandler):
             if os.environ.get("SEND_LOG"):
                 with DATA_LOCK, open(os.environ["SEND_LOG"], "a") as log:
                     log.write(json.dumps({"new": new_data}) + "\n")
-            return self.j({"ok": True, "menu": False})  # as before: no id
+            # as the real api_new: {ok, id}; the new session is in the list and answers session/<id>
+            with DATA_LOCK:  # in memory only: the shared fixture file stays clean for other checks
+                sid = "n%07x" % (len(NEW) + 0x1000)
+                name = (new_data.get("text") or "New session")[:40]
+                NEW.insert(0, {"id": sid, "name": name, "base_name": name, "k": 1, "group": "work", "state": "work", "failed": False, "detail": "Working", "ago": "now",
+                               "updated": int(time.time()), "topic": True, "watched": False, "current": False, "archived_at": None, "into": None, "ask": None, "kind": "claude", "cwd": new_data.get("cwd") or "~"})
+            return self.j({"ok": True, "menu": False, "id": sid})
         if len(parts) == 4 and parts[:2] == ["api", "session"] and parts[3] == "key":  # как сервер: клавиша в терминал, в ответе экран
             key = json.loads(raw or b"{}").get("key")
             if key not in ("1", "2", "3", "4", "5", "up", "down", "tab", "enter", "esc", "y", "n"):
@@ -401,6 +410,7 @@ class H(http.server.BaseHTTPRequestHandler):
             if os.environ.get("FAIL_SESSIONS") == "1" or "fail_sessions=1" in self.headers.get("Cookie", ""):
                 return self.j({"error": "synthetic failure"}, 500)
             d = read_data()["sessions"]
+            if isinstance(d, dict): d["sessions"] = NEW + d["sessions"]
             if isinstance(d, dict): d["quota"] = dict(d.get("quota") or {}, pinned=quota_pinned())
             if isinstance(d, dict) and d.get("topics"):  # как сервер с темами: имя бота и тема каждой сессии (t.me/<bot>/<тема>)
                 d["bot"] = "pager_demo_bot"
@@ -442,7 +452,8 @@ class H(http.server.BaseHTTPRequestHandler):
             if len(parts) == 2 and parts[1] == "screen": return self.j({"menu": False, "screen": "Proceed? [y/n]\n> "})
             if len(parts) == 2 and parts[1] == "subagents": return self.j(R["subagents"].get(sid, {"subagents": []}))
             if len(parts) == 3 and parts[1] == "subagent": return self.j(R["subagent"].get(parts[2]) or {"history": []})
-            d = current["session"].get(sid)
+            current["sessions"]["sessions"] = NEW + current["sessions"]["sessions"]
+            d = current["session"].get(sid) or next(({**r, "history": [], "question": None} for r in NEW if r["id"] == sid), None)
             if not d:
                 base = next((s for s in current["sessions"]["sessions"] if s["id"] == sid), {"id": sid, "name": sid, "group": "work"})
                 d = dict(base, history=[], cwd="~", question=None)

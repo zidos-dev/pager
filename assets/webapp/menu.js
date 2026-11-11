@@ -4,6 +4,7 @@
   "use strict";
   var de=document.documentElement, $=function(id){return document.getElementById(id);};
   var more=$("s-more"); if(!more) return;
+  var lmore=$("list-more"), anchor=more;   /* anchor — кнопка, из которой открыто меню: «⋯» сессии или «⋯» шапки списка */
   var RU=function(){return /^ru/i.test(de.lang||"");};
   var S={open:false,ctx:null,closeTimer:0,eatMore:false,sliding:false,hl:-1,rows:[]};
   var DICT={ru:{n:"Уведомления",ren:"Переименовать",arch:"Убрать в архив",rest:"Вернуть из архива",stop:"Остановить",on:"включены",off:"выключены"},
@@ -24,7 +25,11 @@
     archive:'<path d="M3.5 6.5h17v3.5h-17z"/><path d="M5 10v8a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 18v-8"/><path d="M10 14h4"/>',
     restore:'<path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4.5V8.5h4"/>',
     chat:'<path d="M5 18.5V7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H8.2L5 18.5Z"/>',
-    stop:'<circle cx="12" cy="12" r="9"/><rect x="9" y="9" width="6" height="6" rx="1.2"/>'
+    stop:'<circle cx="12" cy="12" r="9"/><rect x="9" y="9" width="6" height="6" rx="1.2"/>',
+    bots:'<rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 8V5M9.5 13.5h.01M14.5 13.5h.01"/><circle cx="12" cy="4" r="1"/>',
+    lock:'<rect x="5" y="10.5" width="14" height="9.5" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/>',
+    model:'<path d="M4 7h9M18 7h2M4 17h2M11 17h9"/><circle cx="15.5" cy="7" r="2.5"/><circle cx="8.5" cy="17" r="2.5"/>',
+    quota:'<path d="M4 19V5M4 19h16"/><path d="M8 15v-4M12 15V8M16 15v-6"/>'
   };
   function ic(n){ return '<svg class="mn-ic" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">'+P[n]+'</svg>'; }
   var esc=function(t){return String(t==null?"":t).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});};
@@ -42,6 +47,13 @@
     return '<button type="button" class="mn-row'+(r.dng?" dng":"")+'" role="menuitem" tabindex="-1" data-k="'+r.k+'" style="--i:'+i+'">'+ic(r.icon)+
       '<span class="mn-tx"><b>'+esc(r.label)+'</b>'+(r.sub?'<small>'+esc(r.sub)+'</small>':'')+'</span></button>';
   }
+  /* меню шапки списка: строки берут подписи у скрытых кнопок и листа квот, действие — их же клик */
+  var LIST=[["bots","bots","bots-btn"],["perms","lock","perms-btn"],["model","model","model-btn"],["quota","quota","quota"]];
+  function listRows(){
+    var q=$("quota-sheet"), qh=q&&q.querySelector("h3");
+    return [LIST.filter(function(r){ return r[0]!=="quota"||(!$("quota").hidden&&qh); }).map(function(r){
+      var b=$(r[2]); return {k:r[0],icon:r[1],label:r[0]==="quota"?qh.textContent.trim():(b.getAttribute("aria-label")||"")}; }),[]];
+  }
   function rowsOf(m){
     var g1=(m.topicHidden?[]:[{k:"topic",icon:"chat",label:m.tlabel}]).concat([{k:"watch",icon:m.watched?"bell":"bellOff",label:m.wlabel,sub:m.wval},{k:"rename",icon:"pencil",label:m.rlabel},{k:"arch",icon:m.restore?"restore":"archive",label:m.alabel}]);
     var g2=m.stopHidden?[]:[{k:"stop",icon:"stop",label:m.slabel,dng:true}];
@@ -51,10 +63,10 @@
   /* ---------- построение и геометрия ---------- */
   var menu=null;
   function build(ctx){
-    var m=model(), gs=rowsOf(m), i=0;
+    var m=ctx.list?{meta:""}:model(), gs=ctx.list?listRows():rowsOf(m), i=0;
     dyn.innerHTML="";
     menu=document.createElement("div"); menu.className="mn-menu mn-glass"; menu.id="session-menu"; menu.setAttribute("role","menu");
-    menu.setAttribute("aria-label",more.getAttribute("aria-label")||"");
+    menu.setAttribute("aria-label",anchor.getAttribute("aria-label")||"");
     gs.forEach(function(g,gi){
       if(!g.length) return;
       var el=document.createElement("div"); el.className="mn-grp"; el.setAttribute("role","group");
@@ -77,7 +89,7 @@
     menu.style.setProperty("--mn-ox",ax+"px"); menu.style.setProperty("--mn-oy",above?"100%":"0px");
   }
   function addClone(ctx){
-      var b=document.createElement("button"); b.type="button"; b.className="mn-clone"; b.tabIndex=-1; b.setAttribute("aria-hidden","true"); b.innerHTML=more.innerHTML;
+      var b=document.createElement("button"); b.type="button"; b.className="mn-clone"; b.tabIndex=-1; b.setAttribute("aria-hidden","true"); b.innerHTML=anchor.innerHTML;
       var r2=ctx.rect; b.style.cssText="left:"+r2.left+"px;top:"+r2.top+"px;width:"+r2.width+"px;height:"+r2.height+"px";
       b.addEventListener("click",function(e){ close({focus:e.detail===0}); });
       dyn.insertBefore(b,menu); de.classList.add("mn-opening");
@@ -91,12 +103,12 @@
     if(closing){ refresh(); }   /* прерванное закрытие: продолжаем с текущего состояния, без пересборки */
     else{
       cleanup();
-      ctx.rect=ctx.rect||more.getBoundingClientRect();
+      anchor=ctx.list?lmore:more; ctx.rect=ctx.rect||anchor.getBoundingClientRect();
       S.ctx=ctx; root.hidden=false; build(ctx); addClone(ctx); place(ctx);
       void root.offsetWidth;
     }
     root.classList.add("mn-on");
-    more.setAttribute("aria-expanded","true");
+    anchor.setAttribute("aria-expanded","true");
     hap();
     if(ctx.kb&&S.rows[0]) S.rows[0].focus({preventScroll:true});
   }
@@ -108,15 +120,15 @@
     if(!S.open) return;
     S.open=false; S.sliding=false;
     root.classList.remove("mn-on");
-    more.setAttribute("aria-expanded","false");
+    anchor.setAttribute("aria-expanded","false");
     clearTimeout(S.closeTimer);
     S.closeTimer=setTimeout(function(){ root.hidden=true; cleanup(); },320);
-    if(o.focus) try{ more.focus({preventScroll:true}); }catch(e){}
+    if(o.focus) try{ anchor.focus({preventScroll:true}); }catch(e){}
   }
   function closeNow(){
     cancelHold(); clearTimeout(S.closeTimer); S.open=false; S.sliding=false; sw=null;
     root.classList.remove("mn-on"); root.hidden=true;
-    more.setAttribute("aria-expanded","false"); cleanup();
+    anchor.setAttribute("aria-expanded","false"); cleanup();
   }
   function refresh(){
     if(!menu||!S.ctx) return;
@@ -134,6 +146,7 @@
   /* Действия остаются у продукта; переключатель сохраняет меню открытым. */
   function activate(row,kb){
     var k=row.dataset.k;
+    if(S.ctx&&S.ctx.list){ close({focus:false}); hap(); try{ $("list-more").focus({preventScroll:true}); }catch(e){} $(LIST.filter(function(r){return r[0]===k;})[0][2]).click(); return; }
     if(k==="watch"){ $("a-watch").click(); return; }
     close({focus:!!kb&&k!=="rename"}); hap();
     $({topic:"a-topic",rename:"a-rename",arch:"a-arch",stop:"a-stop"}[k]).click();
@@ -151,10 +164,11 @@
     if(S.open&&el.closest("#session-screen [data-back]")){
       e.stopImmediatePropagation(); e.preventDefault(); close({focus:true}); return;
     }
-    if(!el.closest("#s-more")) return;
+    var isList=!!el.closest("#list-more");
+    if(!isList&&!el.closest("#s-more")) return;
     e.stopImmediatePropagation(); e.preventDefault();
     if(S.eatMore){ S.eatMore=false; return; }
-    if(S.open) close({focus:e.detail===0}); else open({kb:e.detail===0});
+    if(S.open) close({focus:e.detail===0}); else open({kb:e.detail===0,list:isList});
   },true);
 
   /* ---------- клавиатура ---------- */

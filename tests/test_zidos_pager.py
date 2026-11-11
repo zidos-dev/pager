@@ -3347,6 +3347,20 @@ class WebApiTests(unittest.TestCase):
         st, obj, _ = self.w.req("POST", "/api/quota/refresh", {})
         self.assertEqual((obj["refreshed"], len(calls)), (True, 2))
 
+    def test_quota_row_with_past_reset_loses_percent_and_term(self):
+        self._status_env()
+        with open(self.e.cfg.status_file, "w") as f:
+            json.dump([{"id": "glm", "title": "GLM", "pct": 88, "reset": BASE - 60},
+                       {"id": "codex", "title": "Codex", "pct": 41, "reset": BASE + 3600},
+                       {"id": "gem", "title": "Gemini", "pct": 12}], f)
+        st, obj, _ = self.w.req("GET", "/api/quota")
+        r = {x["id"]: x for x in obj["rows"]}
+        self.assertEqual((r["glm"]["pct"], r["glm"]["reset"]), (None, None))
+        self.assertEqual(r["codex"]["pct"], 41.0)
+        self.assertIsNotNone(r["codex"]["reset"])
+        self.assertEqual(r["gem"]["pct"], 12.0)
+        self.assertEqual(obj["min_interval"], 300)
+
     def test_quota_get_reads_cache_without_command(self):
         calls = self._status_env()
         st, obj, _ = self.w.req("GET", "/api/quota")

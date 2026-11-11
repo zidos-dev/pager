@@ -102,7 +102,7 @@ try:
         tag = f"{eng} 390x844 {scheme}"
         ctx = ctx_for(b, eng, 390, 844, scheme); page = ctx.new_page()
         page.goto(URL + "/app/", wait_until="load"); page.wait_for_selector(".card")
-        press_delta(page, "#bots-btn", f"header icon {tag}")
+        press_delta(page, "#list-more", f"header icon {tag}")
         # №13 focus ring: «Задача» equals «Свой ответ»
         page.locator("#new-btn").click(); page.wait_for_timeout(700)
         page.locator("#n-text").focus(); page.wait_for_timeout(200)

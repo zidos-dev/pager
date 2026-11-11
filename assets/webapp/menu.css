@@ -17,7 +17,7 @@ html[data-lab-theme="dark"]{--mn-dim:rgba(0,0,0,.28);--mn-bg:rgba(32,32,36,.95)}
 .mn-back{background:var(--mn-dim);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
 .mn-clone{position:absolute;margin:0;padding:0;pointer-events:auto;color:var(--link);background:transparent;border:0;display:grid;place-items:center;border-radius:50%}
 .mn-clone svg{display:block}
-html.mn-opening #s-more{opacity:0}
+html.mn-opening #s-more,html.mn-opening #list-more{opacity:0}
 .mn-menu{position:absolute;width:min(250px,calc(100vw - 24px));max-height:calc(100dvh - 24px);overflow-y:auto;overscroll-behavior:contain;transform-origin:var(--mn-ox,100%) var(--mn-oy,0);transform:scale(.5);display:flex;flex-direction:column;gap:0;transition:transform var(--m-exit-t) var(--m-exit);color:var(--glass-ink)}
 .mn-on .mn-menu{transform:none;transition:transform var(--mn-t) var(--mn-spring)}
 .mn-glass{background-color:transparent;-webkit-backdrop-filter:var(--mn-blur);backdrop-filter:var(--mn-blur);box-shadow:none;border-radius:24px;overflow:hidden;transition:background-color var(--m-exit-t) var(--m-exit),box-shadow var(--m-exit-t) var(--m-exit)}

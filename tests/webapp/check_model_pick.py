@@ -38,7 +38,7 @@ def shot(page, name):  # SHOTS=<dir>: screenshots for an eye check
 def bot_card(page, lang):
     urllib.request.urlopen(urllib.request.Request(URL + "/api/bots/reset", data=b"{}", method="POST")).read()
     page.goto(f"{URL}/app/", wait_until="load")
-    page.locator("#bots-btn").click(); page.locator("#b-list .brow").nth(0).click()
+    page.locator("#list-more").click(); page.locator('.mn-row[data-k="bots"]').click(); page.locator("#b-list .brow").nth(0).click()
     prov = page.locator("#b-prov")
     expect(prov.locator(".pv-now")).to_contain_text("Claude")
     expect(prov.locator(".pv-now")).to_contain_text("claude-sonnet-4-5")

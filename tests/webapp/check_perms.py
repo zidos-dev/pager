@@ -69,7 +69,7 @@ def flow(page, lang, theme):
     stand_data(DATA)
     post("/api/perms", {"reset": True}); post("/api/bots/reset", {})
     page.goto(f"{URL}/app/?theme=tg-{theme}", wait_until="load")
-    page.locator("#perms-btn").click()
+    page.locator("#list-more").click(); page.locator('.mn-row[data-k="perms"]').click()
     sheet = page.locator("#perms-sheet")
     expect(sheet).to_be_visible()
     seg = page.locator("#p-block .pm-seg [data-mode]")
@@ -118,7 +118,7 @@ def flow(page, lang, theme):
     page.keyboard.press("Escape")
     expect(sheet).to_be_hidden()
     # a bot: permissions block inside the edit form, saved with the bot
-    page.locator("#bots-btn").click()
+    page.locator("#list-more").click(); page.locator('.mn-row[data-k="bots"]').click()
     page.locator("#b-list .brow").nth(0).click()
     expect(page.locator("#b-perms .pm-seg [data-mode]")).to_have_count(2)
     expect(page.locator("#b-perms .pm-r")).to_have_count(3)
