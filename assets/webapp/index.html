@@ -41,6 +41,7 @@
   --r:16px;
   --gut:16px;  /* one screen edge for every block: titles, tiles, cards, feed, composer, sheet */
   --perm-danger:#d70015;
+  --press:color-mix(in srgb,var(--ink) 20%,transparent);  /* отклик нажатия: заливка тоном, как у .card */
   --shadow:none;
   --glass-bar:color-mix(in srgb,var(--canvas) 72%,transparent);  /* шапки списка и сессии: ~72 % тона окна (вкус владельца; выбор «стекло» 05.11) */
   --glass-cap:color-mix(in srgb,var(--panel) 88%,transparent);
@@ -54,7 +55,7 @@
 :root.in-tg{--action:#d2fb4a;--action-ink:#111214;--link:var(--ink)}  /* surfaces stay Telegram's; the Zidos brand is the lime action and Onest */
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 .sa-top{padding-top:env(safe-area-inset-top,0px)}
-.back{display:inline-flex;align-items:center;gap:2px;color:var(--link);font-size:17px;letter-spacing:-.2px;min-height:44px;padding:0 6px 0 2px;flex:none}
+.back{display:inline-flex;align-items:center;gap:2px;color:color-mix(in srgb,var(--link) 80%,var(--ink));font-size:17px;letter-spacing:-.2px;min-height:44px;padding:0 6px 0 2px;flex:none}
 .navbar{position:sticky;top:0;z-index:8;display:flex;align-items:center;gap:8px;min-height:52px;margin:0 -12px;padding:calc(env(safe-area-inset-top,0px) + 4px) 12px 4px;background:var(--canvas)}
 .back svg{margin-left:-6px}
 .navbar .nt{min-width:0;flex:1;font-weight:600;font-size:17px;letter-spacing:-.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:0;transition:opacity .15s}
@@ -124,9 +125,14 @@ html[data-view="session"] .fab,html[data-view="sub"] .fab{display:none}
 @keyframes msgIn{from{opacity:0;transform:translate3d(0,10px,0)}to{opacity:1;transform:none}}
 .toast{transition:opacity .18s ease,transform .22s cubic-bezier(.2,.9,.25,1)}
 .toast.off{opacity:0;transform:translateY(8px)}
-.btn,.chip,.opt,.subi,.iconbtn,.slash,.clip,.send,.back,.subbtn,.fab{transition:transform .12s ease-out,opacity .12s}
-/* нажатие — тоном и прозрачностью, без масштаба (вкус владельца, designkit-owner) */
-.btn:active,.chip:active,.opt:active,.subi:active,.iconbtn:active,.slash:active,.clip:active,.send:active,.subbtn:active,.fab:active{opacity:.6}
+.btn,.chip,.opt,.subi,.iconbtn,.slash,.clip,.send,.back,.subbtn,.fab{transition:transform .12s ease-out,opacity .12s,box-shadow .12s ease-out}
+/* нажатие — заливкой тоном, без масштаба (вкус владельца, designkit-owner) */
+.btn:active,.chip:active,.opt:active,.subi:active,.iconbtn:active,.slash:active,.clip:active,.send:active,.subbtn:active,.fab:active{box-shadow:inset 0 0 0 999px var(--press)}
+.fab:active{box-shadow:inset 0 0 0 999px var(--press),0 8px 24px rgba(0,0,0,.18)}
+/* залитые кнопки: тон нажатия цветом их же текста — --press (ink) на заливке ink/lime не виден (Fable Н1) */
+.iconbtn.plus:active,.btn.pri:active,.send:active{box-shadow:inset 0 0 0 999px color-mix(in srgb,var(--action-ink) 22%,transparent)}
+.fab:active{box-shadow:inset 0 0 0 999px color-mix(in srgb,var(--action-ink) 22%,transparent),0 8px 24px rgba(0,0,0,.18)}
+#session-screen .send:active{box-shadow:inset 0 0 0 999px color-mix(in srgb,var(--lab-lime-ink) 22%,transparent)}
 .card:active{background:color-mix(in srgb,var(--panel) 80%,var(--ink))}  /* press tone ΔL* ≥15 in both themes (owner 27.10: 8–10 % is too little) */
 .cw.act .card{transition:none}  /* transform ведут палец и пружина — CSS-переход их не догоняет */
 .lb{transition:none}
@@ -138,6 +144,20 @@ html[data-view="session"] .fab,html[data-view="sub"] .fab{display:none}
 /* поле у самого низа: нижний безопасный отступ iPhone несёт только строка квоты под полем; с клавиатурой строки нет — поле прилегает к клавиатуре (владелец 20.10: «поле слишком высоко») */
 html.kb #session-screen .sfoot .squota{display:none}
 #session-screen .compose{position:static;margin-bottom:6px;padding:6px;gap:4px;border-radius:30px;background:var(--glass-cap);-webkit-backdrop-filter:var(--glass-fx);backdrop-filter:var(--glass-fx);box-shadow:var(--shadow)}
+.tobot{position:absolute;right:max(var(--gut),calc((100% - 696px)/2));bottom:100%;margin-bottom:8px;width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:var(--glass-cap);color:var(--ink);-webkit-backdrop-filter:var(--glass-fx);backdrop-filter:var(--glass-fx);box-shadow:var(--shadow)}
+#s-tobot{margin-left:0;margin-right:0}
+.tobot .cnt{position:absolute;top:-6px;right:-6px;min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:var(--lab-lime);color:var(--lab-lime-ink);font-size:12px;font-weight:600;line-height:20px;text-align:center;font-variant-numeric:tabular-nums}
+html:has(.lab-ask-root[data-state="pill"]) #s-tobot{margin-bottom:62px}  /* пилюля вопроса стоит по центру над полем: кнопка выше неё */
+.tobot:active,.skeys button:active,.snext button:active{background:color-mix(in srgb,var(--ink) 16%,var(--panel))}
+.snext{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px;margin-bottom:6px;padding:0 4px 0 16px;border-radius:22px;background:var(--glass-cap);-webkit-backdrop-filter:var(--glass-fx);backdrop-filter:var(--glass-fx);box-shadow:var(--shadow);font-size:14px;color:var(--muted)}
+.snext button{flex:none;min-height:44px;padding:0 14px;border-radius:22px;color:var(--ink);font:inherit;font-weight:600}
+.skeys{display:flex;gap:6px;margin-bottom:6px}
+.skeys button{flex:none;min-width:48px;min-height:44px;padding:0 14px;border-radius:22px;background:var(--glass-cap);-webkit-backdrop-filter:var(--glass-fx);backdrop-filter:var(--glass-fx);box-shadow:var(--shadow);color:var(--ink);font:inherit;font-size:15px;font-weight:500}
+.skeys #s-screen{margin-left:auto}
+/* поле: две строки и больше — кнопки уходят в нижний ряд, текст на всю ширину (вкус владельца 11.11) */
+#session-screen .compose.ml{flex-wrap:wrap}
+#session-screen .compose.ml textarea{order:-1;flex:1 1 100%}
+#session-screen .compose.ml .send{margin-left:auto}
 #s-attach{display:flex;gap:8px;overflow-x:auto;padding:0 0 8px;scrollbar-width:none}
 #s-attach[hidden]{display:none}
 #s-attach::-webkit-scrollbar{display:none}
@@ -215,15 +235,19 @@ html.list-scrolled .lbar{opacity:1}html.list-scrolled .top h1{opacity:0}html.loc
 /* карточки */
 .list{display:grid;gap:8px;padding:24px 0 96px}  /* 24 from the quota tiles to the first label or card, on every tab */
 /* полка «ждут вас»: карточки вбок над списком; карточка — настоящая .card[data-id], раскрытие растёт из неё */
-.card{display:grid;grid-template-columns:32px minmax(0,1fr) auto;gap:2px 12px;align-items:center;background:var(--panel);border-radius:var(--r);box-shadow:var(--shadow);padding:13px 16px;text-align:left;width:100%}
+.card{display:grid;grid-template-columns:32px minmax(0,1fr) auto;gap:2px 12px;align-items:center;background:var(--panel);border-radius:var(--r);box-shadow:var(--shadow);padding:9px 16px;text-align:left;width:100%}
 .st{font-size:15px;line-height:1.35}
 .nm{font-weight:500;font-size:16px;line-height:1.3;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
 .tm{font-size:13px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
 .ds{grid-column:2/4;color:var(--muted);font-size:14px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.card.lines .ds{-webkit-line-clamp:2}  /* вопрос до двух строк, имя всегда в одну */
 .tags{grid-column:2/4;display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
 .tag{font-size:12.5px;padding:2px 8px;border-radius:8px;background:var(--soft);color:var(--muted)}
 .tag.cur{color:var(--ink)}
 .empty{color:var(--muted);text-align:center;padding:48px 16px}
+.empty p{margin:0}
+.list-off{margin:0;padding:2px 0 8px;color:var(--muted);font-size:13px;line-height:1.35;text-align:center}
+.list>[data-new]{width:100%}
 .cw{position:relative;border-radius:var(--r);touch-action:pan-y}
 .cw .ca{position:absolute;inset:0 0 0 auto;width:112px;display:flex;padding-left:8px}
 .cw .ca button{flex:1;background:var(--soft);color:var(--ink);font-weight:600;font-size:14px;line-height:1.2;padding:0 8px;border-radius:var(--r)}
@@ -402,7 +426,7 @@ textarea.field{min-height:120px;resize:vertical}
 .cw .ca{visibility:hidden}.cw.act .ca{visibility:visible}
 .iconbtn{border-radius:50%}
 .compose textarea:focus{background:color-mix(in srgb,var(--panel) 88%,var(--ink))}
-.field:focus{background:color-mix(in srgb,var(--soft) 80%,var(--ink))}
+.field:focus-visible{outline:2px solid var(--link);outline-offset:-2px}  /* один фокус полей: как у «Своего ответа» */
 .cmdi .btn{flex:none;min-height:40px;padding:8px 14px;font-size:14px}
 .sheet .sx{position:absolute;top:10px;right:10px;width:44px;height:44px;border-radius:50%;display:grid;place-items:center;color:var(--muted)}
 .sheet{position:fixed}
@@ -429,7 +453,7 @@ textarea.field{min-height:120px;resize:vertical}
 .brow .bm{display:block;color:var(--muted);font-size:13.5px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bst{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;color:var(--muted);white-space:nowrap}
 .bst::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
-.bst.on{color:var(--ink)}.bst.bad{color:var(--danger)}
+.bst.on{color:var(--ink)}.bst.bad{color:color-mix(in srgb,var(--danger) 80%,var(--ink))}
 #bots-sheet .btn.pri{width:100%;margin-top:12px;min-height:48px}
 #bots-sheet .btn.quiet{width:100%;margin-top:8px;min-height:48px}
 .b-empty{display:grid;gap:4px;padding:6px 0 2px}
@@ -525,6 +549,9 @@ textarea.field{min-height:120px;resize:vertical}
   <section style="margin-top:14px"><div class="hist" id="s-hist"></div></section>
  </div>
  <div class="sfoot">
+  <button class="tobot" type="button" id="s-tobot" hidden aria-label="Jump to latest" data-i18n-attr="aria-label:toEnd"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v13M6 12.5l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+  <div class="snext" id="s-next" hidden><span id="s-next-t"></span><button type="button" id="s-next-go"><span data-i18n="nextGo">Next</span> ›</button></div>
+  <div class="skeys" id="s-keys" hidden><button type="button" data-k="y">y</button><button type="button" data-k="n">n</button><button type="button" data-k="enter" aria-label="Enter">⏎</button><button type="button" data-k="esc">Esc</button><button type="button" id="s-screen" data-i18n="keyScreen">Screen</button></div>
   <div id="s-attach" hidden></div>
   <div class="compose"><button class="slash" type="button" id="s-slash" aria-label="Claude Code commands" data-i18n-attr="aria-label:slashAria"><svg width="22" height="22"><use href="#i-slash"/></svg></button><button class="clip" type="button" id="s-clip" aria-label="Attach files" data-i18n-attr="aria-label:attachAria"><svg width="22" height="22"><use href="#i-clip"/></svg></button><input type="file" id="s-file" multiple hidden><textarea id="s-text" rows="1" placeholder="Message" aria-label="Message to the session" data-i18n-attr="aria-label:messageAria"></textarea><button class="send" type="button" id="s-send" aria-label="Send" data-i18n-attr="aria-label:send" disabled><svg width="22" height="22"><use href="#i-up"/></svg></button></div>
   <div class="squota" id="s-quota" hidden></div>
@@ -805,6 +832,7 @@ const STR = {
   "updateAvailable": "Update available",
   "updateNow": "Update",
   "whatNow": "What's happening",
+  "toEnd": "Jump to latest", "keyScreen": "Screen", "nextWait": "{n} more waiting", "nextGo": "Next",
   "slashAria": "Claude Code commands",
   "attachAria": "Attach files",
   "removeAria": "Remove",
@@ -849,6 +877,7 @@ const STR = {
   "sumWork": "working",
   "noSessions": "No sessions",
   "listFail": "Couldn't load sessions",
+  "listOff": "Offline · data from {t}",
   "retry": "Retry",
   "permTitle": "Permission",
   "permPill": "Permission · {title}",
@@ -1126,6 +1155,7 @@ const STR = {
   "updateAvailable": "Доступно обновление",
   "updateNow": "Обновить",
   "whatNow": "Что сейчас",
+  "toEnd": "К последним", "keyScreen": "Экран", "nextWait": "Ещё ждут {n}", "nextGo": "Следующая",
   "slashAria": "Команды Claude Code",
   "attachAria": "Прикрепить файлы",
   "removeAria": "Убрать",
@@ -1170,6 +1200,7 @@ const STR = {
   "sumWork": "в работе",
   "noSessions": "Сессий нет",
   "listFail": "Не удалось загрузить сессии",
+  "listOff": "Нет связи · данные на {t}",
   "retry": "Повторить",
   "permTitle": "Разрешение",
   "permPill": "Разрешение · {title}",
@@ -1242,7 +1273,7 @@ const STR = {
   "stDone": "готово",
   "stOld": "сменилась",
   "stFailed": "ошибка",
-  "subsRun": "Сабтаски · <b>{w} работают</b> из {t}",
+  "subsRun": "Сабтаски · <b>работает {w}</b> из {t}",
   "subsAll": "Сабтаски · {t}",
   "chainOld": "Старая версия — продолжена в «{name}»",
   "chainPrev": "Продолжение №{k} · предыдущая «{name}»",
@@ -1441,6 +1472,19 @@ function listHTML(el, html){
 const waitOf = s => { const q = s.wait_question && s.wait_question.question, b = s.perm && s.perm_body; return b ? (permTitleOf(s) ? permTitleOf(s) + " · " + b : b) : q || s.prompt_line || ""; };
 const detailOf = s => s.perm ? (permTitleOf(s) ? t("permWait") + " · " + permTitleOf(s) : t("permWait")) : s.detail === "stopped" ? t("stStopped") : (s.detail || "");
 const permTitleOf = s => String(s.perm_title || (s.perm && s.perm.title) || "");
+let listFails = 0, listOkAt = 0;  // две ошибки опроса подряд — тихая строка, пока не придёт успешный ответ; тост не трогаем
+function listDown(){
+  if (listFails < 2 || !listOkAt) return "";
+  const when = new Date(listOkAt).toLocaleTimeString(LOC(), {hour: "2-digit", minute: "2-digit", hourCycle: "h23"});
+  return `<p class="list-off">${esc(t("listOff", {t: when}))}</p>`;
+}
+function appBadge(n){
+  try{
+    const nav = navigator;
+    if (n > 0){ if (typeof nav.setAppBadge === "function") Promise.resolve(nav.setAppBadge(n)).catch(() => {}); }
+    else if (typeof nav.clearAppBadge === "function") Promise.resolve(nav.clearAppBadge()).catch(() => {});
+  }catch(e){}
+}
 function dotCls(s){ return s.perm ? "ask" : s.failed ? "fail" : s.ask ? "ask" : ({wait: "wait", work: "work", done: "done"}[s.group] || ""); }
 function quotaLine(){
   const q = (data && data.quota) || {}, el = $("s-quota");
@@ -1457,8 +1501,11 @@ function renderList(){
   if (cnt("wait")) parts.push(`<span><b>${cnt("wait")}</b> ${t("sumWait")}</span>`);
   if (cnt("work")) parts.push(`<span><b>${cnt("work")}</b> ${t("sumWork")}</span>`);
   const bar = (label, v, extra) => v == null ? "" : `<span>${label}</span><span class="qbar" role="img" aria-label="${label}: ${Math.round(v)} %"><i class="${v >= 85 ? "hot" : ""}" style="width:${Math.max(2, Math.min(100, v))}%"></i></span><span class="qv">${Math.round(v)} %${extra ? ` <small>${esc(extra)}</small>` : ""}</span>`;
+  const waitingN = S.filter(s => s.group === "wait" || s.perm).length;
+  appBadge(waitingN);
   const qh = bar(t("h5"), q.h5, q.h5_reset ? t("until", {t: q.h5_reset}) : "") + bar(t("d7"), q.d7, "")
     + (q.pinned || []).map(r => bar(esc(r.title + (r.sub ? " · " + r.sub : "")), r.pct, r.reset ? t("until", {t: r.reset}) : "").replace('class="qbar"', `class="qbar" data-k="p:${esc(r.id)}"`)).join("");
+  $("quota").dataset.waiters = waitingN ? "1" : "0";  // layers.js сворачивает плитки в строку, пока кто-то ждёт
   listHTML($("quota"), qh + (q.stale ? `<span></span><span style="grid-column:2/4">${t("staleQuota")}</span>` : ""));
   $("quota").hidden = !qh;
   listHTML($("sum"), parts.join("") || `<span>${t("noSessions")}</span>`);
@@ -1467,6 +1514,7 @@ function renderList(){
   listHTML($("chips"), chips.map(([k,lbl,n]) => `<button class="chip" type="button" data-f="${k}" aria-pressed="${k === filter}">${lbl}<span class="n">${n}</span></button>`).join(""));
   let rows = filter === "act" ? S.filter(s => s.group === "wait").concat(S.filter(s => s.group === "work")) : S.filter(s => inGroup(s, filter));
   const bulk = filter === "done" && rows.length ? `<button class="btn" type="button" id="arch-all" style="width:100%">${t("archAll", {n: rows.length})}</button>` : "";
+  const nWait = S.filter(s => s.group === "wait" || s.perm).length;
   const card = s => {
     const tags = [];
     if (s.current) tags.push(`<span class="tag cur">${t("curVer")}</span>`);
@@ -1475,7 +1523,8 @@ function renderList(){
     if (s.watched) tags.push(`<span class="tag">${t("watchedTag")}</span>`);
     const act = (s.group === "archived" || s.group === "old") ? t("unarchive") : t("toArchive");
     const ds = (s.group === "wait" || s.perm) && waitOf(s) || detailOf(s);
-    return `<div class="cw" data-cw="${esc(s.id)}"><div class="ca"><button type="button" data-arch="${esc(s.id)}">${act}</button></div><button class="card${s.perm ? " perm" : ""}${s.id === current ? " cur" : ""}" type="button" data-id="${esc(s.id)}"><span class="sc" aria-hidden="true">${s.perm ? '<svg class="pi"><use href="#i-lock"/></svg>' : `<span class="dot ${dotCls(s)}"></span>`}</span><span class="nm">${esc(nameOf(s))}</span><span class="tm">${esc(s.ago)}</span>${ds ? `<span class="ds">${esc(ds)}</span>` : ""}${tags.length ? `<span class="tags">${tags.join("")}</span>` : ""}</button></div>`;
+    const lines = (s.perm || (s.group === "wait" && nWait <= 3)) ? " lines" : "";  // 2 строки вопроса: разрешению всегда, ждущим пока их ≤3, иначе плотнее — больше карточек на экране
+    return `<div class="cw" data-cw="${esc(s.id)}"><div class="ca"><button type="button" data-arch="${esc(s.id)}">${act}</button></div><button class="card${s.perm ? " perm" : ""}${lines}${s.id === current ? " cur" : ""}" type="button" data-id="${esc(s.id)}"><span class="sc" aria-hidden="true">${s.perm ? '<svg class="pi"><use href="#i-lock"/></svg>' : `<span class="dot ${dotCls(s)}"></span>`}</span><span class="nm">${esc(nameOf(s))}</span><span class="tm">${esc(s.ago)}</span>${ds ? `<span class="ds">${esc(ds)}</span>` : ""}${tags.length ? `<span class="tags">${tags.join("")}</span>` : ""}</button></div>`;
   };
   // «Активные» — два раздела: сначала то, что ждёт вас
   let body;
@@ -1483,11 +1532,17 @@ function renderList(){
   const pm = (filter === "act" || filter === "wait") ? rows.filter(s => s.perm) : [];
   const permSec = pm.length ? `<div class="lsec">${t("secPerm", {n: pm.length})}</div>` + pm.map(card).join("") : "";
   if (pm.length) rows = rows.filter(s => !s.perm);
-  if (filter === "act"){
-    const w = rows.filter(s => s.group === "wait"), k = rows.filter(s => s.group === "work");
+  if (filter === "act" || filter === "wait"){
+    const w = rows.filter(s => s.group === "wait"), k = filter === "act" ? rows.filter(s => s.group === "work") : [];
     body = permSec + (w.length ? `<div class="lsec">${t("secWait", {n: w.length})}</div>` + w.map(card).join("") : "") + (k.length ? `<div class="lsec">${t("secWork", {n: k.length})}</div>` + k.map(card).join("") : "");
   } else body = permSec + rows.map(card).join("");
-  listHTML($("list"), bulk + (rows.length || pm.length ? body : `<div class="empty">${filter === "act" ? t("emptyAct") : t("emptyHere")}</div>`));
+  let main;
+  if (rows.length || pm.length) main = body;
+  else if (filter === "act"){
+    const recent = S.filter(s => s.group === "done").sort((a, b) => (b.updated || 0) - (a.updated || 0)).slice(0, 3);
+    main = `<div class="empty"><p>${t("emptyAct")}</p></div>` + recent.map(card).join("") + `<button class="btn pri" type="button" data-new>${t("newSession")}</button>`;
+  } else main = `<div class="empty">${t("emptyHere")}</div>`;
+  listHTML($("list"), listDown() + bulk + main);
   // активный фильтр — в видимой области, с отступом 12px (без прилипания первого к краю)
   const cb = $("chips"), ac = cb.querySelector('[aria-pressed="true"]');
   if (ac){ const l = ac.offsetLeft - 12, r = ac.offsetLeft + ac.offsetWidth + 12 - cb.clientWidth;
@@ -1546,6 +1601,7 @@ $("chips").addEventListener("click", e => { const b = e.target.closest(".chip");
   }, true);
 })();
 $("list").addEventListener("click", e => {
+  if (e.target.closest("[data-new]")){ openNew(); return; }
   if (e.target.closest("#arch-all")){
     const go = async ok => { if (!ok) return; try{ const r = await api("archive_done", {}); haptic("ok"); toast(t("archivedCount", {n: r.count || 0})); await loadList(); }catch(x){ toast(t("failed")); } };
     tg && tg.showConfirm ? tg.showConfirm(t("confAll"), go) : go(window.confirm(t("confAllPlain")));
@@ -1556,13 +1612,13 @@ $("list").addEventListener("click", e => {
 
 async function loadList(){
   if (appReloading) return;
-  try{ const fresh = await api("sessions"); if (appReloading) return; data = fresh; document.documentElement.dataset.voice = fresh.voice ? "1" : ""; renderList(); quotaLine(); }  // voice.js читает способность распознавания отсюда
+  try{ const fresh = await api("sessions"); if (appReloading) return; data = fresh; listFails = 0; listOkAt = Date.now(); document.documentElement.dataset.voice = fresh.voice ? "1" : ""; renderList(); quotaLine(); }  // voice.js читает способность распознавания отсюда
   catch(e){
     if (appReloading) return;
     if (e.message === "auth"){
       if (STANDALONE){ show("gate"); }
       else { listHTML($("sum"), `<span>${t("openFromTg")}</span>`); listHTML($("list"), ""); }
-    } else if (data){ toast(t("listFail")); }
+    } else if (data){ if (++listFails === 1) toast(t("listFail")); if (listFails >= 2) renderList(); }  // тост один раз за обрыв, дальше говорит строка «Нет связи» (Fable Н2)
     else { listHTML($("list"), `<div class="empty"><p>${t("listFail")}</p><button class="btn" type="button" data-retry-list>${t("retry")}</button></div>`); }
   }
 }
@@ -1731,7 +1787,7 @@ function renderSession(){
   else if (s.prev){ ch.hidden = false; ch.textContent = t("chainPrev", {k: s.k, name: String(s.prev.name).replace(/^🗂\s*/, "")}); ch.dataset.id = s.prev.id; }
   else ch.hidden = true;
   $("s-links").hidden = sb.hidden && ch.hidden;
-  const showReason = s.detail && !s.question && !s.perm;
+  const showReason = s.detail && !s.question && !s.perm && s.group !== "work";  // в работе тот же текст идёт живой строкой под лентой
   $("s-reason").hidden = !showReason; $("s-reason-t").textContent = s.detail || "";
   renderQuestion();
   $("a-watch").innerHTML = `${t("notifications")} <span class="aval">${t(s.watched ? "watchOn" : "watchOff")}</span>`;
@@ -1785,7 +1841,37 @@ function renderSession(){
     if (stick) requestAnimationFrame(() => toBottom());
   }
   $("s-meta").textContent = [s.cwd, s.id].filter(Boolean).join(" · ");
+  syncFoot();
 }
+/* над полем: быстрые клавиши терминала, «Ещё ждут N», кнопка «в конец» со счётчиком новых */
+let afterAns = null, endLen = -1;
+const isTerm = s => !/^s-[0-9a-f]{8}$/.test(s.id);
+function answered(id){ afterAns = id; loadList().then(syncFoot); }
+function syncFoot(){
+  const s = sess; if (!s || s.id !== current) return;
+  $("s-keys").hidden = !(s.group === "wait" && !s.question && !s.perm && isTerm(s) && afterAns !== s.id);  // только что ответили — ждёт уже не терминал
+  const others = afterAns === s.id && !s.question && !s.perm && data ? data.sessions.filter(x => x.group === "wait" && x.id !== s.id) : [];
+  $("s-next").hidden = !others.length;
+  if (others.length){ $("s-next-t").textContent = t("nextWait", {n: others.length}); $("s-next").dataset.id = others[0].id; }
+  const b = $("s-body"), n = (s.history || []).length, end = stick || b.scrollHeight - b.scrollTop - b.clientHeight < 24;
+  if (end || endLen < 0) endLen = n;
+  const far = b.scrollHeight - b.scrollTop - b.clientHeight > b.clientHeight, btn = $("s-tobot"), k = far ? Math.max(0, n - endLen) : 0;
+  btn.hidden = !far;
+  let cnt = btn.querySelector(".cnt");
+  if (k){ if (!cnt){ cnt = document.createElement("span"); cnt.className = "cnt"; btn.appendChild(cnt); } cnt.textContent = k; } else if (cnt) cnt.remove();
+}
+$("s-body").addEventListener("scroll", () => syncFoot(), {passive: true});
+$("s-tobot").addEventListener("click", () => toBottom());
+$("s-next-go").addEventListener("click", () => { const id = $("s-next").dataset.id; afterAns = null; if (id) openSession(id); });
+$("s-keys").addEventListener("click", async e => {
+  const b = e.target.closest("[data-k], #s-screen"); if (!b || !sess) return; haptic();
+  const id = encodeURIComponent(sess.id);
+  try{
+    if (b.id === "s-screen"){ const r = await api(`session/${id}/screen`); if (r.screen == null) toast(r.error || t("keyFail")); else openScreen(r.screen); return; }
+    const r = await api(`session/${id}/key`, {key: b.dataset.k});
+    if (r.ok === false) toast(r.error || t("keyFail")); else if (r.menu) openScreen(r.screen); else { toast(t("done")); setTimeout(loadSession, 800); }
+  }catch(x){ toast(t("keyFail")); }
+});
 let permPending = null, permVersion = 0;
 const ownAnswerRequests = new Map();
 let ownAnswerVersion = 0;
@@ -1839,7 +1925,7 @@ $("s-question").addEventListener("click", async e => {
   if (answering) return;
   answering = true; b.disabled = true; haptic();
   const failed = () => $("s-question").dispatchEvent(new CustomEvent("question:fail", {bubbles: true})); /* слой вернёт лист */
-  try{ const r = await api(`session/${encodeURIComponent(sess.id)}/answer`, body); if (!r.ok){ toast(r.error || t("failed")); failed(); } else haptic("ok"); await loadSession(); }
+  try{ const r = await api(`session/${encodeURIComponent(sess.id)}/answer`, body); if (!r.ok){ toast(r.error || t("failed")); failed(); } else{ haptic("ok"); answered(sess.id); } await loadSession(); }
   catch(x){ toast(t("netRetry")); failed(); }
   finally{ answering = false; b.disabled = false; }
 });
@@ -1863,7 +1949,7 @@ async function submitOwnAnswer(text, id, key){
     if (ownAnswerRequests.get(id) === request && view === "session" && current === id && sess && sess.id === id && !sess.perm && ownQuestionKey(sess.question) === key){
       if (request.result?.ok){
         sess.question = request.session.question; haptic("ok");
-        if (!sess.question) toast(t("ansSent"));
+        if (!sess.question){ toast(t("ansSent")); answered(sess.id); }
       }
       renderQuestion();
       if (request.result?.ok && !sess.question) loadSession();
@@ -1901,7 +1987,7 @@ async function answerPermission(b){
     if (current !== id || version !== permVersion || !sess || sess.id !== id) return;
     if (r.code === "stale" && r.perm) sess.perm = r.perm;
     else if (r.code === "closed"){ sess.perm = null; toast(t("permClosed")); }
-    else if (r.ok && (r.already || r.perm === null)){ sess.perm = null; toast(t("permSent")); haptic("ok"); }
+    else if (r.ok && (r.already || r.perm === null)){ sess.perm = null; toast(t("permSent")); haptic("ok"); answered(id); }
     else if (r.ok && r.perm) sess.perm = r.perm;
     else toast(r.error || t("failed"));
   }catch(e){ if (current === id) toast(e.message === "auth" ? t("authMsg") : t("netRetry")); }
@@ -1938,7 +2024,7 @@ async function openSession(id){
   stashDraft();
   permVersion++;
   ownAnswerVersion++;
-  current = id; document.querySelectorAll("#list .card").forEach(c => c.classList.toggle("cur", c.dataset.id === id)); sess = (data && data.sessions.find(s => s.id === id)) || {id, name: "…", group: "work"}; lastHist = ""; stick = true;
+  afterAns = null; endLen = -1; current = id; document.querySelectorAll("#list .card").forEach(c => c.classList.toggle("cur", c.dataset.id === id)); sess = (data && data.sessions.find(s => s.id === id)) || {id, name: "…", group: "work"}; lastHist = ""; stick = true;
   const own = ownAnswerRequests.get(id);
   if (own) sess = {...own.session};
   draftOut = false; $("s-text").value = drafts.get(id) || ""; atts = attDrafts.get(id) || []; attDrafts.delete(id); renderAtt(); setMode("send"); $("s-text").blur();
@@ -1964,7 +2050,8 @@ $("s-chain").addEventListener("click", () => { const id = $("s-chain").dataset.i
 /* поле ввода */
 /* вложения черновика: {file, url}; уходят одним /upload вместе с текстом */
 let atts = [];
-function autosize(){ const t = $("s-text"); t.style.height = "auto"; t.style.height = Math.min(160, t.scrollHeight) + "px"; $("s-send").disabled = !t.value.trim() && !(atts.length && (t.dataset.mode || "send") === "send"); }
+/* ≥2 строк: нижний ряд кнопок, снимается только с пустым полем (без мерцания) */
+function autosize(){ const t = $("s-text"); t.style.height = "auto"; t.style.height = Math.min(160, t.scrollHeight) + "px"; const cp = t.parentElement; if (!t.value) cp.classList.remove("ml"); else if (t.scrollHeight > 50 || t.value.includes("\n")) cp.classList.add("ml"); t.style.height = "auto"; t.style.height = Math.min(160, t.scrollHeight) + "px"; $("s-send").disabled = !t.value.trim() && !(atts.length && (t.dataset.mode || "send") === "send"); }
 $("s-text").addEventListener("input", autosize);
 $("s-send").addEventListener("click", sendText);
 let sending = false;

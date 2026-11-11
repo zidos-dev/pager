@@ -2178,7 +2178,7 @@ def slash_commands():
 
 
 KEY_MAP = {**{str(i): str(i) for i in range(1, 10)}, "up": "Up", "down": "Down", "left": "Left",
-           "right": "Right", "tab": "Tab", "enter": "Enter", "esc": "Escape"}
+           "right": "Right", "tab": "Tab", "enter": "Enter", "esc": "Escape", "y": "y", "n": "n"}
 _TAG_RE = re.compile(r"<[^>]+>")
 _PASTED_TAG_RE = re.compile(r"</?pasted_content\b[^>]*>")
 _CMD_NAME_RE = re.compile(r"<command-name>\s*(.*?)\s*</command-name>", re.S)
@@ -3008,7 +3008,7 @@ HERDR_LIMIT = 4 << 20          # one reply is never longer than this
 HERDR_ID_RE = re.compile(r"^h-[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$")
 # tmux key names (KEYS / KEY_MAP) -> herdr key names
 HERDR_KEYS = {"Up": "up", "Down": "down", "Left": "left", "Right": "right", "Tab": "tab", "Enter": "enter",
-              "Escape": "esc", **{str(i): str(i) for i in range(1, 10)}}
+              "Escape": "esc", "y": "y", "n": "n", **{str(i): str(i) for i in range(1, 10)}}
 HERDR_STATES = {"working": "working", "blocked": "blocked", "idle": "blocked", "done": "done",
                 "unknown": "working"}  # idle/blocked = the agent waits for the owner
 

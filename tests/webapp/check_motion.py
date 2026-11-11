@@ -60,7 +60,7 @@ try:
     p.goto(U+"/app/"); p.wait_for_timeout(1500)
     PRESS="""async sel=>{const e=document.querySelector(sel);if(!e)return {sel,miss:1};
       const t=e.matches('.lf-item')?e.querySelector('span.l'):e,look=()=>{const c=getComputedStyle(e),ct=getComputedStyle(t);
-        return {tf:new DOMMatrix(ct.transform==='none'?undefined:ct.transform).a,sc:ct.scale==='none'?1:parseFloat(ct.scale),bg:c.backgroundColor,op:+c.opacity}};
+        return {tf:new DOMMatrix(ct.transform==='none'?undefined:ct.transform).a,sc:ct.scale==='none'?1:parseFloat(ct.scale),bg:c.backgroundColor+'|'+c.boxShadow,op:+c.opacity}};
       const a=look();return {sel,a}}"""
     for sel in ("#list .card","#new-btn","#lab-fcap .lf-item:not([aria-pressed=true])"):
         a=p.evaluate(PRESS,sel)["a"]; box=p.locator(sel).first.bounding_box()

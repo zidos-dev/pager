@@ -230,7 +230,7 @@ def details(page, ctx, state):
         button = rows.nth(index)
         short = button.locator(".lab-ask-t").inner_text()
         full = TMUX["options"][index]["label"]
-        check(short != full and len(short) <= 49 and " · " not in short, f"label not shortened: {short!r}")
+        check(short == full, f"label is the full text (l3 №4): {short!r}")
         expect(button).to_have_attribute("aria-label", full)
         expect(button).to_have_attribute("title", full)
 

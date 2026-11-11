@@ -181,18 +181,23 @@ html[data-lab-theme="dark"] .lab-ask-scrim{background:rgba(0,0,0,.3)}
   padding-bottom:calc(env(safe-area-inset-bottom,0px) + 14px)}
 .lab-ask-head{padding:0 var(--gut,16px) 10px;touch-action:none;cursor:grab;flex:none}
 .lab-ask-grip{width:36px;height:5px;border-radius:3px;background:var(--glass-ink);opacity:.22;margin:9px auto 14px}
+.lab-ask-quote{display:block;width:100%;margin:0 0 12px;padding:8px 12px;border-radius:14px;text-align:left;font:inherit;font-size:14px;line-height:1.4;overflow-wrap:anywhere;
+  background:color-mix(in srgb,var(--glass-ink) 7%,transparent);color:color-mix(in srgb,var(--glass-ink) 68%,transparent)}
+.lab-ask-quote>span{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden}  /* кнопка сама не может быть -webkit-box в Safari */
+.lab-ask-quote[aria-expanded="true"]{max-height:calc(var(--vvh,100dvh) * .3);overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y}
+.lab-ask-quote[aria-expanded="true"]>span{display:block;-webkit-line-clamp:unset}
 .lab-ask-cap{font-size:12.5px;font-weight:600;letter-spacing:.2px;opacity:.55;margin-bottom:6px}
 .lab-ask-q{font-size:21px;line-height:1.28;font-weight:650;letter-spacing:-.3px;overflow-wrap:anywhere;text-wrap:balance}
 .lab-ask-list{display:grid;grid-auto-rows:max-content;gap:8px;padding:6px var(--gut,16px) 4px;overflow-y:auto;overscroll-behavior:contain;min-height:0;touch-action:none}
 .lab-ask-root.scrolls .lab-ask-list{touch-action:pan-y}
 .lab-ask-opt{display:flex;align-items:center;gap:14px;width:100%;min-height:56px;padding:9px 16px;border-radius:18px;text-align:left;
   background:color-mix(in srgb,var(--glass-ink) 7%,transparent);color:inherit;font:inherit;
-  transform:scale(1);transition:transform var(--m-state-t,302ms) var(--m-state),background-color var(--m-fade-t,180ms) var(--m-fade),color 180ms var(--m-fade);
+  transform:scale(1);transition:transform var(--m-state-t,302ms) var(--m-state),background-color var(--m-fade-t,180ms) var(--m-fade),color 180ms var(--m-fade),box-shadow 120ms var(--m-fade);
   animation:lab-ask-in var(--m-reveal-t,284ms) var(--m-reveal) both;animation-delay:180ms}  /* варианты вместе: без ступенчатости (designkit-owner) */
 /* смена шага на месте: лист не въезжает, варианты не выезжают заново — содержимое проявляется целиком (layers.js build/stepFrom) */
 .lab-ask-root.step .lab-ask-opt{animation:none}
 @keyframes lab-ask-in{from{opacity:0;transform:translate3d(0,10px,0)}to{opacity:1;transform:none}}
-.lab-ask-opt.pressed{background:color-mix(in srgb,var(--glass-ink) 14%,transparent);transition-duration:120ms}
+.lab-ask-opt.pressed{box-shadow:inset 0 0 0 999px var(--press);transition-duration:120ms}  /* заливка тоном, как у карточек списка */
 .lab-ask-mk{flex:none;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-size:14px;font-weight:650;font-variant-numeric:tabular-nums;
   background:color-mix(in srgb,var(--glass-ink) 9%,transparent);transition:background-color 160ms var(--m-fade),color 160ms var(--m-fade)}
 .lab-ask-tx{min-width:0;display:flex;flex-direction:column;gap:1px}
@@ -200,7 +205,7 @@ html[data-lab-theme="dark"] .lab-ask-scrim{background:rgba(0,0,0,.3)}
 .lab-ask-d{font-size:14px;line-height:1.3;opacity:.58;overflow-wrap:anywhere}
 .lab-ask-ans{padding:10px 16px;border-radius:18px;background:color-mix(in srgb,var(--glass-ink) 7%,transparent);font-size:15px;line-height:1.35;overflow-wrap:anywhere}
 .lab-ask-opt.picked{background:var(--lab-lime);color:var(--lab-lime-ink)}
-.lab-ask-opt.picked .lab-ask-mk{background:rgba(25,48,6,.14)}
+.lab-ask-opt.picked .lab-ask-mk,.lab-ask-root.permission .perm-yes .lab-ask-mk{background:rgba(25,48,6,.14)}
 .lab-ask-opt.picked .lab-ask-d{opacity:.75}
 .lab-ask-root.multi .lab-ask-mk svg{opacity:0;transition:opacity 140ms var(--m-fade)}
 .lab-ask-root.multi .lab-ask-opt[aria-pressed="true"]{background:color-mix(in srgb,var(--lab-lime) 55%,transparent)}
@@ -208,8 +213,9 @@ html[data-lab-theme="dark"] .lab-ask-scrim{background:rgba(0,0,0,.3)}
 .lab-ask-root.multi .lab-ask-opt[aria-pressed="true"] .lab-ask-mk svg{opacity:1}
 .lab-ask-actions{display:flex;flex-wrap:wrap;gap:8px;padding:10px var(--gut,16px) 0;flex:none}
 .lab-ask-btn{flex:1 1 0;min-width:120px;min-height:48px;border-radius:16px;padding:10px 14px;font:inherit;font-size:15.5px;font-weight:550;color:inherit;
-  background:color-mix(in srgb,var(--glass-ink) 7%,transparent);transition:opacity 120ms var(--m-fade)}
-.lab-ask-btn:active{opacity:.6}
+  background:color-mix(in srgb,var(--glass-ink) 7%,transparent);transition:box-shadow 120ms var(--m-fade)}
+.lab-ask-btn:active{box-shadow:inset 0 0 0 999px var(--press)}
+.lab-ask-btn.pri:active,.lab-ask-btn.picked:active,.lab-ask-opt.picked.pressed,.lab-ask-root.permission .perm-yes.pressed{box-shadow:inset 0 0 0 999px color-mix(in srgb,var(--lab-lime-ink) 22%,transparent)}  /* лайм: темнее, а не ink поверх */
 .lab-ask-btn.pri{flex-basis:100%;background:var(--lab-lime);color:var(--lab-lime-ink);font-weight:650}
 .lab-ask-btn.picked{background:var(--lab-lime);color:var(--lab-lime-ink)}
 .lab-ask-root.busy .lab-ask-sheet{pointer-events:none}
@@ -231,15 +237,21 @@ html[data-lab-theme="dark"] .lab-ask-root.multi .lab-ask-opt[aria-pressed="true"
 .lab-ask-own label{font-size:14px;font-weight:550;opacity:.65;padding:0 4px}
 .lab-ask-own-text{display:block;width:100%;min-height:64px;max-height:136px;box-sizing:border-box;resize:none;border:0;border-radius:16px;padding:12px;
   background:color-mix(in srgb,var(--glass-ink) 7%,transparent);color:inherit;font:inherit;font-size:16px;line-height:1.4;overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y}
-.lab-ask-own-text:focus-visible{outline:2px solid var(--lab-lime);outline-offset:-2px}
+.lab-ask-own-text:focus-visible{outline:2px solid var(--link);outline-offset:-2px}
 .lab-ask-own-actions{display:flex;gap:8px}
 .lab-ask-own-actions .lab-ask-btn.pri{flex-basis:0}
 .lab-ask-own-error{font-size:14px;line-height:1.35;color:color-mix(in srgb,var(--danger) 80%,var(--glass-ink));overflow-wrap:anywhere;max-height:3.5em;overflow-y:auto}
 .lab-ask-own .lab-ask-btn:disabled{opacity:.5}
 .lab-ask-root.own-open .lab-ask-sheet{touch-action:pan-y}
+.lab-ask-root.own-open .lab-ask-quote{display:none}  /* свой ответ с клавиатурой: шапка ограничена по высоте, цитата уступает место */
 .lab-ask-root.own-open .lab-ask-head{flex:none;max-height:calc(var(--vvh,100dvh) * .24);overflow-y:auto}
 .lab-ask-root.own-open .lab-ask-list{touch-action:pan-y}
 @media (prefers-reduced-motion:reduce){.lab-ask-own{animation:none}}
+/* широкий экран: вопрос живёт в правой панели узкой колонкой, список слева остаётся читаемым (размытие панели не трогаем) */
+@media (min-width:1000px){
+  .lab-ask-root:not(.permission){left:404px;right:12px;top:12px;height:calc(100dvh - 24px);border-radius:28px;overflow:hidden}
+  .lab-ask-root:not(.permission) .lab-ask-sheet{max-width:520px}
+}
 
 /* Разрешение остаётся в общем листе; длинная команда прокручивается отдельно. */
 html[data-lab-theme="dark"]{--perm-danger:#ff6b61}
@@ -249,8 +261,9 @@ html[data-lab-theme="dark"]{--perm-danger:#ff6b61}
 .lab-perm-content>.lab-perm-summary,.lab-perm-content>.lab-perm-path,.lab-perm-content>.lab-perm-note,.lab-perm-content>.lab-perm-question{margin-left:8px;margin-right:8px}
 .lab-perm-content .lab-perm-body{flex:0 1 auto;min-height:0;background:color-mix(in srgb,var(--glass-ink) 7%,transparent)}
 .lab-ask-root.permission .lab-ask-list{overflow:visible;touch-action:pan-y;padding:6px 0 4px}
-.lab-ask-root.permission .perm-deny{margin-top:10px;background:var(--panel);color:var(--perm-danger)}
+.lab-ask-root.permission .perm-deny{margin-top:10px}  /* тихая подложка как у соседей; красный только у ошибок */
 .lab-ask-root.permission .perm-selected{background:color-mix(in srgb,var(--glass-ink) 12%,transparent)}
+.lab-ask-root.permission .perm-yes{background:var(--lab-lime);color:var(--lab-lime-ink)}  /* один акцент листа: главное действие */
 .lab-ask-root.permission .lab-ask-opt:disabled{opacity:.6}
 
 /* lab-quota.css — Квота: Б — перекатывающиеся цифры и тонкие капсулы. */
@@ -291,6 +304,15 @@ html .lq.many[data-n="4"]:not([hidden]){grid-template-columns:1fr 1fr}
 .lq.many .lqp{font-size:13px}
 .lq.many .lqc{margin-top:6px}
 .lq.many .lqr,.lq.many .lqb{display:none}
+/* ждущие сессии: плитки сворачиваются в одну строку, тап открывает тот же лист */
+html .lq.quiet:not([hidden]){display:flex;align-items:center;min-height:44px;margin-top:12px;transition:background-color .15s ease-out}
+.lq.quiet .lqt,.lq.quiet .lqstale{display:none}
+.lqline{font-size:12px;line-height:1.35;color:var(--muted);font-variant-numeric:tabular-nums}
+.lqline .lqx{color:var(--ink);font-weight:600}
+.lqline .lqx.warn{color:var(--lq-warn)}
+.lqline .lqx.hot{color:var(--danger)}
+.lqline .lqn{font-size:12px;font-weight:600;letter-spacing:0;color:inherit;vertical-align:-.24em}  /* как .lab-sq: inline-flex+overflow садит базовую линию на низ */
+#lab-q.quiet:active{background:color-mix(in srgb,var(--canvas) 80%,var(--ink))}
 .lqstale{grid-column:1/-1;font-size:12px;color:var(--muted);padding:0 2px}
 /* одометр */
 .lqn{display:inline-flex;font-variant-numeric:tabular-nums;line-height:1.1;height:1.1em;overflow:hidden;align-items:flex-start}
@@ -306,7 +328,7 @@ html .lq.many[data-n="4"]:not([hidden]){grid-template-columns:1fr 1fr}
 .lab-sq .lqx.warn{color:var(--lq-warn)}
 .lab-sq .lqx.hot{color:var(--danger)}
 .lab-sq .lqn{color:inherit}
-@media (prefers-reduced-motion:reduce){.lqd,.lqb,.lqc i{transition-duration:1ms}}
+@media (prefers-reduced-motion:reduce){.lqd,.lqb,.lqc i,html .lq.quiet:not([hidden]){transition-duration:1ms}}
 
 /* Шапка — отдельный flex-ряд экрана, за пределами прокрутки #s-body.
    Остаётся внутри #session-screen: существующий clip-path слоёв раскрывает её вместе с экраном. */
@@ -315,6 +337,9 @@ html .lq.many[data-n="4"]:not([hidden]){grid-template-columns:1fr 1fr}
 :root:not(.in-tg) .session-header{padding-top:calc(env(safe-area-inset-top,0px) + 4px)}
 .session-header-row{display:flex;align-items:center;gap:8px;min-height:48px}
 .session-back{flex:none}
+.session-back .back{min-width:44px;justify-content:center;padding:0}  /* только стрелка: название в шапке получает место */
+.session-back .back svg{margin-left:0}
+.session-back .back span{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .session-heading{flex:1;min-width:0}
 .session-heading h2{margin:0;font-size:17px;line-height:22px;font-weight:600;letter-spacing:-.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .session-status{display:flex;align-items:center;gap:6px;min-width:0;color:var(--muted);font-size:13px;line-height:18px}

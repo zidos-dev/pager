@@ -175,12 +175,18 @@ def d5(page, ctx, datafile):
             raise AssertionError(f"quota did not reach {value}% within 20s; swiped={swiped}")
         page.wait_for_timeout(1000)
         # Проверяем конечное положение цифр, а не только aria-label.
-        visible_number = page.locator('#lab-q .lqt').first.evaluate("""e=>Array.from(e.querySelectorAll('.lqd')).map(d=>{
-          if(d.classList.contains('z'))return '';
-          const r=d.getBoundingClientRect();return Array.from(d.querySelectorAll('b')).find(b=>{
-            const q=b.getBoundingClientRect();return Math.abs(q.top-r.top)<2;
-          })?.textContent;
-        }).join('')""")
+        visible_number = page.evaluate("""()=>{
+          const line=document.querySelector('#lab-q .lqline');
+          const live=line&&!line.hidden&&line.getBoundingClientRect().height>2;
+          const e=live?line.querySelector('.lqx'):document.querySelector('#lab-q .lqt');
+          if(!e)return '';
+          return Array.from(e.querySelectorAll('.lqd')).map(d=>{
+            if(d.classList.contains('z'))return '';
+            const r=d.getBoundingClientRect();return Array.from(d.querySelectorAll('b')).find(b=>{
+              const q=b.getBoundingClientRect();return Math.abs(q.top-r.top)<2;
+            })?.textContent||'';
+          }).join('');
+        }""")
         check(visible_number == str(round(value)), f"visible odometer={visible_number}, expected={value}")
         if not swiped:
             print(f"PASS D5 {ctx.browser.browser_type.name} ordinary refresh in {time.monotonic()-started:.1f}s", flush=True)

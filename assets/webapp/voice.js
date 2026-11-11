@@ -19,8 +19,9 @@ const STR={
 const lang=()=>/^ru/i.test(document.documentElement.lang||"")?"ru":"en";  // тот же признак, что applyI18n в index.html
 const t=k=>STR[lang()][k];
 
-const compose=document.querySelector(".compose"),sendBtn=$("s-send"),ta=$("s-text");
-if(!compose||!sendBtn||!ta)return;
+const compose=document.querySelector(".compose"),sendBtn=$("s-send"),ta0=$("s-text");
+if(!compose||!sendBtn||!ta0)return;
+let ta=ta0;  // поле, куда встанет текст: поле сессии или «Свой ответ» в листе вопроса
 
 /* index.html заморожен, поэтому стили состояния кнопки живут здесь */
 const style=document.createElement("style");
@@ -41,11 +42,13 @@ style.textContent='#s-mic[aria-pressed="true"]{color:var(--danger)}#s-mic:disabl
   '@media (prefers-reduced-motion:reduce){.vo-layer,.vo-card{transition:opacity 150ms}.vo-card{transform:none}}';
 document.head.appendChild(style);
 
-const mic=document.createElement("button");
-mic.type="button";mic.id="s-mic";mic.className="clip";mic.hidden=true;
-mic.setAttribute("aria-pressed","false");
-mic.innerHTML='<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.5a3 3 0 0 0-3 3v3a3 3 0 0 0 6 0v-3a3 3 0 0 0-3-3z"/><path d="M5 11.5a7 7 0 0 0 14 0"/><path d="M12 18.5v3"/></svg>';
-compose.insertBefore(mic,sendBtn);
+const mic0=document.createElement("button");
+mic0.type="button";mic0.id="s-mic";mic0.className="clip";mic0.hidden=true;
+mic0.setAttribute("aria-pressed","false");
+mic0.innerHTML='<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.5a3 3 0 0 0-3 3v3a3 3 0 0 0 6 0v-3a3 3 0 0 0-3-3z"/><path d="M5 11.5a7 7 0 0 0 14 0"/><path d="M12 18.5v3"/></svg>';
+compose.insertBefore(mic0,sendBtn);
+let mic=mic0;  // кнопка, у которой идёт запись
+
 
 const haptic=()=>{try{const h=window.Telegram&&window.Telegram.WebApp&&window.Telegram.WebApp.HapticFeedback;h&&h.impactOccurred("light");}catch(e){}};
 /* авторизация — как у загрузки файлов (index.html, /upload); токен читаем заново на каждую отправку */
@@ -76,9 +79,10 @@ const voiceOk=()=>document.documentElement.dataset.voice==="1";  // выстав
 const canRec=()=>!!(window.MediaRecorder&&navigator.mediaDevices&&navigator.mediaDevices.getUserMedia);
 function update(){
   const label=t("mic");
-  if(mic.getAttribute("aria-label")!==label)mic.setAttribute("aria-label",label);
-  const micOn=mode!=="idle"||(voiceOk()&&canRec()&&!ta.value.trim()&&!hasAtt());
-  mic.hidden=!micOn;sendBtn.hidden=micOn;  // микрофон и «Отправить» делят одно место в поле
+  if(mic0.getAttribute("aria-label")!==label)mic0.setAttribute("aria-label",label);
+  const micOn=(mode!=="idle"&&mic===mic0)||(voiceOk()&&canRec()&&!ta0.value.trim()&&!hasAtt());
+  mic0.hidden=!micOn;sendBtn.hidden=micOn;
+  document.querySelectorAll(".lo-mic").forEach(b=>{b.hidden=!(voiceOk()&&canRec())&&!(mode!=="idle"&&mic===b);if(b.getAttribute("aria-label")!==label)b.setAttribute("aria-label",label);});  // микрофон и «Отправить» делят одно место в поле
 }
 
 /* ---------- слой записи ---------- */
@@ -127,13 +131,13 @@ function layerClose(){
 let mode="idle";  // idle → ask → rec → stop → send
 let rec=null,stream=null,chunks=[],autostop=0,watch=0,ctx="";
 const metaNow=()=>{const el=$("s-meta");return el?String(el.textContent||""):"";};
-const gone=()=>{const sc=$("session-screen");return !sc||sc.hidden||metaNow()!==ctx;};  // ушли или сменилась сессия
+const gone=()=>{const sc=$("session-screen");return !sc||sc.hidden||metaNow()!==ctx||(ta!==ta0&&(!ta.isConnected||!!ta.closest("[hidden]")));};  // ушли, сменилась сессия, закрыт лист или форма «Свой ответ»
 function stopStream(){if(stream){stream.getTracks().forEach(x=>{try{x.stop();}catch(e){}});stream=null;}}
 function reset(){
   clearInterval(watch);watch=0;clearTimeout(autostop);autostop=0;
   if(rec){try{rec.onstop=rec.ondataavailable=rec.onerror=null;}catch(e){}if(rec.state!=="inactive"){try{rec.stop();}catch(e){}}rec=null;}
   stopStream();chunks=[];mode="idle";layerClose();
-  mic.disabled=false;mic.setAttribute("aria-pressed","false");update();
+  mic.disabled=false;mic.setAttribute("aria-pressed","false");mic=mic0;ta=ta0;update();
 }
 function watchdog(){  // запись (и распознавание) живут только в своей сессии
   if(mode!=="idle"&&gone())reset();
@@ -185,7 +189,8 @@ async function post(blob){
     if(text&&!gone()){  // пусто — заменить, иначе добавить через пробел
       const v=ta.value.trim();
       ta.value=v?v+" "+text:text;
-      autosize();ta.focus();
+      if(ta===ta0)autosize();else ta.dispatchEvent(new Event("input",{bubbles:true}));  // лист вопроса сам считает высоту и кнопку «Отправить»
+      ta.focus();
     }
     reset();return;
   }
@@ -193,11 +198,25 @@ async function post(blob){
   reset();
 }
 
-mic.addEventListener("click",()=>{
-  if(mic.disabled)return;
-  if(mode==="rec")stop();
-  else if(mode==="idle"&&voiceOk()&&canRec())start().catch(()=>{});
-});
+function toggle(btn,field){
+  if(btn.disabled)return;
+  if(mode==="rec"&&mic===btn)stop();
+  else if(mode==="idle"&&voiceOk()&&canRec()){mic=btn;ta=field;start().catch(()=>{});}
+}
+mic0.addEventListener("click",()=>toggle(mic0,ta0));
+
+/* «Свой ответ» в листе вопроса (layers.js строит лист при каждом вопросе): тот же механизм записи, текст встаёт в поле ответа */
+style.textContent+='.lo-mic{flex:none;width:48px;min-width:48px;padding:0;display:grid;place-items:center;border-radius:50%}.lo-mic[aria-pressed="true"]{color:var(--danger)}';
+const MIC_SVG=mic0.innerHTML;
+function attachOwn(root){
+  const box=root.querySelector&&root.querySelector(".lab-ask-own-actions"),field=root.querySelector&&root.querySelector(".lab-ask-own-text");
+  if(!box||!field||box.querySelector(".lo-mic"))return;
+  const b=document.createElement("button");b.type="button";b.className="lab-ask-btn lo-mic";b.id="lo-mic";b.hidden=true;b.setAttribute("aria-pressed","false");b.innerHTML=MIC_SVG;
+  b.addEventListener("click",()=>toggle(b,field));
+  box.insertBefore(b,box.firstChild);update();
+}
+new MutationObserver(ms=>{for(const m of ms)for(const n of m.addedNodes)if(n.nodeType===1&&n.classList.contains("lab-ask-root"))attachOwn(n);}).observe(document.body,{childList:true});
+document.querySelectorAll(".lab-ask-root").forEach(attachOwn);
 
 /* пустоту поля ловим на input и focus (продукт меняет поле программно, но setMode даёт фокус)
    и спокойным интервалом; способность сервера обновляем изредка, при возврате на страницу и при входе в сессию */

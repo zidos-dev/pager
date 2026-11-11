@@ -23,7 +23,7 @@ function setup() {
     $(id) { return elements[id] ||= {dataset: {}, style: {}, value: '', blur() {}, addEventListener() {}}; },
     document: {querySelectorAll: () => []},  // openSession marks .card.cur in the list (f68c8b8)
     t: key => key, esc: String, haptic: value => effects.push(['haptic', value]),
-    toast: value => effects.push(['toast', value]),
+    toast: value => effects.push(['toast', value]), answered: () => {},
     push(value) { sandbox.view = value; }, setMode() {}, quotaLine() {}, autosize() {}, clearAtt() {}, renderAtt() {}, atts: [], MODES: {send: 'message'}, appReloading: false,
     renderPermission() {},
     renderSession() { rendered.push(sandbox.sess.id); vm.runInContext('renderQuestion()', context); },

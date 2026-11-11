@@ -172,6 +172,14 @@ class H(http.server.BaseHTTPRequestHandler):
                 with DATA_LOCK, open(os.environ["SEND_LOG"], "a") as log:
                     log.write(json.dumps({"new": new_data}) + "\n")
             return self.j({"ok": True, "menu": False})  # as before: no id
+        if len(parts) == 4 and parts[:2] == ["api", "session"] and parts[3] == "key":  # как сервер: клавиша в терминал, в ответе экран
+            key = json.loads(raw or b"{}").get("key")
+            if key not in ("1", "2", "3", "4", "5", "up", "down", "tab", "enter", "esc", "y", "n"):
+                return self.j({"ok": False, "error": "Key not allowed"}, 400)
+            if os.environ.get("KEY_LOG"):
+                with DATA_LOCK, open(os.environ["KEY_LOG"], "a") as log:
+                    log.write(json.dumps({"sid": parts[2], "key": key}) + "\n")
+            return self.j({"ok": True, "menu": False, "screen": None})
         if len(parts) == 4 and parts[:2] == ["api", "session"] and parts[3] == "answer":
             return self.answer(parts[2], raw)
         if len(parts) == 4 and parts[:2] == ["api", "session"] and parts[3] == "send":  # сервер отвечает после вставки в tmux (1–2 с)
@@ -431,6 +439,7 @@ class H(http.server.BaseHTTPRequestHandler):
                 if os.environ.get("GET_LOG"):
                     with DATA_LOCK, open(os.environ["GET_LOG"], "a") as log:
                         log.write(json.dumps({"sid": sid, "delay": delay, "phase": "completed"}) + "\n")
+            if len(parts) == 2 and parts[1] == "screen": return self.j({"menu": False, "screen": "Proceed? [y/n]\n> "})
             if len(parts) == 2 and parts[1] == "subagents": return self.j(R["subagents"].get(sid, {"subagents": []}))
             if len(parts) == 3 and parts[1] == "subagent": return self.j(R["subagent"].get(parts[2]) or {"history": []})
             d = current["session"].get(sid)

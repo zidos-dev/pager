@@ -48,7 +48,7 @@ self.addEventListener('fetch', (event) => {
 self.addEventListener('push', (event) => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch (e) { data = {}; }
-  const title = data.title || 'Claude Sessions';
+  const title = data.title || 'Zidos Pager';
   event.waitUntil(self.registration.showNotification(title, {
     body: data.body || '',
     tag: data.tag || undefined,

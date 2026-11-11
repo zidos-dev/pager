@@ -6725,6 +6725,16 @@ class HerdrTests(unittest.TestCase):
         self.assertTrue(res["ok"])
         self.assertIn("Do you want", res["screen"])
 
+    def test_api_key_accepts_y_n_for_terminal_prompts(self):
+        fake = FakeHerdr(self)
+        e = herdr_env(self, fake)
+        e.bot.known["h-w1.p2"] = {"id": "h-w1.p2", "source": "herdr", "name": "x"}
+        for k in ("y", "n"):
+            code, res = e.bot.api_key("h-w1.p2", k)
+            self.assertEqual((code, res["ok"]), (200, True))
+        self.assertEqual([p["keys"][0] for m, p in fake.requests if m == "pane.send_keys"], ["y", "n"])
+        self.assertEqual(e.bot.api_key("h-w1.p2", "x")[0], 400)
+
     def test_card_and_notify_hide_unsupported_actions(self):
         m = cc.card_markup("h-w1.p2", current=True, watched=False, topic=True)
         acts = [b["callback_data"].split(":")[0] for r in m["inline_keyboard"] for b in r]

@@ -22,8 +22,8 @@ PORT = int(os.environ.get("PORT", "18985"))
 URL = f"http://127.0.0.1:{PORT}"
 GUT = 16
 TOP_GAP = 24  # quota tiles -> first section label or card, on every tab
-GAP = """()=>{const t=[...document.querySelectorAll('#list-screen .lqt')].pop(),f=[...document.querySelectorAll('#list > *')].find(e=>e.offsetHeight>0);
- return t&&f?Math.round(f.getBoundingClientRect().top-t.getBoundingClientRect().bottom):null}"""
+GAP = """()=>{const t=document.querySelector('#lab-q'),f=[...document.querySelectorAll('#list > *')].find(e=>e.offsetHeight>0);
+ return t&&f&&t.offsetHeight?Math.round(f.getBoundingClientRect().top-t.getBoundingClientRect().bottom):null}"""
 ASK_SID = "a1c3e5f7"  # demo session with an open question
 # [label, selector, which edges: l = left of the box, r = right, t = left of the first text line]
 EDGES = """(spec)=>{const vw=innerWidth,out=[];
@@ -34,8 +34,7 @@ EDGES = """(spec)=>{const vw=innerWidth,out=[];
    if(sides.includes('r'))out.push([lab,'right',Math.round(vw-r.right)]);
    if(sides.includes('t')){const g=document.createRange();g.selectNodeContents(e);const q=g.getClientRects()[0];out.push([lab,'text',Math.round(q?q.left:r.left)])}}}
  return out}"""
-LIST = [["title", "#list-screen .top h1", "t"], ["quota tile", "#list-screen .lqt:first-child", "l"],
-        ["quota tile", "#list-screen .lqt:last-child", "r"],
+LIST = [["title", "#list-screen .top h1", "t"], ["quota", "#lab-q", "lr"],
         ["section label", "#list-screen .lsec", "t"], ["card", "#list-screen .card", "lr"],
         ["capsule", "#lab-fcap", "lr"]]
 SESSION = [["assistant bubble", "#s-body .msg:not(.me):not(.thinking)", "l"], ["own bubble", "#s-body .me", "r"],

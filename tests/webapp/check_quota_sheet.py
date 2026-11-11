@@ -1,11 +1,19 @@
 """Тап по плиткам квоты открывает лист «Квоты»: строки Claude (5 ч, 7 дн) + строки CC_STATUS_FILE, «Обновить» шлёт POST
 и показывает, когда можно обновить снова (сервер не зовёт команду чаще мин. интервала). Клавиатура: Enter на плитках.
 Run: python3 tests/webapp/check_quota_sheet.py   (свой стенд на PORT, по умолчанию 18983; Chromium + WebKit, 393×659)"""
-import os, sys, subprocess, time, urllib.request
+import json, os, sys, subprocess, tempfile, time, urllib.request
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).parent; PORT = int(os.environ.get("PORT", "18983")); U = f"http://127.0.0.1:{PORT}"
-srv = subprocess.Popen([sys.executable, str(ROOT / "stand_server.py")], env=dict(os.environ, PORT=str(PORT)), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+# Плитки на списке есть, только когда никто не ждёт: демо без ожидающих, чтобы сетка и закрепление проверялись как раньше.
+_demo = json.loads((ROOT.parent / "stand" / "demo2.json").read_text())
+for _row in _demo["sessions"]["sessions"]:
+    if _row.get("group") == "wait" or _row.get("perm"):
+        _row["group"] = "work"
+        _row["perm"] = False
+_data = Path(tempfile.gettempdir()) / f"quota-sheet-{PORT}.json"
+_data.write_text(json.dumps(_demo))
+srv = subprocess.Popen([sys.executable, str(ROOT / "stand_server.py")], env=dict(os.environ, PORT=str(PORT), DATA_FILE=str(_data)), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 for _ in range(50):
     try: urllib.request.urlopen(U + "/api/sessions", timeout=.3).close(); break
     except OSError: time.sleep(.1)
@@ -70,4 +78,5 @@ try:
         b.close()
 finally:
     srv.kill()
+    _data.unlink(missing_ok=True)
 print("FAILS", fails); sys.exit(1 if fails else 0)
