@@ -86,7 +86,7 @@ def main():
                         print(f"PASS {engine} multi-select", flush=True)
                     except Exception as error:
                         failures += 1
-                        print(f"FAIL {engine} multi-select: {(str(error) if os.environ.get("VERBOSE") else str(error).splitlines()[0])}", flush=True)
+                        print(f"FAIL {engine} multi-select: {(str(error) if os.environ.get('VERBOSE') else str(error).splitlines()[0])}", flush=True)
                     finally:
                         ctx.close()
                         browser.close()

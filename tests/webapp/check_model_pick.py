@@ -32,7 +32,8 @@ def fits(page, sel):
 
 def shot(page, name):  # SHOTS=<dir>: screenshots for an eye check
     if os.environ.get("SHOTS"):
-        page.screenshot(path=os.path.join(os.environ["SHOTS"], f"{name}-{page.evaluate('matchMedia(\"(prefers-color-scheme: dark)\").matches') and 'dark' or 'light'}.png"), full_page=True)
+        theme = "dark" if page.evaluate("matchMedia('(prefers-color-scheme: dark)').matches") else "light"
+        page.screenshot(path=os.path.join(os.environ["SHOTS"], f"{name}-{theme}.png"), full_page=True)
 
 
 def bot_card(page, lang):

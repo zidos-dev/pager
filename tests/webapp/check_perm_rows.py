@@ -92,7 +92,7 @@ def main():
                                 check(not errors, f"page errors {errors}")
                                 print(f"PASS {engine} {lang} {theme}", flush=True)
                             except Exception as e:
-                                failures += 1; print(f"FAIL {engine} {lang} {theme}: {(str(e) if os.environ.get("VERBOSE") else str(e).splitlines()[0])}", flush=True)
+                                failures += 1; print(f"FAIL {engine} {lang} {theme}: {(str(e) if os.environ.get('VERBOSE') else str(e).splitlines()[0])}", flush=True)
                             finally:
                                 ctx.close()
                     browser.close()
