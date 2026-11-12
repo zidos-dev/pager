@@ -57,20 +57,23 @@ def chat_sandbox(cwd, write=False):
     """Bash of a chat session runs at once inside the OS sandbox: it reads the project and nothing else in the
     home folder, writes nothing (a change has to leave the sandbox, which is a permission request), and reaches
     only the project site. No sandbox, no session: it never falls back to running unsandboxed."""
-    site = os.environ.get("CC_CHAT_SITE", "").strip()  # the project site the sandbox may reach without asking; empty: none
+    site = _chat_site()  # the project site the sandbox may reach without asking; empty: none. A URL form is cut to its host (N8)
     root = os.path.realpath(cwd)
     hidden = [os.path.join(root, x) for x in CHAT_HIDDEN]
     # the Linux sandbox ignores globs («root/*» let any write through) and the root itself breaks bwrap (it cannot
-    # make mount points for its own missing files): every entry is named; a new top-level file is still possible
+    # make mount points for its own missing files): every entry is named; a new top-level file is still possible (denyWrite on the root breaks bwrap: the CLI adds its own missing mount points such as .gitconfig, 2.1.322)
     try:
         top = sorted(os.listdir(root))
     except OSError:
         top = []
     # the owner's session writes in the project, but never into git, its own settings or MCP config
     deny = hidden if write else [os.path.join(root, x) for x in top + [x for x in CHAT_HIDDEN if x not in top]]
+    # reads: only the clone and the system dirs ordinary commands need; CC_CHAT_READ_ANY=1 restores the old «all but ~/»
+    fs = {"denyRead": ["~/"], "allowRead": [root]} if os.environ.get("CC_CHAT_READ_ANY", "").strip() == "1" else \
+        {"denyRead": ["/"], "allowRead": [root, "/usr", "/bin", "/lib", "/lib64", "/etc/ssl", "/etc/alternatives"]}
     return {"enabled": True, "autoAllowBashIfSandboxed": True, "allowUnsandboxedCommands": True,
             "failIfUnavailable": True,
-            "filesystem": {"denyRead": ["~/"], "allowRead": [root], "denyWrite": deny},
+            "filesystem": {**fs, "denyWrite": deny},
             "network": {"allowedDomains": [site, "*." + site] if site else []}}
 
 
@@ -88,8 +91,32 @@ def public_host(host):
         addrs = {a[4][0] for a in socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP)}
     except (OSError, UnicodeError):
         return False
-    # shortcut: checked at ask time, the fetch resolves again (DNS rebinding); upgrade — pin the address in the fetch
+    # checked once here; the fetch resolves again (DNS rebinding). Chat auto-allow does not trust a bare name: chat_net_ok.
     return bool(addrs) and all(ipaddress.ip_address(a.split("%")[0]).is_global for a in addrs)
+
+
+def _chat_site():
+    """CC_CHAT_SITE as a hostname (optional leading «*.»). Empty: the chat has no site."""
+    site = os.environ.get("CC_CHAT_SITE", "").strip().lower().rstrip(".")
+    if "://" in site:
+        try:
+            site = (urllib.parse.urlsplit(site).hostname or "").lower().rstrip(".")
+        except ValueError:
+            return ""
+    return site[2:] if site.startswith("*.") else site
+
+
+def chat_net_ok(host):
+    """Whether a chat session may open this host without asking.
+    A name outside CC_CHAT_SITE waits for the owner: the address checked here is not the one the fetch will use.
+    CC_CHAT_WEB_ANY=1 restores the old rule (any name whose addresses are all global)."""
+    if os.environ.get("CC_CHAT_WEB_ANY", "").strip() == "1":
+        return public_host(host)
+    site = _chat_site()
+    host = str(host or "").lower().rstrip(".")
+    if not site or (host != site and not host.endswith("." + site)):
+        return False
+    return public_host(host)
 
 
 def chat_free(tool, inp):
@@ -97,11 +124,11 @@ def chat_free(tool, inp):
     any public https page, sandbox network to a public host. Addresses of this machine and its networks wait for the owner."""
     if tool == "WebSearch":
         return True
-    if tool == "Bash" and isinstance(inp, dict) and inp.get("dangerouslyDisableSandbox") is not True:
+    if tool == "Bash" and isinstance(inp, dict) and inp.get("dangerouslyDisableSandbox") in (None, False):  # «true» as a string is not «in the sandbox» (N10)
         # runs inside the OS sandbox whatever it is (the CLI still asks for «$(…)» and the like): nothing to confirm
         return True
     if tool == "SandboxNetworkAccess" and isinstance(inp, dict):
-        return public_host(inp.get("host"))
+        return chat_net_ok(inp.get("host"))
     if tool != "WebFetch" or not isinstance(inp, dict):
         return False
     url = str(inp.get("url") or "")
@@ -111,7 +138,7 @@ def chat_free(tool, inp):
         u = urllib.parse.urlsplit(url)
     except ValueError:
         return False
-    return u.scheme == "https" and u.port in (None, 443) and public_host(u.hostname)
+    return u.scheme == "https" and u.port in (None, 443) and chat_net_ok(u.hostname)
 
 # ---- the owner's permission rules ------------------------------------------------------------------------
 # perms.json (Claude Code rule syntax): {"sessions": {"mode", "allow", "deny"}, "chat": {...}}; read on every decision,
@@ -146,7 +173,16 @@ def perm_cli_deny(path, chat):
         return []
     if not os.path.isfile(path):
         return None
-    pol = perm_load(path, chat) or {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            raw = json.load(f)
+    except (OSError, ValueError):
+        return None  # unreadable is not «no rules»: the caller must not start a client without them
+    if not isinstance(raw, dict):
+        return None
+    pol = raw.get("chat" if chat else "sessions")
+    if not isinstance(pol, dict):
+        pol = {}
     deny = pol.get("deny") if isinstance(pol.get("deny"), list) else []
     out = []
     for r in deny:
@@ -188,6 +224,202 @@ def _bash_rule(spec, seg):
     return seg == spec.strip()
 
 
+# deny matching only. Allow rules keep the raw segment, so a policy with no deny decides as before.
+_ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+_WRAP = ("env", "command", "sudo", "time", "nohup", "timeout", "nice", "ionice", "setsid", "stdbuf", "exec", "doas", "busybox")
+_SHELLS = ("bash", "sh", "dash", "zsh", "ksh", "mksh", "fish", "ash")
+_KEYWORDS = ("!", "if", "then", "do", "else", "elif", "while", "until")  # «if true; then rm x; fi»: the command follows
+_GIT_ARG = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--super-prefix",
+            "--config-env", "--list-cmds", "--attr-source"}
+_XARGS_ARG = {"-a", "-E", "-e", "-I", "-i", "-L", "-l", "-n", "-P", "-s", "-d", "--arg-file", "--eof",
+              "--replace", "--max-lines", "--max-args", "--max-procs", "--max-chars", "--delimiter"}
+_WRAP_ARG = {
+    "env": {"-u", "--unset", "-C", "--chdir", "--argv0", "--block-signal", "--default-signal", "--ignore-signal"},
+    "sudo": {"-u", "-g", "-U", "-C", "-D", "-h", "-p", "-r", "-t", "-T", "-R", "--user", "--group",
+             "--close-from", "--prompt", "--role", "--type", "--other-user", "--command-timeout", "--chroot"},
+    "doas": {"-u", "-C"},
+    "timeout": {"-s", "--signal", "-k", "--kill-after"},
+    "nice": {"-n", "--adjustment"},
+    "ionice": {"-c", "--class", "-n", "--classdata", "-p", "--pid", "-P", "--pgid", "-u", "--uid"},
+    "stdbuf": {"-i", "--input", "-o", "--output", "-e", "--error"},
+}
+
+
+def _sh_words(seg):
+    try:
+        return shlex.split(seg, posix=True)
+    except ValueError:
+        return None
+
+
+def _take_flag(words, i, arg_opts):
+    """Index just after a flag at i, or None when a separate argument is missing."""
+    tok = words[i]
+    base, eq, _ = tok.partition("=")
+    if base in arg_opts and not eq and (tok.startswith("--") or len(tok) == 2):
+        if i + 1 >= len(words):
+            return None
+        return i + 2
+    return i + 1
+
+
+def _strip_group(seg):
+    """Drop a leading subshell or brace group. Leave «$(…)» alone: that segment is opaque."""
+    if "$(" in seg or "`" in seg:
+        return seg.strip()
+    seg = seg.strip()
+    while seg:
+        nxt = seg[1:].lstrip() if seg[0] in "({" else seg
+        if nxt and nxt[-1] in "});":
+            nxt = nxt[:-1].rstrip()
+        if nxt == seg:
+            return seg
+        seg = nxt
+    return seg
+
+
+def _sudo_shell(words):
+    """sudo -s / -i starts a shell; the command inside it is not the sudo token."""
+    for w in words[1:]:
+        if w == "--" or not w.startswith("-"):
+            break
+        if w.startswith("--"):
+            if w in ("--shell", "--login"):
+                return True
+            continue
+        if "s" in w[1:] or "i" in w[1:]:
+            return True
+    return False
+
+
+def _xargs_runs(words):
+    """True when xargs has a command (not the default echo)."""
+    i = 1
+    while i < len(words):
+        tok = words[i]
+        if tok == "--":
+            return i + 1 < len(words)
+        if not tok.startswith("-"):
+            return True
+        nxt = _take_flag(words, i, _XARGS_ARG)
+        if nxt is None:
+            return True
+        i = nxt
+    return False
+
+
+def _shell_c(args):
+    for w in args:
+        if w == "--":
+            break
+        if w == "-c" or (w.startswith("-") and not w.startswith("--") and "c" in w[1:]):
+            return True
+    return False
+
+
+def _drop_wrap(name, words):
+    """Drop one env/command/sudo/time/nohup and its flags. -> (rest, opaque)."""
+    arg = _WRAP_ARG.get(name, ())
+    i = 1
+    while i < len(words):
+        tok = words[i]
+        if tok == "--":
+            return words[i + 1:], False
+        if name == "env" and _ASSIGN.match(tok):
+            i += 1
+            continue
+        if not tok.startswith("-"):
+            break
+        base = tok.split("=", 1)[0]
+        if name == "env" and base in ("-S", "--split-string"):
+            return words, True  # env -S runs a shell string
+        nxt = _take_flag(words, i, arg)
+        if nxt is None:
+            return words, True
+        i = nxt
+    if name == "timeout":
+        i += 1  # its duration comes before the command
+    return words[i:], False
+
+
+def _git_global(words):
+    """Drop git's global options so «git -C dir push» is «git push». -> (words, opaque)."""
+    i = 1
+    while i < len(words):
+        tok = words[i]
+        if tok == "--":
+            return ["git"] + words[i + 1:], False
+        if not tok.startswith("-"):
+            break
+        nxt = _take_flag(words, i, _GIT_ARG)
+        if nxt is None:
+            return words, True
+        i = nxt
+    return ["git"] + words[i:], False
+
+
+def _unwrap(words):
+    """-> (command words, opaque). Assignments, wrappers and git globals are gone; the command is a basename."""
+    opaque = False
+    for _ in range(16):
+        while words and (_ASSIGN.match(words[0]) or words[0] in _KEYWORDS):
+            words = words[1:]
+        if not words:
+            return [], opaque
+        name = os.path.basename(words[0])
+        if name in _SHELLS:  # «sh -c '…'», «… | sh», «sh script»: what it runs is not on this line
+            return [name] + words[1:], True
+        if name == "find" and any(w in ("-exec", "-execdir", "-ok", "-okdir") for w in words[1:]):
+            return [name] + words[1:], True
+        if name == "eval":
+            return [name] + words[1:], True
+        if name == "xargs":
+            return [name] + words[1:], _xargs_runs(words)
+        if name not in _WRAP:
+            words = [name] + words[1:]
+            if name == "git":
+                words, bad = _git_global(words)
+                opaque = opaque or bad
+            return words, opaque
+        if name == "sudo" and _sudo_shell(words):
+            return [name] + words[1:], True
+        nxt, bad = _drop_wrap(name, words)
+        if bad:
+            return [name] + words[1:], True
+        words = nxt
+    return words, True
+
+
+def bash_deny_view(cmd):
+    """(segments a Bash deny rule can see, opaque).
+    Opaque: a substitution, bash -c / sh -c / eval, or xargs with a command. The caller must not mode:all that line
+    while any Bash deny rule exists — the hidden command was not read. With no deny rule this view is unused."""
+    if not isinstance(cmd, str) or not cmd.strip():
+        return [], False
+    # single-quoted text and quoted-heredoc bodies are literal: a «$(» there runs nothing
+    lit = re.sub(r"<<-?\s*(['\"])(\w+)\1.*?\n\s*\2(?=\n|$)", "", cmd, flags=re.S)
+    lit = re.sub(r"'[^']*'", "''", lit)
+    opaque = any(x in lit for x in ("$(", "`", "<(", ">("))
+    out = []
+    for seg in bash_segments(cmd, strict=False) or []:
+        raw = " ".join(seg.split())
+        if raw:
+            out.append(raw)
+        body = _strip_group(seg)
+        if not body:
+            continue
+        words = _sh_words(body)
+        if words is None:
+            continue  # a fragment of a quoted «;» or a heredoc line: the raw segment above was checked
+        words, op = _unwrap(words)
+        opaque = opaque or op
+        if words:
+            joined = " ".join(words)
+            if joined != raw:
+                out.append(joined)
+    return out, opaque
+
+
 def _tool_family(rule_tool, tool):
     if rule_tool == "Edit":
         return tool in EDIT_TOOLS
@@ -201,6 +433,23 @@ def _inside(real, root):
         return os.path.commonpath([real, root]) == root
     except ValueError:
         return False
+
+
+def _edits_hidden(real, cwd, chat):
+    """mode:edits must ask before writing git, Claude's settings, or the MCP and envrc files.
+    A chat session also stays out of every CHAT_HIDDEN name. real is a realpath, so «..» and symlinks count."""
+    root = os.path.realpath(cwd)
+    try:
+        rel = os.path.relpath(real, root)
+    except ValueError:
+        return True
+    if rel == ".." or rel.startswith(".." + os.sep):
+        return True
+    parts = rel.split(os.sep)  # every level: «sub/.claude/settings.json» runs hooks in a session opened in sub (N3)
+    if any(x in (".git", ".claude") for x in parts) or parts[-1] in (".mcp.json", ".envrc"):
+        return True
+    # a chat also keeps off CLAUDE.md: its text goes into the owner's own sessions in this clone
+    return bool(chat and (any(x in CHAT_HIDDEN for x in parts) or parts[-1] == "CLAUDE.md"))
 
 
 def _target(inp, cwd):
@@ -255,19 +504,20 @@ def perm_decide(pol, tool, inp, cwd, chat):
             return None, ""
         allow = [r for r in allow if perm_rule_parse(r)]
         deny = [r for r in deny if perm_rule_parse(r)]
+        bash_opaque = False
         if tool == "Bash":
-            loose = bash_segments(inp.get("command"), strict=False) or []
+            seen, bash_opaque = bash_deny_view(inp.get("command"))
             for r in deny:
                 t, spec = perm_rule_parse(r)
-                if t == "Bash" and any(_bash_rule(spec, seg) for seg in loose):
+                if t == "Bash" and any(_bash_rule(spec, seg) for seg in seen):
                     return "deny", r
         else:
             for r in deny:
                 if _rule_hit(r, tool, inp, cwd):
                     return "deny", r
-        if chat and ((tool == "Bash" and inp.get("dangerouslyDisableSandbox") is True)
-                     or (tool == "SandboxNetworkAccess" and not public_host(inp.get("host")))):
-            return None, ""  # past the sandbox: the owner decides, whatever the rules say
+        if chat and ((tool == "Bash" and inp.get("dangerouslyDisableSandbox") not in (None, False))
+                     or (tool == "SandboxNetworkAccess" and not chat_net_ok(inp.get("host")))):
+            return None, ""  # past the sandbox, or a name outside the site: the owner decides
         if tool == "Bash":
             if "Bash" in allow:
                 return "allow", "Bash"
@@ -281,10 +531,12 @@ def perm_decide(pol, tool, inp, cwd, chat):
                 if _rule_hit(r, tool, inp, cwd):
                     return "allow", r
         if mode == "all" and not chat:
-            return "allow", "mode:all"
+            # an unparsed command plus any Bash deny: do not pretend the line was read
+            if not (tool == "Bash" and bash_opaque and any(perm_rule_parse(r)[0] == "Bash" for r in deny)):
+                return "allow", "mode:all"
         if mode in ("edits", "all") and tool in EDIT_TOOLS:
             real = _target(inp, cwd)
-            if real and _inside(real, os.path.realpath(cwd)):
+            if real and _inside(real, os.path.realpath(cwd)) and not _edits_hidden(real, cwd, chat):
                 return "allow", "mode:edits"
     except Exception:  # a rule must never turn into an allow by crashing
         return None, ""
@@ -679,10 +931,14 @@ class Runner:
             load_sdk()
         except Exception:
             raise RunnerError("unavailable", "claude-agent-sdk is not installed")
+        chat = p.get("chat") is True
+        if isinstance(perms, str) and perm_cli_deny(perms, chat) is None:
+            log("perms unreadable")
+            raise RunnerError("unavailable", "permission rules are unreadable")
         s = Session(id="s-" + uuid.uuid4().hex[:8], session_id=str(uuid.uuid4()),
                     cwd=os.path.abspath(cwd), name=prompt.strip().splitlines()[0][:60],
-                    model=model, state="working", budget_usd=budget, chat=p.get("chat") is True,
-                    write=p.get("chat") is True and p.get("write") is True,
+                    model=model, state="working", budget_usd=budget, chat=chat,
+                    write=chat and p.get("write") is True,
                     perms=perms)
         self.sessions[s.id] = s
         self._save()
@@ -721,6 +977,10 @@ class Runner:
             # the CLI takes deny rules only at its start: end this client, the turn below resumes the conversation
             s.inbox.put_nowait(None)
             live_idle = False
+        if fresh is None and not live_idle:
+            # a new client would start with an empty deny list: refuse instead of dropping «never»
+            log("perms unreadable", s.id)
+            raise RunnerError("unavailable", "permission rules are unreadable")
         if not live_idle and s.task is not None and not s.task.done():
             # the previous task is still in its cleanup: wait, or it would clobber the new one
             try:
@@ -914,7 +1174,11 @@ class Runner:
 
     def _options(self, s, resume):
         sdk = load_sdk()
-        s.cli_deny = perm_cli_deny(s.perms, s.chat) or []
+        fresh = perm_cli_deny(s.perms, s.chat)
+        if fresh is None:
+            log("perms unreadable", s.id)
+            raise RunnerError("unavailable", "permission rules are unreadable")
+        s.cli_deny = fresh
         kw = dict(cwd=s.cwd, model=s.model, permission_mode="default",
                   setting_sources=["project"], max_budget_usd=s.budget_usd,
                   can_use_tool=self._make_can_use_tool(s), settings=self._helper_settings(s.cli_deny or None))

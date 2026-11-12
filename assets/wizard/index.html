@@ -145,6 +145,11 @@ a{color:inherit;text-underline-offset:3px}
     <div class="body">
       <p class="hint" data-th="ownerHint">Чтобы бот слушался только вас, напишите ему <b>/start</b> в Telegram.</p>
       <div class="acts"><a class="btn" id="open-bot" href="#" target="_blank" rel="noopener" style="display:inline-grid;place-items:center;text-decoration:none" data-t="openBot">Открыть бота</a></div>
+      <p class="hint"><span data-t="ownerCode">Или отправьте боту этот код:</span> <b id="owner-code"></b></p>
+      <div id="owner-found" hidden>
+        <p class="hint"><b id="owner-who"></b></p>
+        <div class="acts"><button class="btn" type="button" id="owner-yes" data-t="thatsMe">Это я</button><button class="btn sec" type="button" id="owner-no" data-t="notMe">Это не я</button></div>
+      </div>
       <div class="wait" id="owner-wait"><span class="dot" aria-hidden="true"></span><span data-t="waiting">Жду сообщение…</span></div>
       <p class="msg" id="msg-owner" role="alert" hidden></p>
     </div>
@@ -267,7 +272,7 @@ const T = {
   copy:"Копировать",copied:"Скопировано",connect:"Подключиться",connecting:"Подключаюсь…",
   botHint:"Откройте <b>@BotFather</b> в Telegram, отправьте <b>/newbot</b>, придумайте имя и вставьте сюда токен, который он пришлёт.",
   token:"Токен бота",check:"Проверить",checking:"Проверяю…",
-  ownerHint:"Чтобы бот слушался только вас, напишите ему <b>/start</b> в Telegram.",openBot:"Открыть бота",waiting:"Жду сообщение…",
+  ownerHint:"Чтобы бот слушался только вас, откройте его по кнопке и нажмите <b>Start</b>.",ownerCode:"Или отправьте боту этот код:",thatsMe:"Это я",notMe:"Это не я",e_owner:"Не получилось подтвердить. Нажмите «Это не я» и попробуйте снова.",openBot:"Открыть бота",waiting:"Жду сообщение…",
   provider:"Провайдер",base:"Адрес API",mname:"Название модели",key:"Ключ API",checkKey:"Проверить ключ",other:"Другой",
   loginNote:"Без ключа: сессии работают через вход Claude Code на сервере, то есть по вашей подписке Claude. Перед установкой выполните там claude auth login.",e_claude_login:"Claude Code на сервере не выполнил вход. Запустите там claude auth login и подключитесь снова.",
   e_codex:"На сервере нет входа в Codex. Выполните там codex login.",e_grok:"На сервере нет входа в Grok. Выполните там grok login.",e_gemini:"На сервере нет входа в Antigravity. Выполните там agy и войдите.",
@@ -301,7 +306,7 @@ const T = {
   copy:"Copy",copied:"Copied",connect:"Connect",connecting:"Connecting…",
   botHint:"Open <b>@BotFather</b> in Telegram, send <b>/newbot</b>, pick a name and paste the token it sends.",
   token:"Bot token",check:"Check",checking:"Checking…",
-  ownerHint:"So that the bot obeys only you, send it <b>/start</b> in Telegram.",openBot:"Open the bot",waiting:"Waiting for your message…",
+  ownerHint:"So that the bot obeys only you, open it with the button and press <b>Start</b>.",ownerCode:"Or send the bot this code:",thatsMe:"That is me",notMe:"Not me",e_owner:"Could not confirm. Press \"Not me\" and try again.",openBot:"Open the bot",waiting:"Waiting for your message…",
   provider:"Provider",base:"API address",mname:"Model name",key:"API key",checkKey:"Check the key",other:"Other",
   loginNote:"No key: sessions use Claude Code's own sign-in on the server, that is your Claude subscription. Run claude auth login there before installing.",e_claude_login:"Claude Code is not signed in on the server. Run claude auth login there and connect again.",
   e_codex:"Codex is not signed in on the server. Run codex login there.",e_grok:"Grok is not signed in on the server. Run grok login there.",e_gemini:"Antigravity is not signed in on the server. Run agy there and sign in.",
@@ -329,7 +334,9 @@ const TOKEN = new URLSearchParams(location.search).get("t") || "";
 const S = {mode: "local", provider: "", presets: [], bot: null, owner: null, group: null, groups: [], target: null};
 
 async function api(path, body){
-  const r = await fetch("/api/" + path, {method: body ? "POST" : "GET", headers: {"Content-Type": "application/json", "X-Wizard-Token": TOKEN}, body: body ? JSON.stringify(body) : undefined, cache: "no-store"});
+  const headers = {"Content-Type": "application/json", "X-Wizard": "1"};
+  if (TOKEN) headers["X-Wizard-Token"] = TOKEN;  // ?t= is redirected to a cookie; the header remains for a direct open
+  const r = await fetch("/api/" + path, {method: body ? "POST" : "GET", headers, body: body ? JSON.stringify(body) : undefined, cache: "no-store", credentials: "same-origin"});
   if (r.status === 403) throw new Error("forbidden");
   return r.json();
 }
@@ -393,15 +400,27 @@ $("f-bot").addEventListener("submit", e => { e.preventDefault(); busy($("b-bot")
 
 /* 3 owner */
 let ownerLoop = false;
-async function pollOwner(){
+function ownerView(r){
+  $("owner-code").textContent = r.code || $("owner-code").textContent;
+  if (r.link) $("open-bot").href = r.link;
+  const o = r.owner;
+  $("owner-found").hidden = !o; $("owner-wait").hidden = !!o;
+  if (o) $("owner-who").textContent = [o.name, o.username ? "@" + o.username : "", o.id].filter(Boolean).join(" · ");
+}
+async function pollOwner(reset){
   if (ownerLoop) return; ownerLoop = true;
+  try{ ownerView(await api("owner", {peek: true, reset: !!(reset || S.owner)})); S.owner = null; delete $("s-owner").dataset.done; $("sum-owner").textContent = ""; }catch(e){}
   while ($("s-owner").dataset.state === "active"){
-    try{ const r = await api("owner", {}); if (r.ok && r.owner){ S.owner = r.owner; msg("msg-owner", ""); finish("owner", r.owner.name || String(r.owner.id)); break; }
+    try{ const r = await api("owner", {}); if (r.ok && r.owner){ ownerView(r); if (r.confirm){ await new Promise(z => setTimeout(z, 1500)); continue; } break; }
+         if (r.code) ownerView(r);
          if (r.error){ msg("msg-owner", err(r.error, r.error)); await new Promise(z => setTimeout(z, 3000)); } }
     catch(e){ msg("msg-owner", err("net")); await new Promise(z => setTimeout(z, 3000)); }
   }
   ownerLoop = false;
 }
+$("owner-yes").addEventListener("click", async () => { try{ const id = $("owner-who").textContent.split(" · ").pop();
+  const r = await api("owner", {confirm: Number(id)}); if (r.ok && r.owner){ S.owner = r.owner; msg("msg-owner", ""); finish("owner", r.owner.name || String(r.owner.id)); } else msg("msg-owner", err(r.error || "owner", r.error)); }catch(e){ msg("msg-owner", err("net")); } });
+$("owner-no").addEventListener("click", async () => { try{ ownerView(await api("owner", {reset: true})); msg("msg-owner", ""); }catch(e){ msg("msg-owner", err("net")); } });
 
 /* 4 model */
 function paintPresets(){

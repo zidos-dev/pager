@@ -15,3 +15,6 @@ jobs:
       - run: pip install cryptography  # the push tests sign with it; the bot itself needs it only for Web Push
       - run: python3 -m unittest discover -s tests -q
       - run: bash -n deploy/setup.sh deploy/setup-macos.sh deploy/zidos-pager-tunnel.sh
+      # cheap checks without a browser (the Playwright check_* scripts stay manual); node is preinstalled on ubuntu-latest
+      - run: git ls-files -z '*.py' | xargs -0 python3 -m py_compile
+      - run: git ls-files -z 'assets/*.js' | xargs -0 -n1 node --check

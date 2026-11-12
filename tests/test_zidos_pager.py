@@ -1,5 +1,6 @@
 import base64
 import glob
+import io
 import json
 import socket
 import re
@@ -10,6 +11,7 @@ import tempfile
 import threading
 import time
 import unittest
+import urllib.error
 import zlib
 import types
 from unittest import mock
@@ -29,6 +31,8 @@ def asst(uuid, *blocks, side=False):
     return line({"type": "assistant", "isSidechain": side, "uuid": uuid,
                  "message": {"content": [dict(type="text", text=b) if isinstance(b, str) else b for b in blocks]}})
 
+
+_BOX_CWD = tempfile.mkdtemp()  # an empty chat clone for the bwrap command lines
 
 class FakeTG(cc.TG):
     """Настоящий TG, но сеть подменена: записывает вызовы."""
@@ -3097,10 +3101,10 @@ class CodexBoxTests(unittest.TestCase):
             with open(auth, "w") as f:
                 f.write("{}")
             with mock.patch.dict(os.environ, {"HOME": home}), mock.patch("shutil.which", side_effect=lambda x: "/usr/bin/" + x):
-                cmd = cc.login_boxed("codex", "/tmp", "вопрос", "m1")
+                cmd = cc.login_boxed("codex", _BOX_CWD, "вопрос", "m1")
                 os.remove(auth)
                 with self.assertRaises(OSError):  # not signed in: the fallback fails closed
-                    cc.login_boxed("codex", "/tmp", "вопрос")
+                    cc.login_boxed("codex", _BOX_CWD, "вопрос")
         i = cmd.index("--tmpfs", cmd.index("--tmpfs", cmd.index("--tmpfs") + 1) + 1)
         self.assertEqual(cmd[i + 1:i + 5], [os.path.join(home, ".codex"), "--bind", auth, auth])
         self.assertIn("--clearenv", cmd)
@@ -3116,14 +3120,14 @@ class CodexBoxTests(unittest.TestCase):
             os.makedirs(os.path.dirname(link)); os.symlink(real, link)
             open(os.path.join(home, ".codex", "auth.json"), "w").close()
             with mock.patch.dict(os.environ, {"HOME": home}), mock.patch("shutil.which", side_effect=lambda x: "/usr/bin/bwrap" if x == "bwrap" else link):
-                cmd = cc.login_boxed("codex", "/tmp", "q")
+                cmd = cc.login_boxed("codex", _BOX_CWD, "q")
             self.assertNotIn(os.path.join(home, ".local", "bin"), cmd)
             self.assertIn(os.path.join(home, ".codex", "packages", "r1"), cmd)
             plain = os.path.join(home, ".local", "bin", "codex2")
             open(plain, "w").close()  # a bare binary in ~/.local/bin: its «package» would be ~/.local — refuse
             with mock.patch.dict(os.environ, {"HOME": home}), mock.patch("shutil.which", side_effect=lambda x: "/usr/bin/bwrap" if x == "bwrap" else plain):
                 with self.assertRaises(OSError):
-                    cc.login_boxed("codex", "/tmp", "q")
+                    cc.login_boxed("codex", _BOX_CWD, "q")
 
 
 class ModelSheetTests(unittest.TestCase):
@@ -6072,6 +6076,26 @@ class SanitizeTests(unittest.TestCase):
         hist = cc.parse_history(asst_ts("a1", "[x](https://e.org)", "t"))[0]["html"]
         self.assertIn('rel="noopener noreferrer"', hist)
 
+    def test_inline_code_in_link_target_is_text_and_quotes_are_escaped(self):
+        src = '[x](https://a/`" style="position:fixed;inset:0;z-index:99;x:`)'
+        for web in (False, True):
+            h = cc.md_to_html(src, web=web)
+            self.assertNotIn("<a", h)
+            self.assertNotIn("style", h)
+            self.assertNotIn("position:fixed", h)
+            self.assertIn("x", h)
+        self.assertEqual(cc.md_to_html("[a](https://e.org/x)"), '<a href="https://e.org/x">a</a>')
+        self.assertEqual(cc.md_to_html("[a](https://e.org/x)", web=True),
+                         '<a href="https://e.org/x" rel="noopener noreferrer" target="_blank">a</a>')
+        self.assertEqual(cc.md_to_html("[`a`](https://e.org)"), '<a href="https://e.org"><code>a</code></a>')
+        self.assertEqual(cc.md_to_html("[`a`](https://e.org)", web=True),
+                         '<a href="https://e.org" rel="noopener noreferrer" target="_blank"><code>a</code></a>')
+        self.assertEqual(cc.md_to_html('see `a<b` and `"q"`'), 'see <code>a&lt;b</code> and <code>&quot;q&quot;</code>')
+        self.assertEqual(cc.md_to_html('see `a<b` and `"q"`', web=True),
+                         'see <code>a&lt;b</code> and <code>&quot;q&quot;</code>')
+        self.assertEqual(cc.md_to_html('[`"x"`](https://e.org)'),
+                         '<a href="https://e.org"><code>&quot;x&quot;</code></a>')
+
     def test_control_characters_never_reach_the_terminal(self):
         pasted, screen = [], {"v": "%s\n❯\xa0\n%s\n" % (BORDER, BORDER)}
 
@@ -8771,14 +8795,16 @@ class PermApiTests(unittest.TestCase):
     def test_post_presses_the_option(self):
         w, e, fs = perm_env(self)
         fs.on_key = lambda ks, f: setattr(f, "screen", EMPTY_PROMPT)
-        st, obj, _ = w.req("POST", "/api/session/s1/perm", {"option": 2, "label": PERM_BASH_OPTS[1]["label"]})
+        st, obj, _ = w.req("POST", "/api/session/s1/perm", {"option": 2, "label": PERM_BASH_OPTS[1]["label"],
+                                                         "sig": cc.perm_sig(cc.parse_perm_dialog(PERM_FIX))[:8]})
         self.assertEqual((st, obj), (200, {"ok": True, "perm": None}))
         self.assertEqual(fs.flat_keys, ["2"])
 
     def test_post_returns_next_dialog(self):
         w, e, fs = perm_env(self)
         fs.on_key = lambda ks, f: setattr(f, "screen", PERM_EDIT)
-        st, obj, _ = w.req("POST", "/api/session/s1/perm", {"option": 1, "label": "Yes"})
+        st, obj, _ = w.req("POST", "/api/session/s1/perm", {"option": 1, "label": "Yes",
+                                                           "sig": cc.perm_sig(cc.parse_perm_dialog(PERM_FIX))[:8]})
         self.assertTrue(obj["ok"])
         self.assertEqual(obj["perm"]["title"], "Edit file")
 
@@ -8806,6 +8832,34 @@ class PermApiTests(unittest.TestCase):
         e.bot.list_sessions(True)
         st, obj, _ = w.req("POST", "/api/session/s1/perm", {"option": 1, "label": "Yes"})
         self.assertEqual((obj["ok"], obj["code"]), (False, "stopped"))
+
+    def test_post_sig_of_the_other_dialog_is_stale_and_presses_nothing(self):
+        w, e, fs = perm_env(self)
+        sig_a = cc.perm_sig(cc.parse_perm_dialog(PERM_FIX))[:8]
+        fs.screen = PERM_EDIT  # option 1 is also «Yes», the command is different
+        self.assertEqual(cc.parse_perm_dialog(PERM_EDIT)["options"][0]["label"], "Yes")
+        st, obj, _ = w.req("POST", "/api/session/s1/perm", {"option": 1, "label": "Yes", "sig": sig_a})
+        self.assertEqual((st, obj["ok"], obj["code"]), (200, False, "stale"))
+        self.assertEqual(obj["perm"]["title"], "Edit file")
+        self.assertEqual(obj["perm"]["sig"], cc.perm_sig(cc.parse_perm_dialog(PERM_EDIT))[:8])
+        self.assertEqual(fs.flat_keys, [])
+
+    def test_post_without_sig_is_stale(self):
+        w, e, fs = perm_env(self)
+        st, obj, _ = w.req("POST", "/api/session/s1/perm", {"option": 1, "label": "Yes"})
+        self.assertEqual((st, obj["ok"], obj["code"]), (200, False, "stale"))
+        self.assertEqual(obj["perm"]["sig"], cc.perm_sig(cc.parse_perm_dialog(PERM_FIX))[:8])
+        self.assertEqual(fs.flat_keys, [])
+
+    def test_post_with_matching_sig_presses(self):
+        w, e, fs = perm_env(self)
+        view = w.req("GET", "/api/session/s1")[1]["perm"]
+        sig = cc.perm_sig(cc.parse_perm_dialog(PERM_FIX))[:8]
+        self.assertEqual(view["sig"], sig)
+        fs.on_key = lambda ks, f: setattr(f, "screen", EMPTY_PROMPT)
+        st, obj, _ = w.req("POST", "/api/session/s1/perm", {"option": 1, "label": "Yes", "sig": sig})
+        self.assertEqual((st, obj), (200, {"ok": True, "perm": None}))
+        self.assertEqual(fs.flat_keys, ["1"])
 
 
 class PermSdkApiTests(unittest.TestCase):
@@ -8988,6 +9042,51 @@ class PermTelegramTests(unittest.TestCase):
         self.press(e, msg, 0)
         self.assertEqual(fs.flat_keys, [])
 
+    def test_yes_of_another_dialog_presses_nothing(self):
+        w, e, fs = perm_env(self)
+        e.bot.notify_tick()
+        msg = self.notice(e)[0]
+        fs.screen = PERM_EDIT  # option 1 is «Yes» again, the dialog is not
+        self.press(e, msg, 0)
+        self.assertEqual(fs.flat_keys, [])
+        self.assertEqual(e.tg.of("answerCallbackQuery")[-1]["text"], "Эта кнопка устарела.")
+
+    def test_old_callback_without_sig_is_outdated(self):
+        w, e, fs = perm_env(self)
+        e.bot.notify_tick()
+        old = "pk:s1:1:%s" % cc.perm_label_hash("Yes")
+        e.bot.handle_update(e.cb(old, mid=77))
+        self.assertEqual(fs.flat_keys, [])
+        self.assertEqual(e.tg.of("answerCallbackQuery")[-1]["text"], "Эта кнопка устарела.")
+
+    def test_callback_with_matching_sig_presses_the_key(self):
+        w, e, fs = perm_env(self)
+        e.bot.notify_tick()
+        perm = cc.parse_perm_dialog(PERM_FIX)
+        sig = cc.perm_sig(perm)[:8]
+        fs.on_key = lambda ks, f: setattr(f, "screen", EMPTY_PROMPT)
+        e.bot.handle_update(e.cb("pk:s1:1:%s:%s" % (cc.perm_label_hash("Yes"), sig), mid=77))
+        self.assertEqual(fs.flat_keys, ["1"])
+        pk = [b["callback_data"] for b in buttons(self.notice(e)[0]["reply_markup"]) if b["callback_data"].startswith("pk:")]
+        self.assertTrue(pk)
+        self.assertTrue(all(d.split(":")[-1] == sig and len(d.split(":")) == 5 for d in pk))
+
+    def test_pk_callback_fits_longest_session_id(self):
+        # Claude job ids on disk are 8 hex chars (read_job_state allows [A-Za-z0-9_-]{1,64}).
+        sid = "ffbc218c"
+        perm = cc.parse_perm_dialog(PERM_FIX)
+        sig = cc.perm_sig(perm)[:8]
+        datas = [b["callback_data"] for b in buttons(cc.perm_markup(sid, perm)) if b["callback_data"].startswith("pk:")]
+        self.assertEqual(len(datas), 4)
+        longest = max(len(d.encode()) for d in datas)
+        self.assertLessEqual(longest, 64)
+        for d in datas:
+            parts = d.split(":")
+            self.assertEqual(parts[:2], ["pk", sid])
+            self.assertEqual(parts[-1], sig)
+            self.assertEqual(len(parts[-1]), 8)
+            self.assertLessEqual(len(d.encode()), 64)
+
 
 # ---------------------------------------------------------------- permission dialogs: review fixes
 
@@ -9054,7 +9153,8 @@ class PermReviewTests(unittest.TestCase):
         w, e, fs = perm_env(self, sub_count=1)
         e.bot.notify_tick()
         n = len(e.sent_pushes)
-        st, obj, _ = w.req("POST", "/api/session/s1/perm", {"option": 1, "label": "Yes"})
+        st, obj, _ = w.req("POST", "/api/session/s1/perm", {"option": 1, "label": "Yes",
+                                                           "sig": cc.perm_sig(cc.parse_perm_dialog(PERM_FIX))[:8]})
         self.assertTrue(obj["ok"])
         e.bot.notify_tick()  # the screen has not redrawn yet
         self.assertEqual(len(e.sent_pushes), n)
@@ -9087,7 +9187,8 @@ class PermReviewTests(unittest.TestCase):
         held.wait(5)
         fs.on_key = lambda ks, f: setattr(f, "screen", EMPTY_PROMPT)
         r = threading.Thread(target=lambda: out.append(
-            e.bot.api_dispatch(1, "POST", "/api/session/s1/perm", {"option": 1, "label": "Yes"})))
+            e.bot.api_dispatch(1, "POST", "/api/session/s1/perm", {"option": 1, "label": "Yes",
+                                                                  "sig": cc.perm_sig(cc.parse_perm_dialog(PERM_FIX))[:8]})))
         r.start()
         r.join(3)
         self.assertFalse(r.is_alive())
@@ -12602,3 +12703,333 @@ class PermWidgetTests(unittest.TestCase):
         self.assertIn(b"white-space:pre-wrap", html)
         self.assertIn(b"chatDataChanged", html)
         self.assertNotIn(b"setInterval", html)
+
+
+def _bodies(e):
+    return [m.get("text", "").split("\n\n")[-1] for m in e.tg.of("sendMessage")]
+
+
+class DeliveryAuditTests(unittest.TestCase):
+    """S4, S15, S16, S18, S11, S21: delivery, offset, transcript window, outbox, state."""
+
+    def _turn(self, blobs):
+        e = Env(self)
+        tr = os.path.join(e.tmp.name, "t.jsonl")
+        open(tr, "wb").close()
+        e.job("s1", name="Альфа", state="working", linkScanPath=tr)
+        e.bot.make_current(1, "s1")
+        e.bot.handle_update(e.msg("вопрос", mid=5))
+        with open(tr, "ab") as f:
+            for b in blobs:
+                f.write(b)
+        return e, tr
+
+    def _http_error(self, code, payload):
+        raw = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
+        return urllib.error.HTTPError("http://example.invalid/bot", code, "err", None, io.BytesIO(raw))
+
+    def test_429_retries_after_retry_after(self):
+        tg = cc.TG("T", "http://example.invalid")
+        waits = []
+        calls = {"n": 0}
+
+        class Resp:
+            def __init__(self, data):
+                self._data = data
+
+            def read(self):
+                return self._data
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def urlopen(req, timeout=None):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise self._http_error(429, {"ok": False, "error_code": 429,
+                                              "description": "Too Many Requests",
+                                              "parameters": {"retry_after": 5}})
+            return Resp(json.dumps({"ok": True, "result": {"message_id": 9}}).encode())
+
+        with mock.patch.object(cc.urllib.request, "urlopen", urlopen), \
+                mock.patch.object(cc.time, "sleep", lambda s: waits.append(s)):
+            try:
+                res = tg.call("sendMessage", {"chat_id": 1, "text": "hi"})
+            except cc.TGError:
+                res = None
+        self.assertEqual(res, {"message_id": 9})
+        self.assertEqual(waits, [5.0])
+
+    def test_429_wait_is_capped_and_then_raises(self):
+        tg = cc.TG("T", "http://example.invalid")
+        waits = []
+        n = getattr(cc, "TG_429_RETRIES", 2)
+
+        def urlopen(req, timeout=None):
+            raise self._http_error(429, {"ok": False, "error_code": 429, "description": "Too Many Requests",
+                                          "parameters": {"retry_after": 90}})
+
+        with mock.patch.object(cc.urllib.request, "urlopen", urlopen), \
+                mock.patch.object(cc.time, "sleep", lambda s: waits.append(s)):
+            with self.assertRaises(cc.TGError) as cm:
+                tg.call("sendMessage", {"chat_id": 1, "text": "hi"})
+        self.assertIn("429", str(cm.exception))
+        self.assertEqual(len(waits), n)
+        self.assertEqual(waits, [30.0] * n)
+
+    def test_400_is_not_retried(self):
+        tg = cc.TG("T", "http://example.invalid")
+        waits = []
+
+        def urlopen(req, timeout=None):
+            raise self._http_error(400, {"ok": False, "description": "Bad Request: can't parse entities"})
+
+        with mock.patch.object(cc.urllib.request, "urlopen", urlopen), \
+                mock.patch.object(cc.time, "sleep", lambda s: waits.append(s)):
+            with self.assertRaises(cc.TGError):
+                tg.call("sendMessage", {"chat_id": 1, "text": "hi"})
+        self.assertEqual(waits, [])
+
+    def test_forward_tgerror_retries_then_sends(self):
+        e, tr = self._turn([asst("u-ok", "первый"), asst("u-reply", "МАРКЕР-ответ")])
+        e.tg.errors["sendMessage"] = (lambda p: "МАРКЕР-ответ" in p.get("text", ""), "TimeoutError")
+        e.bot.forward_tick()
+        fw = e.bot.store.chat(1)["fw"]["s1"]
+        self.assertIn("u-ok", fw["seen"])
+        self.assertNotIn("u-reply", fw["seen"])
+        self.assertEqual(fw["offset"], 0)
+        self.assertEqual(_bodies(e).count("первый"), 1)
+        e.tg.errors.pop("sendMessage", None)
+        e.bot.forward_tick()
+        fw = e.bot.store.chat(1)["fw"]["s1"]
+        self.assertIn("u-reply", fw["seen"])
+        self.assertEqual(fw["offset"], os.path.getsize(tr))
+        self.assertEqual(_bodies(e).count("первый"), 1)
+        self.assertIn("МАРКЕР-ответ", _bodies(e))
+
+    def test_forward_tgerror_skips_after_the_limit(self):
+        e, tr = self._turn([asst("u-reply", "МАРКЕР-ответ")])
+        e.tg.errors["sendMessage"] = (lambda p: "МАРКЕР-ответ" in p.get("text", ""), "TimeoutError")
+        limit = getattr(cc, "FORWARD_FAIL_LIMIT", 5)
+        for _ in range(limit - 1):
+            e.bot.forward_tick()
+        fw = e.bot.store.chat(1)["fw"]["s1"]
+        self.assertNotIn("u-reply", fw["seen"])
+        self.assertEqual(fw["offset"], 0)
+        e.bot.forward_tick()
+        fw = e.bot.store.chat(1)["fw"]["s1"]
+        self.assertIn("u-reply", fw["seen"])
+        self.assertEqual(fw["offset"], os.path.getsize(tr))
+        self.assertIn("Не смог доставить ответ. Пропустил.", [m["text"] for m in e.tg.of("sendMessage")])
+
+    def test_poll_tgerror_holds_offset_until_the_limit(self):
+        e = Env(self)
+        upd = e.msg("привет", mid=4)
+        e.tg.get_updates = lambda offset: [upd] if offset <= upd["update_id"] else []
+
+        def flaky(u):  # a transient failure before the text reached a session
+            raise cc.TGError("sendMessage: HTTP 429 Too Many Requests")
+
+        e.bot.handle_update = flaky
+        limit = getattr(cc, "UPDATE_FAIL_LIMIT", 3)
+        for _ in range(limit - 1):
+            e.bot.poll_once()
+            self.assertEqual(e.bot.store.data["offset"], 0)
+        e.bot.poll_once()
+        self.assertEqual(e.bot.store.data["offset"], upd["update_id"] + 1)
+        notes = [m["text"] for m in e.tg.of("sendMessage")]
+        self.assertIn("Не смог обработать сообщение. Пропустил.", notes)
+
+    def test_poll_permanent_tgerror_or_unsafe_update_confirms_at_once(self):
+        cases = [(self._upd_text("привет"), "sendMessage: HTTP 400 Bad Request: message is not modified"),
+                 (self._upd_text("привет"), "sendMessage: HTTP 403 Forbidden: bot was blocked by the user"),
+                 (self._upd_text("/new"), "sendMessage: HTTP 429 Too Many Requests"),
+                 ({"update_id": 9, "callback_query": {"id": "q", "data": "x"}}, "answerCallbackQuery: TimeoutError")]
+        for upd, err in cases:
+            e = Env(self)
+            e.tg.get_updates = lambda offset, upd=upd: [upd] if offset <= upd["update_id"] else []
+
+            def boom(u, err=err):
+                raise cc.TGError(err)
+
+            e.bot.handle_update = boom
+            e.bot.poll_once()
+            self.assertEqual(e.bot.store.data["offset"], upd["update_id"] + 1, err)
+
+    def test_tg_transient(self):
+        self.assertTrue(cc.tg_transient(cc.TGError("x: HTTP 429 Too Many Requests")))
+        self.assertTrue(cc.tg_transient(cc.TGError("x: HTTP 502 Bad Gateway")))
+        self.assertTrue(cc.tg_transient(cc.TGError("x: URLError")))
+        self.assertFalse(cc.tg_transient(cc.TGError("x: HTTP 400 TimeoutError")))
+        self.assertFalse(cc.tg_transient(cc.TGError("x: Bad Request: query is too old")))
+
+    @staticmethod
+    def _upd_text(text):
+        return {"update_id": 5, "message": {"message_id": 4, "chat": {"id": 1, "type": "private"},
+                                            "from": {"id": 1}, "text": text}}
+
+    def test_poll_other_exception_still_confirms_offset(self):
+        e = Env(self)
+        upd = e.msg("привет", mid=4)
+        e.tg.get_updates = lambda offset: [upd] if offset <= upd["update_id"] else []
+
+        def boom(u):
+            raise RuntimeError("x")
+
+        e.bot.handle_update = boom
+        e.bot.poll_once()
+        self.assertEqual(e.bot.store.data["offset"], upd["update_id"] + 1)
+
+    def test_poll_tgerror_after_delivery_confirms(self):
+        e = Env(self)
+        e.job("s1", name="Альфа", state="working")
+        e.bot.make_current(1, "s1")
+        upd = e.msg("привет", mid=7)
+        orig = e.bot.handle_update
+
+        def wrap(u):
+            orig(u)
+            raise cc.TGError("after")
+
+        e.bot.handle_update = wrap
+        e.tg.get_updates = lambda offset: [upd] if offset <= upd["update_id"] else []
+        e.bot.poll_once()
+        self.assertEqual(e.bot.store.data["offset"], upd["update_id"] + 1)
+        self.assertIn(("s1", "привет"), e.sent)
+
+    def test_oversize_line_keeps_next_event(self):
+        self.assertEqual(getattr(cc, "TRANSCRIPT_CHUNK", 0), 4 * 1024 * 1024)
+        chunk = cc.TRANSCRIPT_CHUNK
+        blob = asst("u-big", "x" * (chunk + 50)) + asst("u-next", "после")
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "t.jsonl")
+            with open(p, "wb") as f:
+                f.write(blob)
+            events, off = cc.read_new_events(p, 0)
+        self.assertEqual([e["uuid"] for e in events if e["kind"] == "text"], ["u-big", "u-next"])
+        self.assertEqual(off, len(blob))
+
+    def test_over_cap_line_is_skipped_but_the_next_event_survives(self):
+        big = asst("u-big", "y" * 150)
+        nxt = asst("u-next", "после")
+        # the cap sits between the two lines: the long one is skipped, the next one still fits
+        self.assertGreater(len(big), 160)
+        self.assertLess(len(nxt), 160)
+        blob = big + nxt
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "t.jsonl")
+            with open(p, "wb") as f:
+                f.write(blob)
+            with mock.patch.object(cc, "TRANSCRIPT_CHUNK", 40, create=True), \
+                    mock.patch.object(cc, "TRANSCRIPT_CHUNK_MAX", 160, create=True):
+                off, uuids = 0, []
+                for _ in range(6):
+                    ev, off2 = cc.read_new_events(p, off)
+                    uuids += [e["uuid"] for e in ev if e["kind"] == "text"]
+                    if off2 == off and not ev:
+                        break
+                    off = off2
+                    if off == len(blob):
+                        break
+        self.assertEqual(off, len(blob))
+        self.assertEqual(uuids, ["u-next"])
+
+    def test_outbox_keeps_request_on_send_error(self):
+        e = Env(self)
+        box = os.path.join(e.tmp.name, "outbox")
+        os.makedirs(box)
+        e.cfg.outbox_dir = box
+        path = os.path.join(e.cfg.home, "note.pdf")
+        with open(path, "wb") as f:
+            f.write(b"%PDF")
+        with open(os.path.join(box, "req.json"), "w", encoding="utf-8") as f:
+            json.dump({"sid": "s1", "path": path, "caption": "", "ts": 1}, f)
+        e.tg.errors["sendDocument"] = (lambda p: True, "TimeoutError")
+        e.bot.outbox_tick()
+        names = os.listdir(box)
+        self.assertEqual(len(names), 1)
+        self.assertRegex(names[0], r"\.a1\.json$")
+        limit = getattr(cc, "OUTBOX_TRIES", 5)
+        for _ in range(limit - 1):
+            e.bot.outbox_tick()
+        self.assertEqual(os.listdir(box), [])
+        self.assertIn("Не смог отправить файл за %d попыток. Заявку снял." % limit,
+                      [m["text"] for m in e.tg.of("sendMessage")])
+
+    def test_corrupt_state_renamed_and_owner_told_once(self):
+        e = Env(self)
+        p = os.path.join(e.tmp.name, "st2", "state.json")
+        os.makedirs(os.path.dirname(p))
+        with open(p, "w", encoding="utf-8") as f:
+            f.write("{broken")
+        logs = []
+        with mock.patch.object(cc, "log", lambda s: logs.append(s)):
+            st = cc.Store(p)
+        self.assertFalse(os.path.exists(p))
+        bads = [n for n in os.listdir(os.path.dirname(p)) if n.startswith("state.json.bad-")]
+        self.assertEqual(len(bads), 1)
+        self.assertEqual(os.path.basename(getattr(st, "corrupt_path", "") or ""), bads[0])
+        self.assertTrue(any(bads[0] in s for s in logs))
+        missing = os.path.join(e.tmp.name, "nope", "state.json")
+        quiet = cc.Store(missing)
+        self.assertIsNone(getattr(quiet, "corrupt_path", "unset"))
+        e.bot.store = st
+        e.bot.warn_corrupt_state()
+        notes = [m["text"] for m in e.tg.of("sendMessage") if bads[0] in m["text"]]
+        self.assertEqual(notes, ["Не смог прочитать сохранённое состояние, отложил его как %s. Запустился пустым." % bads[0]])
+        e.bot.warn_corrupt_state()
+        notes2 = [m["text"] for m in e.tg.of("sendMessage") if bads[0] in m["text"]]
+        self.assertEqual(notes2, notes)
+
+    def test_save_skips_unchanged(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        p = os.path.join(tmp.name, "nested", "state.json")
+        st = cc.Store(p)
+        st.save()
+        self.assertFalse(os.path.exists(p))
+        st.data["offset"] = 4
+        st.save()
+        with open(p, encoding="utf-8") as f:
+            self.assertEqual(json.load(f)["offset"], 4)
+        with mock.patch.object(cc.os, "replace", wraps=os.replace) as rep:
+            st.save()
+            self.assertEqual(rep.call_count, 0)
+            st.data["offset"] = 5
+            st.save()
+            self.assertEqual(rep.call_count, 1)
+
+    def test_save_fsyncs_file_and_directory_before_replace(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        p = os.path.join(tmp.name, "nested", "state.json")
+        st = cc.Store(p)
+        st.data["offset"] = 4
+        opens, events = {}, []
+        real_open, real_fsync, real_replace = os.open, os.fsync, os.replace
+
+        def wrap_open(*a, **k):
+            fd = real_open(*a, **k)
+            if a:
+                opens[fd] = a[0]
+            return fd
+
+        def wrap_fsync(fd):
+            events.append(("fsync", opens.get(fd)))
+            return real_fsync(fd)
+
+        def wrap_replace(src, dst):
+            events.append(("replace", src, dst))
+            return real_replace(src, dst)
+
+        with mock.patch.object(cc.os, "open", wrap_open), \
+                mock.patch.object(cc.os, "fsync", wrap_fsync), \
+                mock.patch.object(cc.os, "replace", wrap_replace):
+            st.save()
+        idx = next(i for i, ev in enumerate(events) if ev[0] == "replace")
+        synced = [ev[1] for ev in events[:idx] if ev[0] == "fsync"]
+        self.assertTrue(any(isinstance(path, str) and path.endswith(".tmp") for path in synced))
+        self.assertIn(os.path.dirname(p), synced)

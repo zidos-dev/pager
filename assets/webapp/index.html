@@ -98,6 +98,8 @@ button,input,textarea,select{text-rendering:inherit}
 #list-screen,#new-screen{padding-bottom:calc(env(safe-area-inset-bottom,0px) + 16px)}
 button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
 button:focus-visible{outline:2px solid var(--link);outline-offset:2px}
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.sheet:focus{outline:none}  /* фокус на листе программный: кольца нет, клавиши идут дальше по кнопкам */
 textarea:focus,input:focus,textarea:focus-visible,input:focus-visible{outline:none}
 [hidden]{display:none!important}
 .screen{max-width:720px;margin:0 auto;padding:0 var(--gut)}
@@ -542,7 +544,7 @@ textarea.field{min-height:120px;resize:vertical}
     <div class="quota" id="quota" hidden></div>
   </header>
   <div class="chipbar"><nav class="chips" id="chips" aria-label="Filter" data-i18n-attr="aria-label:filter"></nav></div>
-  <section class="list" id="list" aria-live="polite"><div class="skel"></div><div class="skel"></div><div class="skel"></div></section>
+  <section class="list" id="list"><div class="skel"></div><div class="skel"></div><div class="skel"></div></section>
 </main>
 
 <main id="session-screen" hidden>
@@ -726,6 +728,7 @@ textarea.field{min-height:120px;resize:vertical}
   </div><div class="row"><button class="btn" type="button" id="scr-close" data-i18n="done">Done</button></div></section>
 <div class="lb" id="lb" hidden role="dialog" aria-label="Image viewer" data-i18n-attr="aria-label:viewerAria"><img id="lb-img" alt=""><button class="lbx" type="button" id="lb-x" aria-label="Close" data-i18n-attr="aria-label:close"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button><button class="lbd" type="button" id="lb-dl" data-i18n="download">Download</button></div>
 <div class="toast" id="toast" role="status" hidden></div>
+<div id="live-note" class="sr-only" role="status" aria-live="polite"></div>
 
 <script>
 (function(){
@@ -1519,8 +1522,15 @@ function quotaLine(){
   el.innerHTML = ["Claude", part(t("h5"), q.h5, q.h5_reset ? t("until", {t: q.h5_reset}) : ""), part(t("d7"), q.d7, "")].filter(Boolean).join(" · ") + (q.stale ? t("staleShort") : "");
   el.hidden = false;
 }
+let waitSeen = null;  // id → ждёт ли; список не в aria-live, анонс только когда сессия НОВО стала «ждёт вас»
+function announceWaits(S){
+  const now = new Map(S.map(s => [s.id, s.group === "wait" || !!s.perm]));
+  if (waitSeen) $("live-note").textContent = S.filter(s => now.get(s.id) && !waitSeen.get(s.id)).map(s => nameOf(s) + ": " + (s.perm ? t("permWait") : t("stWait"))).join(". ");
+  waitSeen = now;
+}
 function renderList(){
   if (!data) return;
+  announceWaits(data.sessions);
   const S = data.sessions, cnt = g => S.filter(s => s.group === g).length;
   const q = data.quota || {};
   const parts = [];
@@ -2060,7 +2070,7 @@ async function answerPermission(b){
   const id = sess.id, p = sess.perm, el = $("s-question");
   if (!b.closest(".perm-card") || b.closest(".perm-card").dataset.session !== id) return;
   const option = p.options.find(o => o.n === +b.dataset.i); if (!option) return;
-  const body = p.kind === "sdk" ? {option: option.n, req: p.req} : {option: option.n, label: option.label};
+  const body = p.kind === "sdk" ? {option: option.n, req: p.req} : {option: option.n, label: option.label, sig: p.sig};
   const mine = permPending = {id}; const version = ++permVersion;
   el.dataset.permBusy = "true";
   el.querySelectorAll("button").forEach(x => x.disabled = true);
@@ -2374,22 +2384,33 @@ const SHEETS = ["cmd-sheet", "scr-sheet", "sub-sheet", "act-sheet", "model-sheet
 const sheetAnim = {};
 SHEETS.forEach(id => { const el = $(id), sb = document.createElement("div"); sb.className = "sb";  // тело листа — свой скроллер под стоящей шапкой
   [...el.children].filter(c => !c.matches(".grab,.sx")).forEach(c => sb.appendChild(c)); el.appendChild(sb); });
+SHEETS.forEach(id => { const el = $(id); el.setAttribute("role", "dialog"); el.setAttribute("aria-modal", "true"); el.tabIndex = -1; });
+const sheetBase = () => [...document.querySelectorAll("body > main, #fab, #lab-fcap")];  // фон под листом: экраны и плавающие слои, не сами листы
+let sheetOpener = null;
 const sheetBody = el => el.querySelector(":scope > .sb");
 function paintSheet(el, y){ const h = el.offsetHeight || 1; el.style.transform = y ? `translate3d(0,${y}px,0)` : ""; $("scrim").style.opacity = String(Math.max(0, 1 - y / h).toFixed(3)); }
 function sheet(id, open, v){
   const el = $(id);
   if (sheetAnim[id]) sheetAnim[id].stop();
   if (open){
+    if (SHEETS.every(x => $(x).hidden)){ const a = document.activeElement; sheetOpener = a && a !== document.body ? a : null; }  // лист поверх листа помнит первого вызвавшего
     SHEETS.filter(x => x !== id && !$(x).hidden).forEach(x => sheet(x, false));
-    el.hidden = false; sheetBody(el).scrollTop = 0; $("shade").hidden = false; $("scrim").classList.add("on");
+    el.hidden = false; sheetBase().forEach(x => x.inert = true); sheetBody(el).scrollTop = 0; $("shade").hidden = false; $("scrim").classList.add("on");
     const h = el.offsetHeight; paintSheet(el, h);
     sheetAnim[id] = spring(h, 0, {response: 0.34, damping: 0.9, onUpdate: y => paintSheet(el, y), onDone: () => { el.style.transform = ""; }});
+    const h3 = el.querySelector("h3"); if (h3){ h3.id = h3.id || id + "-h"; el.setAttribute("aria-labelledby", h3.id); el.removeAttribute("aria-label"); }
+    el.focus({preventScroll: true});
   } else {
     if (el.hidden) return;
     const h = el.offsetHeight, cur = parseFloat((el.style.transform.match(/,([-\d.]+)px/) || [0, 0])[1]) || 0;
     sheetAnim[id] = spring(cur, h, {v: v || 0, response: 0.3, onUpdate: y => paintSheet(el, y), onDone: () => {
       el.hidden = true; el.style.transform = "";
-      if (SHEETS.every(x => $(x).hidden)){ $("shade").hidden = true; $("scrim").classList.remove("on"); $("scrim").style.opacity = "0"; }
+      if (SHEETS.every(x => $(x).hidden)){
+        $("shade").hidden = true; $("scrim").classList.remove("on"); $("scrim").style.opacity = "0";
+        sheetBase().forEach(x => x.inert = false);
+        const a = document.activeElement, o = sheetOpener; sheetOpener = null;
+        if (o && o.isConnected && (!a || a === document.body || a.closest(".sheet"))) o.focus({preventScroll: true});  // чужой фокус (поле после действия) не перехватываем
+      }
     }});
   }
 }

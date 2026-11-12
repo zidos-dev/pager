@@ -19,6 +19,8 @@ TOKEN = "123456:ABCDEFGHIJKLMNOPQRSTUVWXYZ0123"
 KEY = "sk-bots-SECRET-key-123"
 
 
+_BOX_CWD = tempfile.mkdtemp()  # an empty chat clone for the bwrap command lines
+
 class FakeBotTG(cc.TG):
     calls = []
     updates_error = None
@@ -430,7 +432,7 @@ class PersonaTests(BotsCase):
             sent.update(url=req.full_url, key=req.get_header("X-api-key"), ver=req.get_header("Anthropic-version"),
                         body=json.loads(req.data))
             return R()
-        with mock.patch.object(cc.urllib.request, "urlopen", urlopen):
+        with mock.patch.object(cc._NOREDIR_OPENER, "open", urlopen):
             cc.bots_llm("", "k", "sonnet", "sys", "usr")
         self.assertEqual((sent["url"], sent["key"], sent["body"]["system"]), ("https://api.anthropic.com/v1/messages", "k", "sys"))
         self.assertTrue(sent["ver"])
@@ -611,7 +613,7 @@ class LoginBoxTests(unittest.TestCase):
             os.makedirs(os.path.dirname(auth), exist_ok=True)
             open(auth, "w").close()
             with mock.patch.dict(os.environ, {"HOME": home}), mock.patch("shutil.which", side_effect=lambda x: "/usr/bin/bwrap" if x == "bwrap" else real):
-                return home, auth, cc.login_boxed(eng, "/tmp", "вопрос", "m1")
+                return home, auth, cc.login_boxed(eng, _BOX_CWD, "вопрос", "m1")
 
     def test_grok_box_has_no_web_search_and_only_its_auth_file(self):
         home, auth, cmd = self.login_cmd("grok", ".grok/downloads/grok-1/grok", ".grok/auth.json")
@@ -647,7 +649,7 @@ class LoginBoxTests(unittest.TestCase):
             os.makedirs(os.path.dirname(link)); os.symlink(real, link)
             open(os.path.join(home, ".grok", "auth.json"), "w").close()
             with mock.patch.dict(os.environ, {"HOME": home}), mock.patch("shutil.which", side_effect=lambda x: "/usr/bin/bwrap" if x == "bwrap" else link):
-                cmd = cc.login_boxed("grok", "/tmp", "- a brief in a list")
+                cmd = cc.login_boxed("grok", _BOX_CWD, "- a brief in a list")
             binds = [cmd[i + 1] for i, c in enumerate(cmd) if c in ("--ro-bind", "--bind")]
             self.assertNotIn(os.path.join(home, ".local", "bin"), binds)
             self.assertEqual(cmd[cmd.index("-p") + 1], " - a brief in a list")  # a value, not a flag
@@ -656,13 +658,13 @@ class LoginBoxTests(unittest.TestCase):
 class ModelCheckTests(unittest.TestCase):
     def test_cli_aliases_become_model_ids_without_a_base(self):
         for fn in (lambda: cc.model_check("", "k", "sonnet"), lambda: cc.bots_llm("", "k", "sonnet", "s", "u")):
-            with mock.patch.object(cc.urllib.request, "urlopen", side_effect=OSError) as op:
+            with mock.patch.object(cc._NOREDIR_OPENER, "open", side_effect=OSError) as op:
                 try:
                     fn()
                 except OSError:
                     pass
             self.assertEqual(json.loads(op.call_args[0][0].data)["model"], "claude-sonnet-5-5")
-        with mock.patch.object(cc.urllib.request, "urlopen", side_effect=OSError) as op:
+        with mock.patch.object(cc._NOREDIR_OPENER, "open", side_effect=OSError) as op:
             try:
                 cc.bots_llm("https://x.example", "k", "sonnet", "s", "u")
             except OSError:
@@ -675,7 +677,7 @@ class ModelCheckTests(unittest.TestCase):
         import urllib.error
         for code, verdict in ((401, "key"), (402, "balance"), (429, "limit"), (404, "model"), (500, "net")):
             err = urllib.error.HTTPError("u", code, "x", {}, io.BytesIO(b""))
-            with mock.patch.object(cc.urllib.request, "urlopen", side_effect=err):
+            with mock.patch.object(cc._NOREDIR_OPENER, "open", side_effect=err):
                 self.assertEqual(cc.model_check("https://x.example", "k", "m"), verdict, code)
 
 

@@ -147,6 +147,15 @@ class WizardBase(unittest.TestCase):
         raw = r.read()
         return r.status, (json.loads(raw) if raw[:1] == b"{" else raw)
 
+    def claim_owner(self, uid=1):
+        """The wizard flow: show the one-time code, receive `/start <code>`, press "That is me"."""
+        code = self.call("/api/owner", {"peek": True})[1]["code"]
+        self.tg.updates.append(start_msg(uid, "/start " + code))
+        r = self.call("/api/owner", {})[1]
+        if r.get("confirm"):
+            r = self.call("/api/owner", {"confirm": r["owner"]["id"]})[1]
+        return r
+
     def ssh_target(self):
         st, r = self.call("/api/target", {"mode": "ssh", "host": "box", "user": "me", "port": 2222})
         self.assertTrue(r["ok"], r)
@@ -155,8 +164,7 @@ class WizardBase(unittest.TestCase):
     def full_flow(self, **install):
         self.ssh_target()
         self.assertTrue(self.call("/api/bot", {"token": TOKEN})[1]["ok"])
-        self.tg.updates.append(start_msg())
-        self.assertTrue(self.call("/api/owner", {})[1]["ok"])
+        self.assertTrue(self.claim_owner()["ok"])
         with mock.patch.object(ws, "model_check", return_value="ok"):
             self.assertTrue(self.call("/api/model", {"provider": "deepseek", "key": KEY})[1]["ok"])
         st, r = self.call("/api/install", {"lang": "en", **install})
@@ -199,11 +207,16 @@ class WizardTests(WizardBase):
         self.ssh_target()
         self.assertEqual(self.call("/api/bot", {"token": "bad"})[1]["error"], "token")
         self.assertTrue(self.call("/api/bot", {"token": TOKEN})[1]["ok"])
-        self.assertEqual(self.call("/api/owner", {})[1], {"ok": False, "waiting": True})
-        self.tg.updates.append(start_msg(7))
-        r = self.call("/api/owner", {})[1]
-        self.assertEqual(r["owner"], {"id": 42, "name": "Ann"})
+        r = self.call("/api/owner", {"peek": True})[1]
+        self.assertTrue(r["waiting"] and r["link"].endswith("?start=" + r["code"]))
+        self.tg.updates.append(start_msg(7))  # a stale /start without the code must not claim the bot
+        self.assertFalse(self.call("/api/owner", {})[1]["ok"])
         self.assertIn(8, self.tg.offsets)  # acknowledged
+        self.tg.updates.append(start_msg(9, "/start " + r["code"]))
+        r = self.call("/api/owner", {})[1]
+        self.assertEqual(r["owner"], {"id": 42, "name": "Ann", "username": ""})
+        self.assertTrue(r["confirm"])
+        self.assertTrue(self.call("/api/owner", {"confirm": 42})[1]["ok"])
 
     def test_bot_busy(self):
         self.ssh_target()
@@ -239,8 +252,7 @@ class WizardTests(WizardBase):
     def test_install_codex_engine(self):
         self.ssh_target()
         self.call("/api/bot", {"token": TOKEN})
-        self.tg.updates.append(start_msg())
-        self.call("/api/owner", {})
+        self.claim_owner()
         self.assertEqual(self.call("/api/model", {"provider": "codex"})[1]["note"], "codex login on the server")
         self.call("/api/install", {"lang": "ru"})
         for _ in range(300):
@@ -256,8 +268,7 @@ class WizardTests(WizardBase):
     def test_install_grok_engine(self):
         self.ssh_target()
         self.call("/api/bot", {"token": TOKEN})
-        self.tg.updates.append(start_msg())
-        self.call("/api/owner", {})
+        self.claim_owner()
         self.assertTrue(self.call("/api/model", {"provider": "grok"})[1]["ok"])
         self.call("/api/install", {"lang": "ru"})
         for _ in range(300):
@@ -281,8 +292,7 @@ class WizardTests(WizardBase):
         pres = {p["id"]: p for p in self.call("/api/state")[1]["presets"]}
         self.assertTrue(pres["claude_login"]["available"] and pres["claude_login"]["login"])
         self.call("/api/bot", {"token": TOKEN})
-        self.tg.updates.append(start_msg())
-        self.call("/api/owner", {})
+        self.claim_owner()
         with mock.patch.object(ws, "model_check") as mc:
             self.assertTrue(self.call("/api/model", {"provider": "claude_login", "model": "opus"})[1]["ok"])
         mc.assert_not_called()  # no key to check
@@ -427,8 +437,7 @@ class WindowsTests(WizardBase):
         self.assertFalse(pres["codex"]["available"])
         self.assertTrue(pres["deepseek"]["available"])
         self.assertTrue(self.call("/api/bot", {"token": TOKEN})[1]["ok"])
-        self.tg.updates.append(start_msg())
-        self.assertTrue(self.call("/api/owner", {})[1]["ok"])
+        self.assertTrue(self.claim_owner()["ok"])
         with mock.patch.object(ws, "model_check", return_value="ok"):
             self.assertTrue(self.call("/api/model", {"provider": "deepseek", "key": KEY})[1]["ok"])
         self.call("/api/install", {"lang": "en"})
@@ -486,6 +495,55 @@ class WindowsTests(WizardBase):
         r = self.call("/api/target", {"mode": "ssh", "host": "box"})[1]
         self.assertEqual((r["ok"], r["error"]), (False, "auth"))
         self.assertIn("ssh-keygen", r["hint"])
+
+
+class WizardCookieTests(unittest.TestCase):
+    def setUp(self):
+        self.srv = ws.make_server(0)
+        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+        self.addCleanup(self.srv.shutdown)
+        self.addCleanup(self.srv.server_close)
+        self.port = self.srv.server_port
+
+    def req(self, method, path, headers=None):
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=30)
+        c.request(method, path, headers=headers or {})
+        r = c.getresponse()
+        return r.status, r.getheaders(), r.read()
+
+    def test_query_token_becomes_a_cookie_and_stays_reusable(self):
+        token = self.srv.token
+        status, headers, body = self.req("GET", "/?t=" + token)
+        self.assertIn(status, (302, 303))
+        loc = dict(headers).get("Location", "")
+        self.assertEqual(loc, "/")
+        self.assertNotIn(token, loc)
+        self.assertNotIn(token.encode(), body)
+        cookies = [v for k, v in headers if k.lower() == "set-cookie"]
+        self.assertEqual(len(cookies), 1)
+        cookie = cookies[0]
+        low = cookie.lower()
+        self.assertIn("httponly", low)
+        self.assertIn("samesite=strict", low)
+        self.assertIn("path=/", low)
+        self.assertTrue(cookie.split(";", 1)[0].endswith("=" + token))
+        pair = cookie.split(";", 1)[0]
+        status, _, _ = self.req("GET", "/api/state", {"Cookie": pair, "X-Wizard": "1"})
+        self.assertEqual(status, 200)
+        # the bare cookie is ambient: another localhost port is same-site, so it alone is not enough
+        status, _, _ = self.req("GET", "/api/state", {"Cookie": pair})
+        self.assertIn(status, (401, 403))
+        status, _, _ = self.req("GET", "/api/state")
+        self.assertIn(status, (401, 403))
+        status, _, _ = self.req("GET", "/api/state?t=" + token)
+        self.assertEqual(status, 200)
+        status, _, _ = self.req("GET", "/api/state", {"X-Wizard-Token": token})
+        self.assertEqual(status, 200)
+        status, _, _ = self.req("GET", "/?t=" + token)
+        self.assertIn(status, (302, 303))
+        status, again, _ = self.req("GET", "/?t=not-the-token")
+        self.assertNotIn(status, (302, 303))
+        self.assertFalse(any(k.lower() == "set-cookie" for k, _v in again))
 
 
 if __name__ == "__main__":

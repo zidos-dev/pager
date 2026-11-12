@@ -20,6 +20,7 @@ import tarfile
 import tempfile
 import threading
 import webbrowser
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -164,7 +165,9 @@ class Wizard:
         self.token = self.bot = self.owner = self.model = None
         self.groups = {}
         self.offset = None
-        self.lock = threading.Lock()
+        self.owner_code = self.owner_cand = None  # one-time /start code; sender awaiting "that's me"
+        self.lock = threading.Lock()  # owner state only; never held across poll()
+        self.poll_lock = threading.Lock()  # offset and groups; may be held for the long poll
         self.job = {"lines": [], "done": False, "ok": False, "error": ""}
         self.api_base = os.environ.get("TG_API_BASE", "https://api.telegram.org").rstrip("/")
 
@@ -275,35 +278,65 @@ class Wizard:
 
     def poll(self, timeout):
         """One getUpdates; remembers groups; returns the updates and acknowledges them."""
-        p = {"timeout": timeout, "allowed_updates": ["message", "my_chat_member"]}
-        if self.offset is not None:
-            p["offset"] = self.offset
-        r = self.tg("getUpdates", p, timeout + 30)
-        ups = r.get("result") or []
-        for u in ups:
-            self.offset = max(self.offset or 0, u["update_id"] + 1)
-            m = u.get("message") or u.get("my_chat_member") or {}
-            chats = [m.get("chat") or {}]
-            for c in chats:
-                if c.get("type") in ("group", "supergroup"):
-                    self.groups[c["id"]] = c.get("title", str(c["id"]))
-        if ups:
-            self.tg("getUpdates", {"timeout": 0, "limit": 1, "offset": self.offset})
-        return ups
+        # poll_lock, not self.lock: get_owner calls this outside self.lock, and the wait is up to 25s.
+        with self.poll_lock:
+            p = {"timeout": timeout, "allowed_updates": ["message", "my_chat_member"]}
+            if self.offset is not None:
+                p["offset"] = self.offset
+            r = self.tg("getUpdates", p, timeout + 30)
+            ups = r.get("result") or []
+            for u in ups:
+                self.offset = max(self.offset or 0, u["update_id"] + 1)
+                m = u.get("message") or u.get("my_chat_member") or {}
+                chats = [m.get("chat") or {}]
+                for c in chats:
+                    if c.get("type") in ("group", "supergroup"):
+                        self.groups[c["id"]] = c.get("title", str(c["id"]))
+            if ups:
+                self.tg("getUpdates", {"timeout": 0, "limit": 1, "offset": self.offset})
+            return ups
 
-    def get_owner(self, _):
+    def _new_code(self):
+        # no 0/O/1/I/L: the code may be typed by hand
+        self.owner_code = "".join(secrets.choice("23456789ABCDEFGHJKMNPQRSTUVWXYZ") for _ in range(8))
+        self.owner_cand = None
+
+    def _owner_view(self):
+        return {"ok": False, "waiting": True, "code": self.owner_code,
+                "link": f"https://t.me/{(self.bot or {}).get('username', '')}?start={self.owner_code}"}
+
+    def get_owner(self, b):
+        """Owner = the private sender of `/start <code>` (or the bare code); they must then be confirmed on the page."""
         if (e := self.need("bot")):
             return e
-        if self.owner:
-            return {"ok": True, "owner": self.owner}
-        ups = self.poll(25)
-        for u in ups:
-            m = u.get("message") or {}
-            if (m.get("chat") or {}).get("type") == "private" and m.get("from"):
-                f = m["from"]
-                self.owner = {"id": f["id"], "name": f.get("first_name") or f.get("username") or str(f["id"])}
+        with self.lock:
+            if b.get("reset"):
+                self.owner = None
+                self._new_code()
+            if self.owner:
                 return {"ok": True, "owner": self.owner}
-        return {"ok": False, "waiting": True}
+            if not self.owner_code:
+                self._new_code()
+            if b.get("confirm") is not None:
+                if self.owner_cand and self.owner_cand["id"] == b["confirm"]:
+                    self.owner, self.owner_cand = self.owner_cand, None
+                    return {"ok": True, "owner": self.owner}
+                return {"ok": False, "error": "owner"}
+            if self.owner_cand:
+                return {"ok": True, "owner": self.owner_cand, "confirm": True}
+            if b.get("peek"):  # the page asks for the code first: the long poll below takes up to 25 s
+                return self._owner_view()
+        ups = self.poll(25)
+        with self.lock:
+            for u in ups:
+                m = u.get("message") or {}
+                f = m.get("from")
+                txt = (m.get("text") or "").strip()
+                if (m.get("chat") or {}).get("type") == "private" and f and self.owner_code and txt in (self.owner_code, "/start " + self.owner_code):
+                    self.owner_cand = {"id": f["id"], "name": f.get("first_name") or f.get("username") or str(f["id"]),
+                                       "username": f.get("username", "")}
+                    return {"ok": True, "owner": self.owner_cand, "confirm": True}
+            return self._owner_view()
 
     def set_model(self, b):
         prov = b.get("provider")
@@ -335,6 +368,9 @@ class Wizard:
     def get_groups(self, _):
         if (e := self.need("bot")):
             return e
+        # Same gate as bots(): after a successful install the service owns getUpdates.
+        if self.job["done"] and self.job["ok"]:
+            return {"ok": False, "error": "installed"}
         self.poll(0)
         return {"groups": [{"id": k, "title": v} for k, v in self.groups.items()]}
 
@@ -496,12 +532,58 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _wizard_cookie(self):
+        jar = SimpleCookie()
+        jar["wz"] = self.server.token
+        part = jar["wz"]
+        part["httponly"] = True
+        part["samesite"] = "Strict"
+        part["path"] = "/"
+        return part.OutputString()
+
+    def _wizard_token_ok(self):
+        """Header, HttpOnly cookie, or ?t= — the token is not one-time."""
+        tok = self.server.token
+        found = []
+        header = self.headers.get("X-Wizard-Token", "")
+        if header:
+            found.append(header)
+        raw = self.headers.get("Cookie") or ""
+        # the cookie is ambient (a page on another localhost port is same-site): count it only with a custom header,
+        # which a cross-origin page cannot send without a CORS preflight this server never answers
+        if raw and self.headers.get("X-Wizard") == "1":
+            try:
+                jar = SimpleCookie(raw)
+            except Exception:  # noqa: BLE001
+                jar = SimpleCookie()
+            if "wz" in jar and jar["wz"].value:
+                found.append(jar["wz"].value)
+        query = parse_qs(urlparse(self.path).query).get("t", [""])[0]
+        if query:
+            found.append(query)
+        return any(hmac.compare_digest(item, tok) for item in found)
+
+    def _exchange_token_cookie(self, u):
+        """?t= stays in browser history. Trade a matching token for a cookie and leave the URL."""
+        if u.path.startswith("/api/"):
+            return False
+        given = parse_qs(u.query).get("t", [""])[0]
+        if not given or not hmac.compare_digest(given, self.server.token):
+            return False
+        self.send_response(303)
+        self.send_header("Location", "/")
+        self.send_header("Set-Cookie", self._wizard_cookie())
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+        return True
+
     def _guard(self):
         if self.headers.get("Host") not in (f"127.0.0.1:{self.server.server_port}", f"localhost:{self.server.server_port}"):
             self._send(403, {"error": "host"})
             return None
         u = urlparse(self.path)
-        if u.path.startswith("/api/") and not hmac.compare_digest(self.headers.get("X-Wizard-Token", ""), self.server.token):
+        if u.path.startswith("/api/") and not self._wizard_token_ok():
             self._send(403, {"error": "token"})
             return None
         return u
@@ -509,6 +591,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         u = self._guard()
         if not u:
+            return
+        if self._exchange_token_cookie(u):
             return
         w = self.server.wizard
         if u.path == "/api/state":

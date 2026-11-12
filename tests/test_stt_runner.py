@@ -6,6 +6,7 @@ import os
 import stat
 import sys
 import tempfile
+import threading
 import time
 import unittest
 import urllib.error
@@ -218,6 +219,21 @@ class ChainTests(Base):
         self.assertEqual(self.posts[0][0], "https://api.openai.com/v1/audio/transcriptions")
         self.assertIn(b"gpt-4o-mini-transcribe", self.posts[0][2])
         self.assertIn("engine local failed: timeout", self.stderr.getvalue())
+
+    async def test_hung_local_does_not_block_next_request(self):
+        release = threading.Event()
+        self.addCleanup(release.set)
+
+        def hang(audio, language=None, beam_size=None, vad_filter=None):
+            release.wait(5)
+            return iter([]), FakeInfo()
+        self.model.transcribe = hang
+        await self.start(CC_STT_ENGINES="local", CC_STT_TIMEOUT="1")
+        await self.err("unavailable", path=self.audio)      # first call times out, thread keeps the lock
+        t0 = time.monotonic()
+        e = await self.err("unavailable", path=self.audio)
+        self.assertLess(time.monotonic() - t0, 0.5)          # not a second full timeout
+        self.assertIn("local:busy", e["message"])
 
     async def test_all_fail_is_unavailable(self):
         self.cloud_exc = urllib.error.HTTPError("https://x", 401, "Unauthorized " + GROQ_KEY, {}, None)

@@ -229,6 +229,7 @@ class LocalEngine:
         self.last_used = now()
         self._lock = threading.Lock()   # one model, one transcription at a time (also after a timeout)
         self._busy = 0
+        self._deadline = 0.0            # monotonic time by which the current holder should be done
 
     @property
     def loaded(self):
@@ -238,7 +239,13 @@ class LocalEngine:
         return local_available()
 
     def run(self, job):
-        with self._lock:
+        # a worker that outlived its timeout still holds the lock: fail fast instead of queueing behind it
+        if self._lock.locked() and time.monotonic() > self._deadline:
+            raise EngineError("busy")
+        if not self._lock.acquire(timeout=self.cfg.timeout):
+            raise EngineError("busy")
+        try:
+            self._deadline = time.monotonic() + self.cfg.timeout
             self._busy += 1
             try:
                 if self.model is None:
@@ -253,6 +260,8 @@ class LocalEngine:
             finally:
                 self.last_used = now()
                 self._busy -= 1
+        finally:
+            self._lock.release()
 
     def unload_if_idle(self):
         """Drop the model after the idle period. Returns True when it was unloaded."""

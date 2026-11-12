@@ -363,6 +363,8 @@ class StartTests(Base):
         self.assertEqual(oct(stat.S_IMODE(os.stat(os.path.dirname(self.sock)).st_mode)), "0o700")
 
     async def test_chat_session_asks_the_owner_for_everything_but_reading(self):
+        # CC_CHAT_WEB_ANY=1 is the old «any public name» switch. The default (site list only) is tested apart.
+        os.environ["CC_CHAT_WEB_ANY"] = "1"
         holder = {}
 
         async def script(client, text):
@@ -413,14 +415,17 @@ class StartTests(Base):
         self.assertIn("Read(**/.env*)", st["permissions"]["deny"])
         sb = st["sandbox"]  # bash runs at once inside an OS boundary: reads the project only, writes nothing
         self.assertTrue(sb["enabled"] and sb["autoAllowBashIfSandboxed"] and sb["failIfUnavailable"])
-        self.assertEqual(sb["filesystem"]["denyRead"], ["~/"])
-        self.assertEqual(sb["filesystem"]["allowRead"], [os.path.realpath(self.work)])
+        self.assertEqual(sb["filesystem"]["denyRead"], ["/"])  # S2: not only ~/ — /var/tmp, /etc stay closed too
+        self.assertEqual(sb["filesystem"]["allowRead"][0], os.path.realpath(self.work))
+        self.assertNotIn("/etc", sb["filesystem"]["allowRead"])
         deny = sb["filesystem"]["denyWrite"]  # literal paths only: globs do nothing in the Linux sandbox
         self.assertFalse([x for x in deny if "*" in x])
         root = os.path.realpath(self.work)
         self.assertEqual(sorted(deny), sorted(os.path.join(root, x) for x in set(os.listdir(root)) | {".mcp.json", ".claude", ".git", ".envrc"}))
         self.assertEqual(sb["network"]["allowedDomains"], [])  # CC_CHAT_SITE unset: no site, never ["", "*."]
         os.environ["CC_CHAT_SITE"] = "example.org"
+        self.assertEqual(sdk_runner.chat_sandbox(self.work)["network"]["allowedDomains"], ["example.org", "*.example.org"])
+        os.environ["CC_CHAT_SITE"] = "https://Example.org/"  # N8: a URL form becomes its host
         self.assertEqual(sdk_runner.chat_sandbox(self.work)["network"]["allowedDomains"], ["example.org", "*.example.org"])
         del os.environ["CC_CHAT_SITE"]
         await self.runner.close()
@@ -615,8 +620,22 @@ class SendTests(Base):
         root = os.path.realpath(self.work)
         sb = sdk_runner.chat_sandbox(self.work, write=True)
         self.assertEqual(sb["filesystem"]["denyWrite"], [os.path.join(root, x) for x in (".mcp.json", ".claude", ".git", ".envrc")])
-        self.assertEqual(sb["filesystem"]["allowRead"], [root])
+        self.assertEqual(sb["filesystem"]["allowRead"][0], root)
         self.assertEqual(sb["network"], sdk_runner.chat_sandbox(self.work)["network"])
+
+    def test_chat_sandbox_reads_only_the_clone_and_system_dirs(self):
+        root = os.path.realpath(self.work)
+        fs = sdk_runner.chat_sandbox(self.work)["filesystem"]
+        self.assertEqual(fs["denyRead"], ["/"])
+        self.assertEqual(fs["allowRead"][0], root)
+        self.assertFalse({"/etc", "/var", "/tmp", "/home", "/srv", "/opt", "/"} & set(fs["allowRead"]))
+        self.assertNotIn(root, fs["denyWrite"])  # the root itself in denyWrite breaks bwrap (CLI 2.1.322 probe)
+        os.environ["CC_CHAT_READ_ANY"] = "1"
+        try:
+            fs = sdk_runner.chat_sandbox(self.work)["filesystem"]
+        finally:
+            del os.environ["CC_CHAT_READ_ANY"]
+        self.assertEqual((fs["denyRead"], fs["allowRead"]), (["~/"], [root]))
 
     async def test_send_switches_the_model_for_that_turn(self):
         s = await self.start("one")
@@ -1063,6 +1082,148 @@ class PermRuleTests(unittest.TestCase):
         self.assertEqual(self.bash(pol, "ls"), "allow")
         self.assertEqual(self.d(pol, "Read", {"file_path": os.path.join(self.cwd, "src", ".env")}), "deny")
 
+    def _bash_why(self, pol, cmd):
+        return sdk_runner.perm_decide(pol, "Bash", {"command": cmd}, self.cwd, False)
+
+    def test_bash_deny_sees_through_trivial_bypasses(self):
+        # mode:all must not swallow a denied command hidden by spacing, git globals, grouping or a wrapper
+        pol = {"mode": "all", "deny": ["Bash(git push:*)", "Bash(rm:*)"]}
+        denied = {
+            "git  push": "Bash(git push:*)",
+            "git -C . push": "Bash(git push:*)",
+            "git --git-dir=.git push origin": "Bash(git push:*)",
+            "(rm -rf x)": "Bash(rm:*)",
+            "{ rm x; }": "Bash(rm:*)",
+            "env rm x": "Bash(rm:*)",
+            "env -i rm -rf x": "Bash(rm:*)",
+            "/bin/rm x": "Bash(rm:*)",
+            "X=1 rm x": "Bash(rm:*)",
+            "command rm": "Bash(rm:*)",
+            "command -p rm x": "Bash(rm:*)",
+            "sudo rm": "Bash(rm:*)",
+            "sudo -n rm -rf x": "Bash(rm:*)",
+            "time rm": "Bash(rm:*)",
+            "nohup rm x": "Bash(rm:*)",
+            "timeout 5 rm x": "Bash(rm:*)",  # N7
+            "timeout -s KILL 5 git push": "Bash(git push:*)",
+            "nice -n 5 rm x": "Bash(rm:*)",
+            "exec rm x": "Bash(rm:*)",
+            "busybox rm x": "Bash(rm:*)",
+            "if true; then rm x; fi": "Bash(rm:*)",
+            "for f in a; do rm $f; done": "Bash(rm:*)",
+            "! rm x": "Bash(rm:*)",
+        }
+        for cmd in ("echo 'rm -rf x' | sh", "dash -c 'rm x'", "zsh -c 'rm x'", "find . -exec rm {} +"):
+            self.assertNotEqual(self._bash_why(pol, cmd)[0], "allow", cmd)  # opaque: the owner decides
+        for cmd, rule in denied.items():
+            self.assertEqual(self._bash_why(pol, cmd), ("deny", rule), cmd)
+
+    def test_bash_deny_unparsed_does_not_become_mode_all(self):
+        # a substitution, an inline shell or xargs hides the real command: ask, do not auto-allow
+        pol = {"mode": "all", "deny": ["Bash(rm:*)"]}
+        for cmd in ("echo $(rm x)", "echo `rm x`", "bash -c 'rm x'", "sh -c 'rm x'", "/bin/bash -c 'rm x'",
+                    "eval 'rm x'", "xargs rm", "xargs -n 1 rm"):
+            self.assertNotEqual(self._bash_why(pol, cmd), ("allow", "mode:all"), cmd)
+            self.assertIsNone(self.bash(pol, cmd), cmd)
+        # the outer command is still the denied one
+        self.assertEqual(self.bash(pol, "rm $(date)"), "deny")
+
+    def test_mode_all_keeps_plain_commands_when_something_else_is_denied(self):
+        pol = {"mode": "all", "deny": ["Bash(rm:*)", "Bash(git push:*)"]}
+        for cmd in ("VAR=1 cmd", "cd x && npm test", "git -C repo status", "ls", "echo hello", "xargs -n 1"):
+            self.assertEqual(self._bash_why(pol, cmd), ("allow", "mode:all"), cmd)
+
+    def test_no_deny_leaves_bash_verdicts_alone(self):
+        # normalization is only a deny check: with no deny rule the old verdict stands
+        pol = {"mode": "all"}
+        for cmd in ("git  push", "git -C . push", "(rm -rf x)", "{ rm x; }", "echo $(rm x)", "bash -c 'rm x'",
+                    "env rm x", "/bin/rm x", "X=1 rm x", "command rm", "sudo rm", "time rm", "nohup rm x",
+                    "VAR=1 cmd", "cd x && npm test", "git -C repo status"):
+            self.assertEqual(self._bash_why(pol, cmd), ("allow", "mode:all"), cmd)
+        allow = {"allow": ["Bash(git push:*)", "Bash(rm:*)"]}
+        for cmd in ("git  push", "git -C . push", "X=1 rm x", "/bin/rm x", "sudo rm"):
+            self.assertIsNone(self.bash(allow, cmd), cmd)
+        self.assertEqual(self.bash({"allow": ["Bash(git status:*)"]}, "git status"), "allow")
+        self.assertEqual(self.bash({"allow": ["Bash(git status:*)"]}, "git status -s"), "allow")
+
+    def test_mode_edits_does_not_write_git_or_settings(self):
+        edits = {"mode": "edits"}
+        os.makedirs(os.path.join(self.cwd, ".git"))
+        os.symlink(".git", os.path.join(self.cwd, "dotgit"))
+        sensitive = [
+            os.path.join(self.cwd, ".git", "HEAD"),
+            os.path.join(self.cwd, "src", "..", ".git", "HEAD"),
+            os.path.join(self.cwd, "dotgit", "HEAD"),
+            os.path.join(self.cwd, ".claude", "settings.json"),
+            os.path.join(self.cwd, ".mcp.json"),
+            os.path.join(self.cwd, ".envrc"),
+            ".git/HEAD",
+            os.path.join(self.cwd, "sub", ".claude", "settings.json"),  # N3: nested levels too
+            os.path.join(self.cwd, "sub", ".git", "hooks", "post-merge"),
+            os.path.join(self.cwd, "sub", ".mcp.json"),
+        ]
+        for chat in (False, True):
+            for path in sensitive:
+                self.assertIsNone(self.d(edits, "Write", {"file_path": path}, chat=chat), (chat, path))
+                self.assertIsNone(self.d(edits, "Edit", {"file_path": path}, chat=chat), (chat, path))
+            ordinary = os.path.join(self.cwd, "src", "a.py")
+            self.assertEqual(self.d(edits, "Write", {"file_path": ordinary}, chat=chat), "allow")
+            self.assertEqual(self.d({"mode": "all"}, "Write", {"file_path": ordinary}, chat=chat), "allow")
+            if chat:  # the owner's own «all» session is not restricted here
+                self.assertIsNone(self.d({"mode": "all"}, "Write", {"file_path": sensitive[0]}, chat=chat))
+
+    def test_chat_fetch_stays_inside_the_site(self):
+        dns = {"example.org": "104.21.1.1", "www.example.org": "104.21.1.1", "www.ufc.com": "23.1.2.3",
+               "notexample.org": "23.1.2.3", "example.org.evil.com": "23.1.2.3",
+               "rebind.example.com": "192.168.3.8"}
+
+        def fake_gai(host, *a, **k):
+            host = str(host or "").lower().rstrip(".")
+            if host not in dns:
+                raise socket.gaierror("no such host")
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (dns[host], 443))]
+
+        self.addCleanup(setattr, socket, "getaddrinfo", socket.getaddrinfo)
+        socket.getaddrinfo = fake_gai
+        saved = {k: os.environ.get(k) for k in ("CC_CHAT_WEB_ANY", "CC_CHAT_SITE")}
+
+        def restore():
+            for k, v in saved.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+        self.addCleanup(restore)
+        os.environ.pop("CC_CHAT_WEB_ANY", None)
+        os.environ["CC_CHAT_SITE"] = "example.org"
+        self.assertTrue(sdk_runner.chat_free("WebFetch", {"url": "https://example.org/a"}))
+        self.assertTrue(sdk_runner.chat_free("WebFetch", {"url": "https://www.example.org/a"}))
+        self.assertTrue(sdk_runner.chat_free("SandboxNetworkAccess", {"host": "www.example.org"}))
+        for host in ("www.ufc.com", "notexample.org", "example.org.evil.com", "rebind.example.com"):
+            self.assertFalse(sdk_runner.chat_free("WebFetch", {"url": "https://%s/" % host}), host)
+            self.assertFalse(sdk_runner.chat_free("SandboxNetworkAccess", {"host": host}), host)
+        # off the list: the owner is asked, the same as for a private address, even if a rule would allow the tool
+        pol = {"mode": "all", "allow": ["SandboxNetworkAccess", "WebFetch"]}
+        self.assertIsNone(self.d(pol, "SandboxNetworkAccess", {"host": "www.ufc.com"}, chat=True))
+        self.assertIsNone(self.d({"mode": "all"}, "WebFetch", {"url": "https://www.ufc.com/"}, chat=True))
+        # the configured site still resolves to a private address: do not auto-approve
+        os.environ["CC_CHAT_SITE"] = "rebind.example.com"
+        self.assertFalse(sdk_runner.chat_free("WebFetch", {"url": "https://rebind.example.com/"}))
+        # CC_CHAT_WEB_ANY=1 is the previous «any public name» behaviour
+        os.environ["CC_CHAT_SITE"] = "example.org"
+        os.environ["CC_CHAT_WEB_ANY"] = "1"
+        self.assertTrue(sdk_runner.chat_free("WebFetch", {"url": "https://www.ufc.com/event/ufc-333"}))
+        self.assertTrue(sdk_runner.chat_free("SandboxNetworkAccess", {"host": "www.ufc.com"}))
+        self.assertFalse(sdk_runner.chat_free("SandboxNetworkAccess", {"host": "rebind.example.com"}))
+        self.assertEqual(self.d(pol, "SandboxNetworkAccess", {"host": "www.ufc.com"}, chat=True), "allow")
+
+    def test_unreadable_perms_is_not_an_empty_deny(self):
+        p = os.path.join(self.tmp.name, "perms.json")
+        with open(p, "w") as f:
+            f.write("{broken")
+        self.assertIsNone(sdk_runner.perm_cli_deny(p, False))
+        self.assertIsNone(sdk_runner.perm_cli_deny(p, True))
+
     def test_paths_stay_inside_the_folder(self):
         pol = {"allow": ["Edit(src/**)"]}
         self.assertEqual(self.d(pol, "Write", {"file_path": os.path.join(self.cwd, "src", "a.py")}), "allow")
@@ -1207,6 +1368,28 @@ class PermPolicyRunnerTests(Base):
         await self.ok("session.send", id=s["id"], text="no file")
         await self.wait_state(s["id"], "idle")
         self.assertEqual(len(FakeClient.instances), n)
+
+    async def test_broken_perms_does_not_start_or_drop_denies(self):
+        # unreadable rules are not «no rules»: do not start a client without them, and do not replace a live one
+        path = os.path.join(self.tmp.name, "perms.json")
+        with open(path, "w") as f:
+            f.write("{broken")
+        n = len(FakeClient.instances)
+        await self.err("session.start", "unavailable", cwd=self.work, prompt="x", perms=path)
+        self.assertEqual(len(FakeClient.instances), n)
+        self.assertIn("perms unreadable", self.stderr.getvalue())
+        with open(path, "w") as f:
+            json.dump({"sessions": {"deny": ["Read(**/.env)"]}}, f)
+        s = await self.start(perms=path)
+        await self.wait_state(s["id"], "idle")
+        n = len(FakeClient.instances)
+        with open(path, "w") as f:
+            f.write("{broken")
+        await self.ok("session.send", id=s["id"], text="still the old rules")
+        await self.wait_state(s["id"], "idle")
+        self.assertEqual(len(FakeClient.instances), n)
+        missing = os.path.join(self.tmp.name, "no-such-perms.json")
+        await self.err("session.start", "unavailable", cwd=self.work, prompt="x", perms=missing)
 
     def test_cli_gets_absolute_file_rules_in_its_own_syntax(self):
         # the runner reads a single leading «/» as an absolute path; for the CLI that is the project root, «//» is absolute
