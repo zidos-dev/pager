@@ -46,6 +46,34 @@ def multi(page, state):
     check(state.records(state.answers)[-1] == {"action": "next"}, "last ANSWER_LOG is not next: " + state.answers.read_text())
 
 
+def server_error(page, state):
+    # 12.11 iPhone: a 500 on «next» showed «No connection» and the toast covered the sheet's main button
+    page.context.add_cookies([{"name": "answer_reply", "value": "internal", "url": URL}])
+    try:
+        page.goto(URL + "/app/?theme=tg-light", wait_until="load")
+        page.locator(f'.card[data-id="{SID}"]').click()
+        root = page.locator(OPEN)
+        expect(root).to_be_visible()
+        page.wait_for_timeout(1000)
+        root.locator(".lab-ask-opt").first.click()  # a multi-select mark keeps the sheet up, as on the owner's phone
+        toast = page.locator("#toast")
+        expect(toast).to_be_visible()
+        text = toast.inner_text()
+        check("connection" not in text.lower(), "a server error reads as a network one: " + text)
+        page.wait_for_timeout(400)
+        buttons = page.locator(OPEN + " .lab-ask-btn").all()
+        check(len(buttons) >= 2, "the sheet went away after a failed mark")
+        expect(page.locator(OPEN + ' .lab-ask-opt[data-k="0"]')).to_have_attribute("aria-pressed", "false", timeout=4000)  # the server did not take it
+        t = toast.bounding_box()
+        for b in buttons:
+            r = b.bounding_box()
+            if r and r["width"] > 0:
+                check(t["y"] + t["height"] <= r["y"] + .5 or t["y"] >= r["y"] + r["height"] - .5,
+                      "toast covers the sheet button " + b.inner_text())
+    finally:
+        page.context.clear_cookies()
+
+
 def main():
     failures = 0
     engines = [n.strip() for n in os.environ.get("BROWSERS", "chromium,webkit").split(",") if n.strip()]
@@ -82,6 +110,8 @@ def main():
                     page.on("pageerror", lambda e: errors.append(str(e)))
                     try:
                         multi(page, state)
+                        state.write(DATA)
+                        server_error(page, state)
                         check(not errors, f"page errors: {errors}")
                         print(f"PASS {engine} multi-select", flush=True)
                     except Exception as error:

@@ -1447,9 +1447,11 @@ const $ = id => document.getElementById(id);
 const esc = t => String(t == null ? "" : t).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const haptic = k => { try{ tg && tg.HapticFeedback && (k === "ok" ? tg.HapticFeedback.notificationOccurred("success") : tg.HapticFeedback.impactOccurred("light")); }catch(e){} };
 let toastTimer;
-function liftToast(){  // a tall composer: the toast stays above it
+function liftToast(){  // a tall composer or an open question sheet's buttons: the toast stays above them
   const el = $("toast"), foot = !$("session-screen").hidden && $("session-screen").querySelector(".sfoot");
-  el.style.bottom = foot ? Math.max(96, innerHeight - foot.getBoundingClientRect().top + 8) + "px" : "";
+  const tops = [foot, ...document.querySelectorAll(".lab-ask-root:not([data-state=gone]) .lab-ask-actions, .lab-ask-root:not([data-state=gone]) .lab-ask-own:not([hidden])")]
+    .filter(Boolean).map(n => n.getBoundingClientRect()).filter(r => r.height > 0 && r.top < innerHeight).map(r => r.top);
+  el.style.bottom = tops.length ? Math.max(96, innerHeight - Math.min(...tops) + 8) + "px" : "";
 }
 new ResizeObserver(() => { if (!$("toast").hidden) liftToast(); }).observe($("session-screen").querySelector(".sfoot"));  // a restored draft grows it later
 function toast(t, action, onAction){
@@ -2019,7 +2021,7 @@ $("s-question").addEventListener("click", async e => {
   answering = true; b.disabled = true; haptic();
   const failed = () => $("s-question").dispatchEvent(new CustomEvent("question:fail", {bubbles: true})); /* слой вернёт лист */
   try{ const r = await api(`session/${encodeURIComponent(sess.id)}/answer`, body); if (!r.ok){ toast(r.error || t("failed")); failed(); } else{ haptic("ok"); answered(sess.id); } await loadSession(); }
-  catch(x){ toast(t("netRetry")); failed(); }
+  catch(x){ toast(t(x.message === "auth" ? "authMsg" : x instanceof TypeError ? "netRetry" : "failed")); failed(); }  /* fetch rejects with TypeError only when the network is down */
   finally{ answering = false; b.disabled = false; }
 });
 /* Keep the request and its draft bound to the originating session/question,

@@ -806,6 +806,9 @@
     if(S.dismissed===sig){ return; }
     if(!S.root||S.sig!==sig) build(q);
     else if(q.permission) permColor(S.root);
+    else if(S.multi&&!S.busy&&!$("s-question").querySelector("button:disabled")){  /* no request in flight: marks follow the server (a dropped or failed tap must not stay checked) */
+      q.opts.forEach(function(o,k){ if(S.marks[k]!==o.marked){ S.marks[k]=o.marked; var r=S.sheet.querySelector('.lab-ask-opt[data-k="'+k+'"]'); if(r) r.setAttribute("aria-pressed",String(o.marked)); } });
+    }
     if(!q.permission){
       if(q.ownState&&q.ownState.error){
         if(!S.own){ ownEditor(true); S.root.querySelector("textarea").value=q.ownState.text; sizeOwn(); }

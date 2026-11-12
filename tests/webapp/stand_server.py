@@ -360,6 +360,8 @@ class H(http.server.BaseHTTPRequestHandler):
         if scenario == "network":
             self.close_connection = True
             return
+        if scenario == "internal":  # the real server's crash path: 500 {"error": "internal"}
+            return self.j({"error": "internal"}, 500)
         if scenario == "fail":
             return self.j({"ok": False, "error": "синтетическая ошибка"})
         if scenario not in ("ok", "next"):

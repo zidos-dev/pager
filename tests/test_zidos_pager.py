@@ -3556,6 +3556,17 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(self.fs.flat_keys, ["1", "1", "Right", "1"])
         self.assertIsNone(obj["question"])
 
+    def test_next_past_the_last_step_returns_the_current_step_not_a_500(self):
+        # 12.11 iPhone: the sheet sent «next» while the server was already on review -> IndexError, 500, «no network» toast
+        e = self.e
+        self.question_setup([Q_TOP])
+        self.fs.on_key = lambda ks, f: setattr(f, "screen", REVIEW) if ks == ["Right"] else None
+        self.assertTrue(self.w.req("POST", "/api/session/s1/answer", {"action": "next"})[1]["question"]["review"])
+        st, obj, _ = self.w.req("POST", "/api/session/s1/answer", {"action": "next"})
+        self.assertEqual((st, obj["ok"]), (200, False))
+        self.assertTrue(obj["question"]["review"])
+        self.assertEqual(self.fs.flat_keys, ["Right"])  # no key reached the TUI
+
     def test_answer_cancel_and_own(self):
         e = self.e
         self.question_setup([Q_SIZE])

@@ -11020,6 +11020,8 @@ class Bot:
                 return {"ok": False, "error": _t("No such option"), "question": self.api_question_view(q)}
             ok, err, _ = self.question_do(uid, q, "o", step, "%d:%d" % (step, k))
         elif action in ("next", "submit", "cancel"):
+            if action == "next" and step >= len(q["questions"]):  # a stale sheet: the server is already on review
+                return {"ok": False, "error": _t("The question is already on another step."), "question": self.api_question_view(q)}
             kind = {"next": "next", "submit": "sub", "cancel": "esc"}[action]
             ok, err, _ = self.question_do(uid, q, kind, step, str(step))
         else:
