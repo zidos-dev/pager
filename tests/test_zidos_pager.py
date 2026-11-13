@@ -3461,6 +3461,52 @@ class WebApiTests(unittest.TestCase):
         st, obj, _ = self.w.req("POST", "/api/session/a1/send", {"text": "x"})
         self.assertEqual((obj["ok"], obj["code"], obj["error"]), (False, "error", "Сессия не отвечает"))
 
+    def test_send_key_makes_a_retry_idempotent(self):
+        """Retry after a lost reply carries the same key: the text is pasted once (owner 13.11 06:39)."""
+        e = self.e
+        mk(e, "a1", "working", 1)
+        e.bot.list_sessions(True)
+        st, obj, _ = self.w.req("POST", "/api/session/a1/send", {"text": "раз", "key": "k1"})
+        self.assertEqual((st, obj["ok"], obj.get("dup")), (200, True, None))
+        st, obj, _ = self.w.req("POST", "/api/session/a1/send", {"text": "раз", "key": "k1"})
+        self.assertEqual((obj["ok"], obj.get("dup")), (True, True))
+        self.assertEqual(e.sent, [("a1", "раз")])
+        self.w.req("POST", "/api/session/a1/send", {"text": "раз", "key": "k2"})  # a new send with the same text is sent
+        self.assertEqual(e.sent, [("a1", "раз"), ("a1", "раз")])
+        e.inject_result = (False, "Сессия не отвечает")
+        e.bot.injector = e.inject
+        st, obj, _ = self.w.req("POST", "/api/session/a1/send", {"text": "два", "key": "k3"})
+        self.assertFalse(obj["ok"])
+        e.inject_result = (True, None)
+        st, obj, _ = self.w.req("POST", "/api/session/a1/send", {"text": "два", "key": "k3"})
+        self.assertEqual((obj["ok"], obj.get("dup")), (True, None))  # the failed first try freed the key
+        e.bot.clock = lambda: 10 ** 10  # the key expires
+        st, obj, _ = self.w.req("POST", "/api/session/a1/send", {"text": "раз", "key": "k1"})
+        self.assertIsNone(obj.get("dup"))
+
+    def test_send_key_duplicate_waits_for_the_first_try(self):
+        """A retry racing the first try still pasting gets the first try's real outcome, and nothing is pasted twice."""
+        e = self.e
+        mk(e, "a1", "working", 1)
+        e.bot.list_sessions(True)
+        for first_ok in (False, True):
+            gate, calls = threading.Event(), []
+            def slow(chat, sid, text, origin="chat"):
+                calls.append(text); gate.wait(5); return (first_ok, None if first_ok else "Сессия не отвечает")
+            e.bot.deliver = slow
+            out = {}
+            t1 = threading.Thread(target=lambda: out.__setitem__("first", e.bot.api_send(1, "a1", "x", "race%s" % first_ok)))
+            t1.start()
+            for _ in range(100):
+                if calls: break
+                time.sleep(.01)
+            t2 = threading.Thread(target=lambda: out.__setitem__("dup", e.bot.api_send(1, "a1", "x", "race%s" % first_ok)))
+            t2.start(); time.sleep(.1)
+            self.assertTrue(t2.is_alive())  # the duplicate waits instead of answering ok blindly
+            gate.set(); t1.join(5); t2.join(5)
+            self.assertEqual(len(calls), 1)
+            self.assertEqual((out["first"]["ok"], out["dup"]["ok"], out["dup"]["dup"]), (first_ok, first_ok, True))
+
     def test_send_does_not_wait_for_the_global_lock(self):
         e = self.e
         mk(e, "a1", "working", 1)
@@ -7190,6 +7236,37 @@ class HistoryWindowTests(unittest.TestCase):
             self.skipTest("имя метода истории другое")
         self.assertGreaterEqual(len(h), 10)
         self.assertEqual(h[-1]["text"] if h[-1]["role"] == "user" else h[-1]["role"], "assistant")
+
+
+class HistoryBeforeTests(unittest.TestCase):
+    def _bot(self, n):
+        d = tempfile.mkdtemp(); self.addCleanup(lambda: __import__("shutil").rmtree(d))
+        path = os.path.join(d, "t.jsonl")
+        with open(path, "w", encoding="utf-8") as f:
+            for i in range(n):
+                f.write(json.dumps({"type": "assistant", "uuid": "a%d" % i, "message": {"content": [{"type": "text", "text": "ответ %d" % i}]}}, ensure_ascii=False) + "\n")
+        b = cc.Bot.__new__(cc.Bot); b._hist = {}
+        b.cfg = type("C", (), {"home": d})(); b.transcript_path = lambda sid: path
+        return b
+
+    def test_pages_walk_back_to_the_start(self):
+        b = self._bot(60)
+        win, more = b.api_history_page("s")
+        self.assertEqual([h["uuid"] for h in win], ["a%d" % i for i in range(36, 60)])
+        self.assertTrue(more)
+        p1, more1 = b.api_history_page("s", win[0]["uuid"])
+        self.assertEqual([h["uuid"] for h in p1], ["a%d" % i for i in range(12, 36)])
+        self.assertTrue(more1)
+        p2, more2 = b.api_history_page("s", p1[0]["uuid"])
+        self.assertEqual([h["uuid"] for h in p2], ["a%d" % i for i in range(12)])
+        self.assertFalse(more2)
+        self.assertEqual(b.api_history_page("s", "nope"), ([], False))
+
+    def test_short_log_has_no_more(self):
+        b = self._bot(24)
+        self.assertFalse(b.api_history_page("s")[1])
+        self.assertEqual(len(b.api_history("s")), 24)
+        self.assertTrue(self._bot(25).api_history_page("s")[1])
 
 
 class CcSendHistoryTests(unittest.TestCase):

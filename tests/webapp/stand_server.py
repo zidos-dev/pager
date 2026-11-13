@@ -8,6 +8,9 @@ DATA = os.environ.get("DATA_FILE", os.path.join(os.path.dirname(os.path.abspath(
 R = json.load(open(DATA))
 DATA_LOCK = threading.Lock()
 NEW = []  # sessions launched through POST /api/new
+# a session with 60 entries opened by id (#s=LONG_SID); the server window is the last 24, `history/?before=` pages back
+LONG_SID = "e5a7c9b1"
+LONG = [{"role": "assistant", "uuid": "L%d" % i, "ts": "2026-11-12T20:%02d:00Z" % i, "text": "Entry %d: " % i + "a long line of the feed, " * 5} for i in range(60)]
 
 
 # lists of the model sheet: the shape of the real api_model (presets with models; empty list = one preset model)
@@ -454,12 +457,19 @@ class H(http.server.BaseHTTPRequestHandler):
             if len(parts) == 2 and parts[1] == "screen": return self.j({"menu": False, "screen": "Proceed? [y/n]\n> "})
             if len(parts) == 2 and parts[1] == "subagents": return self.j(R["subagents"].get(sid, {"subagents": []}))
             if len(parts) == 3 and parts[1] == "subagent": return self.j(R["subagent"].get(parts[2]) or {"history": []})
+            full = current["session"].get(sid, {}).get("history_all") or (LONG if sid == LONG_SID else None)
+            if full is not None and len(parts) == 2 and parts[1] == "history":  # an older page, like the server: 24 entries before ?before=<uuid>
+                before = (urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get("before") or [""])[0]
+                at = next((i for i, h in enumerate(full) if h.get("uuid") == before), -1)
+                return self.j({"history": full[max(0, at - 24):at] if at >= 0 else [], "more": at > 24})
             current["sessions"]["sessions"] = NEW + current["sessions"]["sessions"]
             d = current["session"].get(sid) or next(({**r, "history": [], "question": None} for r in NEW if r["id"] == sid), None)
             if not d:
                 base = next((s for s in current["sessions"]["sessions"] if s["id"] == sid), {"id": sid, "name": sid, "group": "work"})
                 d = dict(base, history=[], cwd="~", question=None)
             d = dict(d)
+            if full is not None:  # the server window: the last 24 entries and whether older ones exist
+                d["history"], d["history_more"] = full[-24:], len(full) > 24
             if current["sessions"].get("topics"):
                 d.setdefault("thread", 800 + next((i for i, s in enumerate(current["sessions"]["sessions"]) if s["id"] == sid), 0))
             return self.j(d)

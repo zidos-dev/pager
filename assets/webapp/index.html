@@ -212,6 +212,8 @@ html.list-scrolled .lbar{opacity:1}html.list-scrolled .top h1{opacity:0}html.loc
   #session-screen:not([hidden]){left:404px;right:12px;top:12px;height:calc(100dvh - 24px);border-radius:28px;background:var(--panel);--sfbg:var(--panel);overflow:hidden}
   #session-screen .session-header{background:color-mix(in srgb,var(--panel) 72%,transparent)}
   #session-screen .msg:not(.thinking){background:var(--soft);box-shadow:none}
+  #session-screen .older{background:var(--soft)}
+  #session-screen .older:active{background:color-mix(in srgb,var(--soft) 80%,var(--ink))}
   html[data-view="list"] .pane-empty{display:grid;place-items:center;position:fixed;left:404px;right:12px;top:12px;bottom:12px;border-radius:28px;background:var(--panel);color:var(--muted);font-size:15px}
   html[data-view="new"] #new-screen{left:404px;right:12px;top:12px;width:auto;height:calc(100dvh - 24px);border-radius:28px;background:var(--panel);overflow:auto}  /* «Новая сессия» в правой панели, список слева */
   html[data-view="new"] #new-screen .navbar{display:none}
@@ -349,12 +351,26 @@ html.list-scrolled .lbar{opacity:1}html.list-scrolled .top h1{opacity:0}html.loc
 .keys .btn{min-height:44px;padding:8px 4px}
 .slash{flex:none;width:44px;height:44px;color:var(--ink);border-radius:50%;background:var(--panel);font:600 18px ui-monospace,Menlo,monospace;display:grid;place-items:center}
 /* Telegram iOS вставляет :not(input):not(textarea):not([contenteditable="true"]){-webkit-user-select:none} и *{-webkit-touch-callout:none}: без !important текст не выделить */
-.msg,.msg *,.me,.lab-perm-body,.lab-perm-path,.lab-ask-q,.lab-ask-quote span,.lab-ask-ans{-webkit-user-select:text!important;user-select:text!important}
+.msg,.msg *:not(.cpy):not(.cpy *),.me,.lab-perm-body,.lab-perm-path,.lab-ask-q,.lab-ask-quote span,.lab-ask-ans{-webkit-user-select:text!important;user-select:text!important}
 .msg a,.msg img,.pv{-webkit-touch-callout:default!important}
 .msg{background:var(--panel);border-radius:20px;box-shadow:var(--shadow);padding:12px 14px;font-size:15.5px;line-height:1.45;overflow-wrap:anywhere;white-space:pre-wrap}
 .msg pre{white-space:pre-wrap;background:var(--soft);border-radius:10px;padding:10px;font-size:13px;overflow-x:auto;margin:6px 0}
 .msg.thinking{background:none;box-shadow:none;color:var(--muted);font-size:14px;line-height:1.45;padding:2px 14px}
 .msg .thk{font-size:12px;font-weight:600;margin-bottom:2px}
+.cpy{position:relative;width:44px;height:44px;display:grid;place-items:center;color:var(--muted);-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;transition:opacity .15s ease-out}
+.cpy::before{content:"";position:absolute;inset:7px;border-radius:50%;background:color-mix(in srgb,var(--ink) 9%,transparent);transition:background-color .15s ease-out}
+.cpy svg{position:relative;width:15px;height:15px}
+.cpy:active::before{background:var(--press)}
+.cpy:focus-visible{outline:2px solid var(--link);outline-offset:-3px;border-radius:50%}
+.cprow{position:relative;height:30px}
+.cprow .cpy{position:absolute;left:-4px;top:-7px}
+.prew{position:relative}
+.prew pre{padding-right:40px}
+.prew .cpy{position:absolute;top:-2px;right:-2px}
+@media (hover:hover){.cpy{opacity:0}.it:hover .cpy,.it:focus-within .cpy,.cpy:focus-visible{opacity:1}}
+.older{display:block;margin:0 auto 12px;min-height:44px;padding:10px 28px;border-radius:22px;background:var(--panel);color:var(--ink);font-size:14.5px;font-weight:500;transition:background-color .15s ease-out,opacity .15s ease-out}
+.older:active{background:color-mix(in srgb,var(--panel) 80%,var(--ink))}
+.older:disabled{opacity:.6;cursor:default}
 .msg code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13.5px}
 /* таблицы ответа: узкий экран — прокрутка вбок внутри пузыря; строки разделяет тон, а не линии */
 .msg .tbl{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:6px -6px;padding:0 6px;white-space:normal}
@@ -527,6 +543,7 @@ textarea.field{min-height:120px;resize:vertical}
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
 <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
 <symbol id="i-clip" viewBox="0 0 24 24"><path d="M20 11.5 12.4 19a5 5 0 0 1-7.1-7.1l8-8a3.4 3.4 0 0 1 4.8 4.8l-8 8a1.7 1.7 0 0 1-2.4-2.4l7.4-7.4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2.6" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M5 15V7a3 3 0 0 1 3-3h8" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
 <symbol id="i-slash" viewBox="0 0 24 24"><path d="M15.5 4 8.5 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
 <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V6M6 11.5 12 5.5l6 6" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5 8 12l7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
@@ -562,7 +579,7 @@ textarea.field{min-height:120px;resize:vertical}
  <div class="sbody" id="s-body">
   <section id="s-question" class="block" hidden></section>
   <section id="s-reason" class="block" hidden><h3 data-i18n="whatNow">What's happening</h3><div class="reason" id="s-reason-t"></div></section>
-  <section style="margin-top:14px"><div class="hist" id="s-hist"></div></section>
+  <section style="margin-top:14px"><button class="older" id="s-older" type="button" hidden data-i18n="showEarlier">Show earlier</button><div class="hist" id="s-hist"></div></section>
  </div>
  <div class="sfoot">
   <button class="tobot" type="button" id="s-tobot" hidden aria-label="Jump to latest" data-i18n-attr="aria-label:toEnd"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v13M6 12.5l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
@@ -987,6 +1004,12 @@ const STR = {
   "liveWork": "working…",
   "liveWorkD": "working: {d}",
   "emptyHist": "No messages yet.",
+  "copied": "Copied",
+  "copyFail": "Could not copy",
+  "copyMsg": "Copy reply",
+  "copyCode": "Copy code",
+  "showEarlier": "Show earlier",
+  "olderFail": "Could not load earlier messages",
   "reviewAns": "Review your answers",
   "submitAns": "Submit answers",
   "cancel": "Cancel",
@@ -1316,6 +1339,12 @@ const STR = {
   "liveWork": "работает…",
   "liveWorkD": "работает: {d}",
   "emptyHist": "Переписки пока нет.",
+  "copied": "Скопировано",
+  "copyFail": "Не удалось скопировать",
+  "copyMsg": "Копировать ответ",
+  "copyCode": "Копировать код",
+  "showEarlier": "Показать раньше",
+  "olderFail": "Не удалось загрузить раньше",
   "reviewAns": "Проверьте ответы",
   "submitAns": "Отправить ответы",
   "cancel": "Отмена",
@@ -1860,12 +1889,15 @@ function renderHist(items){
   // окно сервера сдвинулось: ушедшие сверху узлы убираем, остальные (и выделение в них) не трогаем
   for (const c of Array.from(box.children)) if (c.dataset.k && c.dataset.k !== "live" && !inWin.has(c.dataset.k)) c.remove();
   const have = new Map(Array.from(box.children).filter(c => c.dataset.k).map(c => [c.dataset.k, c]));
+  const mk = (it, animate) => { const d = document.createElement("div"); d.className = "it" + (animate ? " enter" : ""); d.dataset.k = it.k; d.innerHTML = it.html; d._h = it.html; return d; };
   items.forEach((it, i) => { const nx = items[i + 1] && have.get(items[i + 1].k);  // the new head got a time separator it did not have
     if (it.k.startsWith("t:") && !have.has(it.k) && nx){ const d = document.createElement("div"); d.className = "it"; d.dataset.k = it.k; d.innerHTML = it.html; d._h = it.html; box.insertBefore(d, nx); have.set(it.k, d); } });
+  // an older page was loaded: its nodes go above the current head, the nodes in place (and a selection in them) stay
+  const head = Array.from(box.children).find(c => c.dataset.k && c.dataset.k !== "live"), hj = head ? newKeys.indexOf(head.dataset.k) : -1;
+  if (hj > 0){ const fr = document.createDocumentFragment(); items.slice(0, hj).forEach(it => { if (!have.has(it.k)) fr.appendChild(mk(it, false)); }); box.insertBefore(fr, head); }
   const cur = Array.from(box.children).filter(c => c.dataset.k);
   const curKeys = cur.map(c => c.dataset.k).filter(k => k !== "live");
   const prefix = curKeys.length <= newKeys.length && curKeys.every((k, i) => k === newKeys[i]);
-  const mk = (it, animate) => { const d = document.createElement("div"); d.className = "it" + (animate ? " enter" : ""); d.dataset.k = it.k; d.innerHTML = it.html; d._h = it.html; return d; };
   if (!prefix || !cur.length){ box.replaceChildren(...items.map(it => mk(it, false))); return; }
   const byKey = new Map(cur.map(c => [c.dataset.k, c]));
   const liveEl = byKey.get("live"); if (liveEl) liveEl.remove();
@@ -1901,7 +1933,8 @@ function renderSession(){
   $("a-arch").textContent = t((s.group === "archived" || s.group === "old") ? "unarchiveAct" : "archiveIt");
   $("a-stop").hidden = s.group === "archived";
   $("a-topic").hidden = !(s.thread && data && data.bot);  /* t.me/<bot>/<topic>: Bot API 10.4 */
-  const h = (s.history || []).map((m, idx) => ({k: m.uuid || (m.role + ":" + idx), html: (m => {
+  const hs = olderHist(s);
+  const h = hs.map((m, idx) => ({k: m.uuid || (m.role + ":" + idx), html: (m => {
     if (m.role === "user" && /^(Файлы? от владельца|Files? from owner)/.test(m.text || "")){
       const lines = (m.text || "").split("\n"), media = [], rest = [];
       for (const ln of lines.slice(1).concat(/^(Файл от владельца|File from owner): /.test(lines[0]) ? [lines[0].replace(/^(Файл от владельца|File from owner): /, "")] : [])){
@@ -1925,12 +1958,13 @@ function renderSession(){
       : `<img class="pv" alt="${esc(f.name)}" data-pv="${esc(f.path)}">`).join("");
     const files = (m.files || []).map(f => `<div class="file"><svg class="fi" aria-hidden="true"><use href="#i-file"/></svg><span class="fn">${esc(f.name)} <span style="font-weight:400;color:var(--muted)">${fmtSize(f.size)}</span></span><span class="fa"><button type="button" data-dl="${esc(f.path)}" data-name="${esc(f.name)}">${t("download")}</button><button type="button" data-tg="${esc(f.path)}">${t("toTelegram")}</button></span></div>`).join("");
     if (m.thinking) return `<article class="msg thinking"><div class="thk">${t("thinking")}</div>${m.html || esc(m.text || "")}</article>`;  // ответ не попал в лог — видна только сводка рассуждения
-    return `<article class="msg">${m.html || esc(m.text || "")}${media}${files ? `<div class="files">${files}</div>` : ""}</article>`;
+    const body = (m.html || esc(m.text || "")).replace(/<pre\b[\s\S]*?<\/pre>/g, p => `<div class="prew">${p}${cpyBtn("pre", "copyCode")}</div>`);
+    return `<article class="msg">${body}${media}${files ? `<div class="files">${files}</div>` : ""}</article><div class="cprow">${cpyBtn("msg", "copyMsg")}</div>`;
   })(m)}));
   const live = (s.group === "work" && !s.question && !s.perm) ? `<div class="live" aria-live="polite"><span class="dots"><i></i><i></i><i></i></span><span>${esc(s.detail ? t("liveWorkD", {d: s.detail}) : t("liveWork"))}</span></div>` : "";
   // отметка времени перед сообщением, если с прошлого прошло 10 минут и больше
   const hh = []; let prevT = 0;
-  (s.history || []).forEach((m, idx) => {
+  hs.forEach((m, idx) => {
     const t = m.ts ? Date.parse(m.ts) : 0;
     if (t && (!prevT || t - prevT >= 600000)){ const d = new Date(t); hh.push({k: "t:" + h[idx].k, html: `<div class="tsep">${d.toLocaleDateString(LOC(), {day: "numeric", month: "short"})}, ${d.toLocaleTimeString(LOC(), {hour: "2-digit", minute: "2-digit"})}</div>`}); }
     if (t) prevT = t;
@@ -1944,13 +1978,65 @@ function renderSession(){
   const items = live ? hh.concat([{k: "live", html: live}]) : hh;
   const sig = items.map(i => i.k + "\u0001" + i.html).join("\u0002");
   if (sig !== lastHist){
-    if (selInHist()) histDefer = true;  // идёт выделение: ленту не трогаем, догоним после снятия (selectionchange) — lastHist не меняем
+    if (selInHist() && !forceHist) histDefer = true;  // идёт выделение: ленту не трогаем, догоним после снятия (selectionchange) — lastHist не меняем
     else { histDefer = false; renderHist(items); lastHist = sig; setTimeout(hydrate, 0);
       if (stick) requestAnimationFrame(() => toBottom()); }
   }
   $("s-meta").textContent = [s.cwd, s.id].filter(Boolean).join(" · ");
   syncFoot();
 }
+/* копирование ответа и блока кода; подгрузка старых записей над окном сервера */
+const cpyBtn = (what, key) => `<button type="button" class="cpy" data-cp="${what}" aria-label="${esc(t(key))}"><svg aria-hidden="true"><use href="#i-copy"/></svg></button>`;
+function plainText(el, isPre){
+  if (isPre) return el.innerText.replace(/\n$/, "");
+  const c = el.cloneNode(true); c.querySelectorAll(".cpy,.files,img,video").forEach(n => n.remove());
+  const h = document.createElement("div"); h.style.cssText = "position:fixed;left:-9999px;top:0;width:600px"; h.appendChild(c); document.body.appendChild(h);
+  const r = c.innerText.trim(); h.remove(); return r;  // innerText needs a rendered node: line breaks of blocks and pre-wrap survive
+}
+async function copyText(txt){
+  try{ if (navigator.clipboard && navigator.clipboard.writeText){ await navigator.clipboard.writeText(txt); return true; } }catch(e){}
+  const sel = getSelection(), keep = Array.from({length: sel.rangeCount}, (_, i) => sel.getRangeAt(i)), ta = document.createElement("textarea");  // Telegram WebView: no async clipboard
+  ta.value = txt; ta.readOnly = true; ta.style.cssText = "position:fixed;left:-9999px;top:0;opacity:0"; document.body.appendChild(ta);
+  ta.select(); ta.setSelectionRange(0, txt.length);
+  let ok = false; try{ ok = document.execCommand("copy"); }catch(e){}
+  ta.remove(); sel.removeAllRanges(); keep.forEach(r => sel.addRange(r)); return ok;
+}
+$("s-hist").addEventListener("click", async e => {
+  const b = e.target.closest(".cpy"); if (!b) return;
+  const pre = b.dataset.cp === "pre", el = pre ? b.closest(".prew").querySelector("pre") : b.closest(".it").querySelector(".msg");
+  const ok = el && await copyText(plainText(el, pre)); haptic(ok ? "ok" : undefined); toast(t(ok ? "copied" : "copyFail"));
+});
+let older = {sid: null, acc: null, more: false}, olderBusy = false, forceHist = false;
+// older.acc: once an older page is loaded, every entry seen (loaded + window) is kept in order, so a sliding window drops nothing
+function olderHist(s){
+  if (older.sid !== s.id) older = {sid: s.id, acc: null, more: false};
+  const w = s.history || [], a = older.acc;
+  if (a){  // shortcut: entries without uuid are not tracked across polls
+    const i = w.length && w[0].uuid ? a.findIndex(m => m.uuid === w[0].uuid) : -1;
+    older.acc = i >= 0 ? a.slice(0, i).concat(w) : a.concat(w.filter(m => m.uuid && !a.some(x => x.uuid === m.uuid)));
+  }
+  const all = older.acc || w, more = older.acc ? older.more : !!s.history_more;
+  $("s-older").hidden = !(more && all[0] && all[0].uuid);
+  return all;
+}
+$("s-older").addEventListener("click", async () => {
+  const s = sess, id = s && s.id, a = older.sid === id && older.acc || (s && s.history) || [], cur = a[0] && a[0].uuid, btn = $("s-older"), body = $("s-body");
+  if (!id || !cur || olderBusy) return;
+  olderBusy = true; btn.disabled = true;
+  try{
+    const r = await api(`session/${encodeURIComponent(id)}/history?before=${encodeURIComponent(cur)}`);
+    if (current !== id || !sess || sess.id !== id) return;  // a poll may have replaced sess meanwhile: use the fresh one
+    const old = (r.history || []).filter(m => m.uuid !== cur);
+    const w = olderHist(sess), seen = new Set(w.map(m => m.uuid));
+    const top = body.getBoundingClientRect().top, first = Array.from($("s-hist").children).find(c => c.dataset.k && !c.dataset.k.startsWith("t:") && c.getBoundingClientRect().bottom > top);  // a time separator may vanish when the page above merges
+    const key = first && first.dataset.k, was = first ? first.getBoundingClientRect().top - top : 0;
+    older.acc = old.filter(m => !m.uuid || !seen.has(m.uuid)).concat(w); older.more = !!r.more && old.length > 0;
+    stick = false; forceHist = true; lastHist = ""; renderSession(); forceHist = false;
+    const node = key && Array.from($("s-hist").children).find(c => c.dataset.k === key);
+    if (node) body.scrollTop += node.getBoundingClientRect().top - top - was;  // the first visible node stays where it was
+  }catch(e){ if (e.message !== "auth") toast(t("olderFail")); }
+  finally{ forceHist = false; olderBusy = false; btn.disabled = false; }
+});
 /* над полем: быстрые клавиши терминала, «Ещё ждут N», кнопка «в конец» со счётчиком новых */
 let afterAns = null, endLen = -1;
 const isTerm = s => !/^s-[0-9a-f]{8}$/.test(s.id);
@@ -2134,11 +2220,28 @@ function setMode(m){ const el = $("s-text"); el.dataset.mode = m; el.placeholder
 /* черновики по сессиям: уходя со страницы сессии, поле очищается (не блокирует автообновление) и возвращается при входе */
 const drafts = new Map(), attDrafts = new Map();  // текст и файлы черновика по сессиям (08.11: файлы тоже остаются)
 let draftOut = false;  // поле уже очищено при выходе на список
+/* 13.11: текст черновика переживает закрытие и перезагрузку (localStorage по сессии; файлы не сохраняются). Без хранилища всё как раньше */
+const DKEY = "zp.draft.", DMAX = 20000, DKEYS = 50; let draftTimer = 0;
+function persistDraft(sid, v){
+  try{
+    if (!sid) return;
+    if (!v || !v.trim()) return localStorage.removeItem(DKEY + sid);
+    localStorage.setItem(DKEY + sid, JSON.stringify({v: v.slice(0, DMAX), ts: Date.now()}));
+    const all = []; for (let i = 0; i < localStorage.length; i++){ const k = localStorage.key(i); if (k && k.startsWith(DKEY)){ let ts = 0; try{ ts = JSON.parse(localStorage.getItem(k)).ts || 0; }catch(e){} all.push([ts, k]); } }
+    all.sort((a, b) => a[0] - b[0]).slice(0, Math.max(0, all.length - DKEYS)).forEach(([, k]) => localStorage.removeItem(k));
+  }catch(e){}
+}
+function savedDraft(sid){ try{ const j = JSON.parse(localStorage.getItem(DKEY + sid)); return j && typeof j.v === "string" ? j.v : ""; }catch(e){ return ""; } }
+function flushDraft(){ clearTimeout(draftTimer); const ta = $("s-text"); if (current && !draftOut && ta.dataset.mode !== "rename") persistDraft(current, ta.value); }
+$("s-text").addEventListener("input", () => { clearTimeout(draftTimer); draftTimer = setTimeout(flushDraft, 300); });
+addEventListener("pagehide", flushDraft);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flushDraft(); });
 function stashDraft(){
   const ta = $("s-text"); if (!current || draftOut) return clearAtt(); draftOut = true;
   atts.length ? attDrafts.set(current, atts) : attDrafts.delete(current); atts = []; renderAtt();
   const v = ta.dataset.mode === "rename" ? "" : ta.value;
   v.trim() ? drafts.set(current, v) : drafts.delete(current);
+  clearTimeout(draftTimer); persistDraft(current, v);
   ta.value = ""; ta.dataset.mode = "send"; ta.placeholder = t(MODES.send); autosize();
 }
 async function openSession(id){
@@ -2149,7 +2252,7 @@ async function openSession(id){
   afterAns = null; endLen = -1; current = id; document.querySelectorAll("#list .card").forEach(c => c.classList.toggle("cur", c.dataset.id === id)); sess = (data && data.sessions.find(s => s.id === id)) || {id, name: "…", group: "work"}; lastHist = ""; stick = true;
   const own = ownAnswerRequests.get(id);
   if (own) sess = {...own.session};
-  draftOut = false; $("s-text").value = drafts.get(id) || ""; atts = attDrafts.get(id) || []; attDrafts.delete(id); renderAtt(); setMode("send"); $("s-text").blur();
+  draftOut = false; $("s-text").value = drafts.get(id) ?? savedDraft(id); atts = attDrafts.get(id) || []; attDrafts.delete(id); renderAtt(); setMode("send"); $("s-text").blur();
   if (!histHold && view !== "session") peelHash("s");  // запись списка без #s: одно «назад» не открывает сессию снова
   push("session"); if (!histHold) setSessionAddr(id); renderSession(); quotaLine(); haptic();
   autosize();  // высоту поля меряем на видимом экране: на скрытом scrollHeight врёт и восстановленный черновик обрезан
@@ -2178,7 +2281,7 @@ function autosize(){ const t = $("s-text"); t.style.height = "auto"; t.style.hei
 $("s-text").addEventListener("input", autosize);
 $("s-send").addEventListener("click", sendText);
 let sending = false;
-async function sendText(){
+async function sendText(retryKey){
   if (atts.length && ($("s-text").dataset.mode || "send") === "send") return sendDraft();
   const ta = $("s-text"), text = ta.value.trim(); if (!text || !sess || sending) return;
   sending = true;
@@ -2191,17 +2294,26 @@ async function sendText(){
   }
   $("s-send").disabled = true;
   const sid0 = sess.id, quick = mode === "send";
-  if (quick){ ta.value = ""; ta.blur(); autosize(); }  // сервер отвечает после вставки в tmux (1–2 с): поле не ждёт его
-  const restore = () => { if (quick && current === sid0 && !ta.value.trim()){ ta.value = text; autosize(); } };
+  /* ключ идемпотентности: «Повторить» шлёт тот же ключ, и сервер не вставит сообщение второй раз, если первое дошло, а ответ потерялся (владелец 13.11 06:39) */
+  const key = typeof retryKey === "string" ? retryKey : (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
+  if (quick){ ta.value = ""; ta.blur(); autosize(); clearTimeout(draftTimer); persistDraft(sid0, ""); }  // сервер отвечает после вставки в tmux (1–2 с): поле не ждёт его
+  /* неудача: призрак убираем, текст в поле, «Повторить» шлёт ровно этот текст в эту же сессию; смена сессии или правка поля — повтор молчит, ничего чужого не уходит */
+  const fail = (msg, canRetry) => {
+    if (ghost) ghost.remove();
+    if (quick && current === sid0 && !ta.value.trim()){ ta.value = text; autosize(); }
+    if (quick) persistDraft(sid0, text);
+    toast(msg, canRetry && quick ? t("retry") : "", () => { if (current === sid0 && ta.value.trim() === text) sendText(key); });
+  };
   try{
     const r = mode === "rename" ? await api(`session/${encodeURIComponent(sess.id)}/rename`, {name: text.slice(0, 28)})
             : text.startsWith("/") ? await api(`session/${encodeURIComponent(sess.id)}/command`, {text})
-            : await api(`session/${encodeURIComponent(sess.id)}/send`, {text});
+            : await api(`session/${encodeURIComponent(sess.id)}/send`, {text, key});
     if (r.menu) openScreen(r.screen);
     if (r.ok !== false){ if (ta.value.trim() === text){ ta.value = ""; setMode("send"); ta.blur(); } haptic("ok"); followUntil = Date.now() + 180000; setTimeout(toBottom, 50); if (mode === "rename"){ toast(t("nameSaved")); loadList(); } }
-    else { if (ghost) ghost.remove(); restore(); toast(r.code === "menu" ? t("menuWait") : (r.error || t("notSent"))); }
+    else if (r.code === "menu"){ if (ghost) ghost.remove(); fail(t("menuWait"), false); }
+    else fail(r.error || t("notSent"), true);
     await loadSession();
-  }catch(e){ restore(); toast(e.message === "auth" ? t("authMsg") : t("netKeep")); }
+  }catch(e){ fail(e.message === "auth" ? t("authMsg") : t("netKeep"), e.message !== "auth"); }
   finally{ sending = false; autosize(); }
 }
 
@@ -2360,7 +2472,8 @@ async function sendDraft(){
       haptic("ok"); followUntil = Date.now() + 180000;
       toast(batch.length > 1 ? t("filesSent", {n: batch.length}) : t("fileSent"));
       if (current === sid0 && !draftOut){ if (ta.value.trim() === cap) ta.value = ""; atts = atts.filter(a => !batch.includes(a)); renderAtt(); }
-      else { const left = (attDrafts.get(sid0) || []).filter(a => !batch.includes(a)); left.length ? attDrafts.set(sid0, left) : attDrafts.delete(sid0); if (drafts.get(sid0)?.trim() === cap) drafts.delete(sid0); }  // ушли из сессии, пока грузилось
+      else { const left = (attDrafts.get(sid0) || []).filter(a => !batch.includes(a)); left.length ? attDrafts.set(sid0, left) : attDrafts.delete(sid0); if (drafts.get(sid0)?.trim() === cap) drafts.delete(sid0); }
+      if (savedDraft(sid0).trim() === cap) persistDraft(sid0, "");  // ушли из сессии, пока грузилось
       batch.forEach(a => a.url && URL.revokeObjectURL(a.url));
       setTimeout(loadSession, 800);
     }

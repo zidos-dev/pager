@@ -309,6 +309,7 @@ _RU = {
         "Сессия не отвечает: не появилась строка ввода за %d с. Откройте 📺 Экран.",
     "The session is stopped — command not sent": "Сессия остановлена — команда не отправлена",
     "The session is waiting for an answer to a question": "Сессия ждёт ответа на вопрос",
+    "Not sent, try again": "Не отправлено, попробуйте ещё раз",
     "The session is waiting for an answer to a question — pick an option on "
     "the screen.":
         "Сессия ждёт ответа на вопрос — выберите вариант на экране.",
@@ -3334,6 +3335,8 @@ CLAUDE_GONE_TTL = 3.0          # "not installed" is usually an update replacing 
 STT_READY_TTL = 20.0           # how long "the STT runner is alive and has a ready engine" is remembered
 STT_TIMEOUT = 600.0            # recognition may be slow (a local model on a busy machine)
 VOICE_MAX = 10 * 1024 * 1024   # a voice recording from the mini-app
+SEND_KEY_TTL = 600            # s: how long the mini-app send key guards against a duplicate retry
+SEND_KEY_WAIT = 30            # s: a duplicate waits this long for the first try still pasting
 VOICE_TEXT_MAX = 3500          # recognised text kept for the "send" button (fits one message with the prefix)
 VOICE_KEEP = 50                # recognised texts waiting for a button press
 SDK_READY_TTL = 20.0           # how long "the runner is alive and has a key" is remembered
@@ -5282,6 +5285,7 @@ class Bot:
         self.api_lock = threading.RLock()
         self._rewidth_at = {}  # sid -> when the mini-app screen last re-rendered it
         self._hist = {}
+        self._send_keys, self._send_keys_lock = {}, threading.Lock()  # (sid, key) -> time: «Повторить» в мини-приложении не дублирует
         self.webapp_url_cur = None
         self.webapp_menu_initialized = False
         self.webapp_server = None
@@ -10451,17 +10455,22 @@ class Bot:
                 "voice": self.stt_ready(), "sessions": rows}
 
     def api_history(self, sid):
+        return self.api_history_page(sid)[0]
+
+    def api_history_page(self, sid, before=None):
+        """-> (entries, more). Without `before`: the last HISTORY_LIMIT entries; with it: up to HISTORY_LIMIT entries
+        right before the one with that uuid. `more`: whether older entries may exist (a cheap over-estimate)."""
         path = self.transcript_path(sid)
         try:
             st = os.stat(path)
             key = (st.st_size, st.st_mtime)
         except (OSError, TypeError):
-            return []
-        cached = self._hist.get(sid)
+            return [], False
+        cached = None if before else self._hist.get(sid)
         if cached and cached[0] == key:
-            return cached[1]
+            return cached[1], cached[2]
         # the window grows until the conversation is collected: the log tail may be full of images (lines of hundreds of KB)
-        tail, hist = HISTORY_TAIL, []
+        tail, hist, more = HISTORY_TAIL, [], False
         while True:
             try:
                 with open(path, "rb") as f:
@@ -10469,17 +10478,26 @@ class Bot:
                     f.seek(start)
                     data = f.read()
             except OSError:
-                return []
+                return [], False
             if start > 0:
                 nl = data.find(b"\n")
                 data = data[nl + 1:] if nl >= 0 else b""
             end = data.rfind(b"\n")
-            hist = parse_history(data[:end] if end >= 0 else b"", home=self.cfg.home)
-            if start == 0 or tail >= HISTORY_TAIL_MAX or len(hist) >= HISTORY_LIMIT:
+            # one extra entry tells whether the window has something older; the `before` page needs the whole tail
+            hist = parse_history(data[:end] if end >= 0 else b"", limit=10 ** 9 if before else HISTORY_LIMIT + 1, home=self.cfg.home)
+            at = next((i for i, h in enumerate(hist) if h.get("uuid") == before), -1) if before else 0
+            enough = at >= HISTORY_LIMIT if before else len(hist) >= HISTORY_LIMIT
+            if start == 0 or tail >= HISTORY_TAIL_MAX or enough:
                 break
             tail *= 2
-        self._hist[sid] = (key, hist)
-        return hist
+        if before:
+            if at < 0:
+                return [], False
+            return hist[max(0, at - HISTORY_LIMIT):at], at > HISTORY_LIMIT or start > 0
+        more = len(hist) > HISTORY_LIMIT or start > 0
+        hist = hist[-HISTORY_LIMIT:]
+        self._hist[sid] = (key, hist, more)
+        return hist, more
 
     def api_question_obj(self, uid, sid):
         """A session's pending question (registered in the store without a chat message) or None."""
@@ -10527,11 +10545,12 @@ class Bot:
         now = self.clock()
         row = self.api_row(uid, sid, now)
         info = self.session_info(sid)
+        hist, more = self.api_history_page(sid)
         parent, kid = self.chain_parent(sid), self.chain_child(sid)
         row.update({"cwd": tilde(info["cwd"]), "result": info["result"],
                     "prev": {"id": parent, "name": self.display_name(parent)} if parent else None,
                     "next": {"id": kid, "name": self.display_name(kid)} if kid else None,
-                    "history": self.api_history(sid),
+                    "history": hist, "history_more": more,
                     "subagents_count": self.subagents_count(sid), "lang": LANG,
                     "question": self.api_question_view(self.api_question_obj(uid, sid)),
                     "perm": None if (self.is_old(sid) or self.is_archived(sid)) else self.perm_view(sid, info["state"])})
@@ -10647,15 +10666,34 @@ class Bot:
                      "background": rec["background"], "status": subagent_status(rec, self.clock()),
                      "started": rec["started"], "updated": rec["updated"], "history": hist}
 
-    def api_send(self, uid, sid, text):
+    def api_send(self, uid, sid, text, key=None):
         text = (text or "").strip()
         if not text:
             return {"ok": False, "error": _t("Empty message"), "code": "empty"}
         if text.startswith("/") and "\n" not in text and text.split()[0] in command_names():
             with self.api_lock:
                 return self.api_command(uid, sid, text)[1]
+        # idempotency key: a retry after a lost reply (or one racing the first request) is not pasted twice
+        key = (sid, str(key)[:64]) if key else None
+        if key:
+            with self._send_keys_lock:
+                now = self.clock()
+                for k in [k for k, v in self._send_keys.items() if now - v[0] > SEND_KEY_TTL]:
+                    del self._send_keys[k]
+                first = self._send_keys.get(key)
+                if not first:
+                    self._send_keys[key] = (now, threading.Event(), [])
+            if first:  # the same send again: wait for the first try's outcome (it may still be pasting) and answer with it
+                first[1].wait(SEND_KEY_WAIT)
+                log("webapp send %s: duplicate key, not pasted again" % sid)
+                return dict(first[2][0] if first[2] else {"ok": True, "error": None, "code": None}, dup=True)
         self.webapp_touch[sid] = self.clock()
         ok, err = self.deliver(uid, sid, text, origin="webapp")
+        if key:
+            with self._send_keys_lock:
+                ent = self._send_keys[key] if ok else self._send_keys.pop(key)  # not delivered: a later retry must really send
+            ent[2].append({"ok": True, "error": None, "code": None} if ok else {"ok": False, "error": _t("Not sent, try again"), "code": "error"})
+            ent[1].set()
         log("webapp send %s: %s" % (sid, "ok" if ok else ("menu" if err == ERR_MENU else "error: " + short(str(err), 90))))
         if ok:
             return {"ok": True, "error": None, "code": None}
@@ -11942,6 +11980,11 @@ class Bot:
                 return 404, {"error": "no such session"}
             if len(parts) == 3:
                 return (200, self.api_session(uid, sid)) if method == "GET" else (405, {"error": "method"})
+            if parts[3] == "history" and len(parts) == 4:  # an older page of the feed: ?before=<uuid of the first loaded entry>
+                if method != "GET":
+                    return 405, {"error": "method"}
+                hist, more = self.api_history_page(sid, str(body.get("before") or "") or None)
+                return 200, {"history": hist, "more": more}
             if parts[3] == "subagents" and len(parts) == 4:  # read-only
                 return (200, self.api_subagents(sid)) if method == "GET" else (405, {"error": "method"})
             if parts[3] == "subagent" and len(parts) == 5:
@@ -11959,7 +12002,7 @@ class Bot:
             if action == "perm":  # waits for the screen / the runner: only tmux.lock(sid), not the global lock
                 return self.api_perm(uid, sid, body)
             if action == "send":  # the paste waits for the screen (1–2 s): only tmux.lock(sid), like /perm
-                return 200, self.api_send(uid, sid, body.get("text"))
+                return 200, self.api_send(uid, sid, body.get("text"), body.get("key"))
             with self.api_lock:
                 if action == "upload":
                     return self.api_upload(uid, sid, body)
@@ -12871,6 +12914,8 @@ class WebServer:
                     q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
                     code, obj = srv.bot.api_file(uid, (q.get("path") or [""])[0])
                     return self._json(code, obj)
+                if method == "GET" and path.startswith("/api/session/") and path.endswith("/history"):
+                    body = {"before": (urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get("before") or [""])[0]}
                 if method == "GET" and path == "/api/dirs":
                     qs = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
                     q = (qs.get("q") or [None])[0]
