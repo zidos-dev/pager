@@ -357,7 +357,8 @@ def composer(page, ctx, state, theme, lang, engine):
     state.wait(page, lambda: bool(state.records(state.sends)), "ordinary composer /send missing")
     records = state.records(state.sends)
     check(len(records) == 1 and records[0]["sid"] == sid and
-          json.loads(records[0]["body"]) == {"text": text}, "wrong ordinary composer receipt")
+          (lambda b: b.get("text") == text and isinstance(b.get("key"), str) and set(b) == {"text", "key"})(json.loads(records[0]["body"])),  # 1c7e239: /send carries an idempotency key
+          "wrong ordinary composer receipt")
     check(not state.records(state.answers), "ordinary composer sent /answer")
     expect(page.locator("#s-text")).to_have_value("")
 

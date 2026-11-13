@@ -19,6 +19,13 @@ def sent(): return sum(1 for l in log.read_text().splitlines() if T in l) if log
 try:
   with sync_playwright() as pw:
     for eng in os.environ.get("ENGINES", "chromium,webkit").split(","):
+      log.write_text("")  # audit P3 14: a slow send shows a clock on the ghost; the failed ones (below) drop the ghost
+      b = getattr(pw, eng).launch(); ctx = b.new_context(viewport={"width": 393, "height": 659}, is_mobile=True, has_touch=True)
+      p = ctx.new_page(); p.goto(U + f"/app/#s={A}"); p.wait_for_timeout(1800)
+      ctx.add_cookies([{"name": "send_delay", "value": "2", "url": U}]); p.fill("#s-text", T); p.click("#s-send"); p.wait_for_timeout(500)
+      st = p.locator("#s-hist .me.pending .st")
+      check(st.count() == 1 and bool(st.get_attribute("aria-label")) and st.locator('use[href="#i-clock"]').count() == 1, f"{eng}/slow pending ghost carries the clock", st.count())
+      p.wait_for_timeout(3000); check(p.locator("#s-hist .me.pending").count() == 0, f"{eng}/slow ghost gone once sent"); b.close()
       for mode in ("abort", "500", "lost"):
         log.write_text("")
         b = getattr(pw, eng).launch(); ctx = b.new_context(viewport={"width": 393, "height": 659}, is_mobile=True, has_touch=True)

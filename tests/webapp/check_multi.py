@@ -32,6 +32,25 @@ def multi(page, state):
     check("multi" in root.get_attribute("class").split(), "root lacks multi class")
     nxt = root.locator('.lab-ask-btn[data-act="next"]')
     expect(nxt).to_be_visible()
+    page.evaluate("document.querySelector('#s-question .opt')._tag = 1")  # audit P3 16: an unchanged poll must not rebuild the question DOM
+    state.poll(page)
+    page.wait_for_timeout(300)
+    check(page.evaluate("document.querySelector('#s-question .opt')._tag === 1"), "an identical poll rebuilt the question markup")
+    # audit P3 15: a 10 px vertical wobble that starts on a button is not a drag; from the head it is
+    def wobble(sel):
+        box = root.locator(sel).first.bounding_box(timeout=3000)
+        x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+        page.mouse.move(x, y); page.mouse.down(); page.mouse.move(x, y + 10, steps=3)  # NB: "next" may fire on release
+        moved = page.evaluate("document.querySelector('.lab-ask-sheet').style.transform !== 'translate3d(0px, 0px, 0px)' && !!document.querySelector('.lab-ask-sheet').style.transform")
+        page.mouse.up(); page.wait_for_timeout(1200)  # let a release-click POST land before the stand data is reset
+        state.write(DATA)
+        page.goto(URL + "/app/?theme=tg-light", wait_until="load")  # the release may have clicked or closed the sheet: start over
+        page.locator(f'.card[data-id="{SID}"]').click(); expect(page.locator(OPEN)).to_be_visible(); page.wait_for_timeout(1000)
+        state.answers.write_text("")
+        return moved
+    check(not wobble(".lab-ask-btn"), "a 10 px wobble on a button dragged the sheet")
+    check(wobble(".lab-ask-q"), "the head no longer drags at 10 px")
+    expect(root).to_be_visible()
     root.locator(".lab-ask-opt").first.click()
     state.wait(page, lambda: bool(state.records(state.answers)), "option POST missing")
     check(state.records(state.answers) == [{"action": "option", "index": 1}], "unexpected ANSWER_LOG: " + state.answers.read_text())
@@ -70,6 +89,28 @@ def server_error(page, state):
             if r and r["width"] > 0:
                 check(t["y"] + t["height"] <= r["y"] + .5 or t["y"] >= r["y"] + r["height"] - .5,
                       "toast covers the sheet button " + b.inner_text())
+    finally:
+        page.context.clear_cookies()
+
+
+def failed_next_no_bubble(page, state):
+    # audit P2 №7: send() ran on a 190 ms timer, so a failed «next» left a sent-looking bubble in the feed
+    page.goto(URL + "/app/?theme=tg-light", wait_until="load")
+    page.locator(f'.card[data-id="{SID}"]').click()
+    root = page.locator(OPEN)
+    expect(root).to_be_visible()
+    page.wait_for_timeout(1000)
+    root.locator(".lab-ask-opt").first.click()
+    state.wait(page, lambda: bool(state.records(state.answers)), "option POST missing")
+    page.context.add_cookies([{"name": "answer_reply", "value": "internal", "url": URL}])
+    try:
+        root.locator('.lab-ask-btn[data-act="next"]').click()
+        seen = False
+        for _ in range(40):  # ~1.2 s: past the 190 ms timer and the whole fly
+            seen = seen or page.locator("#s-hist .lab-ask-bubble, .lab-ask-fly").count() > 0
+            page.wait_for_timeout(30)
+        check(not seen, "false outgoing bubble after a failed «next»")
+        expect(page.locator(OPEN)).to_be_visible(timeout=4000)  # the question is alive, the sheet came back
     finally:
         page.context.clear_cookies()
 
@@ -145,6 +186,9 @@ def main():
                         multi(page, state)
                         state.write(DATA)
                         server_error(page, state)
+                        state.write(DATA)
+                        failed_next_no_bubble(page, state)
+                        state.write(DATA)
                         slow_answer(page, state)
                         check(not errors, f"page errors: {errors}")
                         print(f"PASS {engine} multi-select", flush=True)

@@ -71,6 +71,7 @@
 .topbar{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .iconbtn{min-width:44px;min-height:44px;border-radius:12px;background:var(--panel);font-size:18px;display:grid;place-items:center}
 .me.pending{opacity:.7}
+.me.pending{position:relative}.me .st{position:absolute;right:100%;bottom:7px;margin-right:7px;line-height:0;color:var(--muted)}.me .st .ic{width:14px;height:14px;margin:0;vertical-align:0}  /* «отправляется»: часы слева от своего пузыря (ширину пузыря не трогают); неудача убирает призрак, отдельного значка нет */
 .it{display:flex;flex-direction:column;gap:6px;min-width:0}
 .live{align-self:flex-start;display:flex;gap:8px;align-items:center;font-size:13.5px;color:var(--muted);padding:4px 2px;max-width:100%}
 .live .dots{display:inline-flex;gap:3px;flex:none}.live .dots i{width:6px;height:6px;border-radius:50%;background:var(--muted);animation:dot 1.2s infinite ease-in-out}
@@ -368,6 +369,12 @@ html.list-scrolled .lbar{opacity:1}html.list-scrolled .top h1{opacity:0}html.loc
 .prew pre{padding-right:40px}
 .prew .cpy{position:absolute;top:-2px;right:-2px}
 @media (hover:hover){.cpy{opacity:0}.it:hover .cpy,.it:focus-within .cpy,.cpy:focus-visible{opacity:1}}
+.lpm{position:fixed;z-index:41;background:var(--ink);color:var(--canvas);border-radius:14px;box-shadow:0 8px 28px rgba(0,0,0,.22);animation:lpIn .15s cubic-bezier(.2,.8,.2,1) both;transform-origin:50% 100%}
+.lpm button{display:block;min-width:132px;min-height:44px;padding:0 20px;border-radius:14px;font-size:15px;font-weight:500;color:inherit;text-align:center;-webkit-tap-highlight-color:transparent;transition:background-color .12s ease-out}
+.lpm button:active{background:color-mix(in srgb,var(--canvas) 22%,transparent)}
+.lpm button:focus-visible{outline:2px solid var(--canvas);outline-offset:-3px}
+@keyframes lpIn{from{opacity:0;transform:translateY(4px) scale(.96)}}
+@media (prefers-reduced-motion:reduce){.lpm{animation:lpFade .12s both}@keyframes lpFade{from{opacity:0}}}
 .older{display:block;margin:0 auto 12px;min-height:44px;padding:10px 28px;border-radius:22px;background:var(--panel);color:var(--ink);font-size:14.5px;font-weight:500;transition:background-color .15s ease-out,opacity .15s ease-out}
 .older:active{background:color-mix(in srgb,var(--panel) 80%,var(--ink))}
 .older:disabled{opacity:.6;cursor:default}
@@ -549,6 +556,7 @@ textarea.field{min-height:120px;resize:vertical}
 <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5 8 12l7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 <symbol id="i-file" viewBox="0 0 24 24"><path d="M7 3.5h6.5L18 8v11.5a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1v-15a1 1 0 0 1 1-1Z M13.5 3.5V8H18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
 <symbol id="i-subs" viewBox="0 0 24 24"><path d="m12 4 8 4-8 4-8-4 8-4Zm-8 8 8 4 8-4M4 16l8 4 8-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M12 7.5V12l3 2" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 <symbol id="i-check" viewBox="0 0 24 24"><path d="m6 12.5 4 4 8-9" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="9.5" rx="2.6" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
 <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5.5" cy="12" r="1.9" fill="currentColor"/><circle cx="12" cy="12" r="1.9" fill="currentColor"/><circle cx="18.5" cy="12" r="1.9" fill="currentColor"/></symbol>
@@ -878,6 +886,7 @@ const STR = {
   "message": "Message",
   "messageAria": "Message to the session",
   "send": "Send",
+  "sending": "Sending",
   "sendHint": "Ctrl+Enter — send",
   "sendHintMac": "⌘+Enter — send",
   "session": "Session",
@@ -1006,6 +1015,7 @@ const STR = {
   "emptyHist": "No messages yet.",
   "copied": "Copied",
   "copyFail": "Could not copy",
+  "copyAct": "Copy",
   "copyMsg": "Copy reply",
   "copyCode": "Copy code",
   "showEarlier": "Show earlier",
@@ -1213,6 +1223,7 @@ const STR = {
   "message": "Сообщение",
   "messageAria": "Сообщение в сессию",
   "send": "Отправить",
+  "sending": "Отправляется",
   "sendHint": "Ctrl+Enter — отправить",
   "sendHintMac": "⌘+Enter — отправить",
   "session": "Сессия",
@@ -1341,6 +1352,7 @@ const STR = {
   "emptyHist": "Переписки пока нет.",
   "copied": "Скопировано",
   "copyFail": "Не удалось скопировать",
+  "copyAct": "Копировать",
   "copyMsg": "Копировать ответ",
   "copyCode": "Копировать код",
   "showEarlier": "Показать раньше",
@@ -2006,6 +2018,35 @@ $("s-hist").addEventListener("click", async e => {
   const pre = b.dataset.cp === "pre", el = pre ? b.closest(".prew").querySelector("pre") : b.closest(".it").querySelector(".msg");
   const ok = el && await copyText(plainText(el, pre)); haptic(ok ? "ok" : undefined); toast(t(ok ? "copied" : "copyFail"));
 });
+/* долгое нажатие на пузырь: одно меню «Копировать». preventDefault не зовём — прокрутка и выделение остаются родными */
+let lpMenu = null, lpTimer = 0, lpG = null;
+const lpClose = () => { clearTimeout(lpTimer); lpG = null; if (lpMenu){ lpMenu.remove(); lpMenu = null; } };
+const lpSel = el => { const s = getSelection(), r = s && s.rangeCount && s.getRangeAt(0); return !!r && !r.collapsed && r.intersectsNode(el) && (r.toString() + s.toString()).trim() !== ""; };  // Range.toString: Selection.toString comes back empty for programmatic ranges
+function lpOpen(el, x, y){
+  if (lpSel(el)) return;
+  const m = document.createElement("div"); m.className = "lpm"; m.setAttribute("role", "menu");
+  const b = document.createElement("button"); b.type = "button"; b.setAttribute("role", "menuitem"); b.textContent = t("copyAct");
+  b.onclick = async () => { const ok = await copyText(plainText(el, false)); lpClose(); haptic(ok ? "ok" : undefined); toast(t(ok ? "copied" : "copyFail")); };
+  m.appendChild(b); document.body.appendChild(m);
+  const r = el.getBoundingClientRect(), w = m.offsetWidth, h = m.offsetHeight, g = 8;
+  let top = r.top - h - g; if (top < g) top = r.bottom + g;
+  if (top + h > innerHeight - g) top = Math.min(Math.max(y - h - g, g), innerHeight - h - g);  // пузырь выше окна: над пальцем
+  m.style.top = top + "px"; m.style.left = Math.min(Math.max(x - w / 2, g), innerWidth - w - g) + "px";
+  lpMenu = m; haptic();
+}
+$("s-hist").addEventListener("pointerdown", e => {
+  lpClose(); if (e.pointerType === "mouse" || !e.isPrimary) return;
+  const el = e.target.closest && e.target.closest(".me:not(.pending), .msg:not(.thinking)");
+  if (!el || e.target.closest(".cpy, a, button, pre") || lpSel(el)) return;
+  const x = e.clientX, y = e.clientY; lpG = {x, y};
+  lpTimer = setTimeout(() => { lpG = null; if (current) lpOpen(el, x, y); }, 450);
+});
+document.addEventListener("pointermove", e => { if (lpG && Math.hypot(e.clientX - lpG.x, e.clientY - lpG.y) >= 8){ clearTimeout(lpTimer); lpG = null; } });
+["pointerup", "pointercancel"].forEach(n => document.addEventListener(n, () => { clearTimeout(lpTimer); lpG = null; }));
+document.addEventListener("selectionchange", () => { if (lpG){ clearTimeout(lpTimer); lpG = null; } else if (lpMenu && String(getSelection()).trim()) lpClose(); });  // iOS: родное выделение после 450 мс — уступаем ему
+document.addEventListener("pointerdown", e => { if (lpMenu && !lpMenu.contains(e.target)) lpClose(); }, true);
+document.addEventListener("scroll", lpClose, true);
+document.addEventListener("keydown", e => { if (e.key === "Escape") lpClose(); });
 let older = {sid: null, acc: null, more: false}, olderBusy = false, forceHist = false;
 // older.acc: once an older page is loaded, every entry seen (loaded + window) is kept in order, so a sliding window drops nothing
 function olderHist(s){
@@ -2078,6 +2119,7 @@ function permShort(label){
   return chars.length > 48 || first !== label ? chars.slice(0, 47).join("") + "…" : first;
 }
 function renderPermission(p, el){
+  el._qh = null;
   if (p.kind === "sdk" && p.everywhere && !p.options.some(o => o.n === 4)) p.options = p.options.concat([{n: 4, label: t("pmEverywhere", {r: p.everywhere}), everywhere: true}]);  // api_perm: opt 4 = rule to «sessions.allow» + allow
   const max = Math.max(...p.options.filter(o => !o.everywhere).map(o => o.n));
   const deny = o => /^(?:No\b|Нет(?:\s|$)|Отклонить|Deny\b|Reject\b)/i.test(o.label) && (p.kind === "tmux" || o.n === max);
@@ -2089,6 +2131,8 @@ function renderPermission(p, el){
 function permDetails(p){
   return ["summary", "path", "body", "note", "question"].map(k => p[k] ? `<${k === "body" ? "pre" : "div"} class="lab-perm-${k}">${esc(p[k])}</${k === "body" ? "pre" : "div"}>` : "").join("");
 }
+/* опрос каждые несколько секунд: тот же разбор не трогает DOM (пресс, фокус и выделение в листе остаются) */
+function setQ(el, html){ if (el._qh === html) return; el._qh = html; el.innerHTML = html; }
 function renderQuestion(){
   const q = sess && sess.question, el = $("s-question");
   if (permPending && sess && permPending.id === sess.id) return;
@@ -2096,17 +2140,17 @@ function renderQuestion(){
   const own = sess && ownAnswerRequests.get(sess.id);
   el.dataset.ownBusy = String(!!own && own.pending);
   el.dataset.ownState = JSON.stringify(own && own.key === ownQuestionKey(q) ? {pending: own.pending, text: own.text, error: own.error} : null);
-  if (!q){ el.hidden = true; el.innerHTML = ""; return; }
+  if (!q){ el.hidden = true; el.innerHTML = ""; el._qh = null; return; }
   el.hidden = false;
   el.dataset.session = sess.id; el.dataset.question = ownQuestionKey(q); el.dataset.multi = String(!!q.multi); el.dataset.more = String(!q.review && q.n > 1);
   el.dataset.ownLabels = JSON.stringify({send: t("send"), cancel: t("cancel"), failed: t("failed"), network: t("netRetry"), auth: t("authMsg")});
   if (q.review){
-    el.innerHTML = `<h3>${t("reviewAns")}</h3>${(q.answers || []).map(a => `<div class="reason">${esc((a.header || a.question || "") + ": " + (a.answer == null ? "—" : a.answer))}</div>`).join("")}<div class="row"><button class="btn pri" type="button" data-a="submit">${t("submitAns")}</button><button class="btn" type="button" data-a="cancel">${t("cancel")}</button></div>`;
+    setQ(el, `<h3>${t("reviewAns")}</h3>${(q.answers || []).map(a => `<div class="reason">${esc((a.header || a.question || "") + ": " + (a.answer == null ? "—" : a.answer))}</div>`).join("")}<div class="row"><button class="btn pri" type="button" data-a="submit">${t("submitAns")}</button><button class="btn" type="button" data-a="cancel">${t("cancel")}</button></div>`);
     return;
   }
-  el.innerHTML = `<div class="qstep">${q.n > 1 ? t("qOf", {s: q.step + 1, n: q.n}) : ""}${t("qHint")}</div><div class="q">${esc(q.question)}</div>
+  setQ(el, `<div class="qstep">${q.n > 1 ? t("qOf", {s: q.step + 1, n: q.n}) : ""}${t("qHint")}</div><div class="q">${esc(q.question)}</div>
     <div class="opts">${q.options.map((o, i) => `<button class="opt" type="button" data-a="option" data-i="${i + 1}" aria-pressed="${!!o.marked}"><span class="mk">${q.multi ? (o.marked ? '<svg class="ic" aria-hidden="true"><use href="#i-check"/></svg>' : "") : (i + 1)}</span><span>${esc(o.label)}${o.description && o.description.toLowerCase() !== o.label.toLowerCase() ? `<small>${esc(o.description)}</small>` : ""}</span></button>`).join("")}</div>
-    <div class="row">${q.multi ? `<button class="btn pri" type="button" data-a="next">${t("next")}</button>` : ""}<button class="btn" type="button" data-a="own">${t("ownAns")}</button><button class="btn" type="button" data-a="cancel">${t("skip")}</button></div>`;
+    <div class="row">${q.multi ? `<button class="btn pri" type="button" data-a="next">${t("next")}</button>` : ""}<button class="btn" type="button" data-a="own">${t("ownAns")}</button><button class="btn" type="button" data-a="cancel">${t("skip")}</button></div>`);
 }
 /* Taps queue: marks (multiSelect option) go out in order, a closing action (next/submit/cancel/single option) goes after them and locks the sheet until loadSession().
    A failed item drops the tail (qGens per session) and the layer gets question:fail. */
@@ -2128,7 +2172,7 @@ $("s-question").addEventListener("click", e => {
     if (gen !== (qGens.get(id) || 0)) return;
     let ok = false;
     /* a hung POST must not lock the sheet (as perm, 2107): a late duplicate is rejected by the server step check */
-    try{ const r = await Promise.race([api(`session/${encodeURIComponent(id)}/answer`, body), new Promise((_, no) => setTimeout(() => no(new Error("timeout")), 30000))]); if (r.ok){ ok = true; haptic("ok"); answered(id); } else toast(r.error || t("failed")); }
+    try{ const r = await Promise.race([api(`session/${encodeURIComponent(id)}/answer`, body), new Promise((_, no) => setTimeout(() => no(new Error("timeout")), 30000))]); if (r.ok){ ok = true; haptic("ok"); answered(id); if (fin) el.dispatchEvent(new CustomEvent("question:ok", {bubbles: true})); } else toast(r.error || t("failed")); }
     catch(x){ toast(t(x.message === "auth" ? "authMsg" : x instanceof TypeError ? "netRetry" : "failed")); }  /* fetch rejects with TypeError only when the network is down */
     if (!ok){ qGens.set(id, gen + 1); delete el.dataset.qLocked; failed(); }
     if (fin || !ok || qPending === 1) await loadSession().catch(() => {});
@@ -2245,6 +2289,7 @@ function stashDraft(){
   ta.value = ""; ta.dataset.mode = "send"; ta.placeholder = t(MODES.send); autosize();
 }
 async function openSession(id){
+  lpClose();
   stashDraft();
   permVersion++;
   ownAnswerVersion++;
@@ -2289,6 +2334,7 @@ async function sendText(retryKey){
   let ghost = null;
   if (mode === "send" && !text.startsWith("/")){
     ghost = document.createElement("div"); ghost.className = "me pending enter"; ghost.textContent = text;
+    const st = document.createElement("span"); st.className = "st"; st.title = t("sending"); st.setAttribute("role", "img"); st.setAttribute("aria-label", t("sending")); st.innerHTML = '<svg class="ic" aria-hidden="true"><use href="#i-clock"/></svg>'; ghost.appendChild(st);
     const empty = $("s-hist").querySelector(".empty"); if (empty) empty.remove();
     $("s-hist").appendChild(ghost); followUntil = Date.now() + 180000; setTimeout(toBottom, 20);
   }

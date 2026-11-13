@@ -634,7 +634,7 @@
   function press(el,on){ el.classList.toggle("pressed",!!on); }
   function dragStart(e,el,fromPill){
     if(S.busy||(e.button!==undefined&&e.button>0)) return;
-    S.drag={el:el,id:e.pointerId,x0:e.clientX,y0:e.clientY,base:curY(),moved:false,s:[{t:performance.now(),y:e.clientY}],pill:fromPill};
+    S.drag={el:el,id:e.pointerId,x0:e.clientX,y0:e.clientY,base:curY(),moved:false,btn:!fromPill&&!!(e.target&&e.target.closest&&e.target.closest("button,.opt,.btn,.lab-ask-opt,.lab-ask-btn")),s:[{t:performance.now(),y:e.clientY}],pill:fromPill};
     /* перехват анимации: берём текущее значение и продолжаем от него */
     S.sheet.style.transition="none"; S.sheet.style.transform="translate3d(0,"+S.drag.base+"px,0)"; S.y=S.drag.base;
     D.addEventListener("pointermove",dragMove); D.addEventListener("pointerup",dragEnd); D.addEventListener("pointercancel",dragEnd);
@@ -642,7 +642,8 @@
   function dragMove(e){
     var d=S.drag; if(!d||e.pointerId!==d.id) return;
     var dy=e.clientY-d.y0;
-    if(!d.moved){ if(Math.abs(dy)<8&&Math.abs(e.clientX-d.x0)<8) return;
+    /* начато с кнопки: тап с дрожью пальца не должен тянуть лист — по вертикали порог 14 */
+    if(!d.moved){ if(Math.abs(dy)<(d.btn?14:8)&&Math.abs(e.clientX-d.x0)<8) return;
       if(Math.abs(e.clientX-d.x0)>Math.abs(dy)*1.4){ cleanupDrag(); return; }
       d.moved=true; try{ d.el.setPointerCapture(d.id); }catch(x){} S.sheet.querySelectorAll(".pressed").forEach(function(x){press(x,false);}); }
     var y=d.base+dy, H=hiddenY(); if(y<0) y=-rub(-y); else if(y>H) y=H+rub(y-H);
@@ -749,7 +750,7 @@
     try{ if(typeof haptic==="function") haptic(); }catch(e){}
     var title=row.querySelector(".lab-ask-t"), from=title.getBoundingClientRect();
     if(S.more) return;  // лист ждёт следующий шаг поднятым (build сменит его на месте)
-    setTimeout(function(){ send(o.label,from,root); }, reduce()?60:190);
+    later(o.label,from,root);
   }
   function finishMulti(){
     if(S.busy) return; var labs=S.opts.filter(function(o,k){return S.marks[k];}).map(function(o){return o.label;});
@@ -758,8 +759,13 @@
     var btn=S.sheet.querySelector('[data-act="next"]'); btn.classList.add("picked");
     var from=btn.getBoundingClientRect();
     if(S.more) return;
-    setTimeout(function(){ send(labs.join(", ")||"—",from,root); }, reduce()?60:190);
+    later(labs.join(", ")||"—",from,root);
   }
+  /* пузырь рисуется, когда прошёл жест (60/190 мс) И сервер принял ответ (question:ok); неудача снимает ожидание (question:fail) */
+  var out=null;
+  function later(text,from,root){ var p=out={text:text,from:from,root:root,t:false,ok:false}; setTimeout(function(){ p.t=true; fire(p); }, reduce()?60:190); }
+  function fire(p){ if(out===p&&p.t&&p.ok){ out=null; send(p.text,p.from,p.root); } }
+  D.addEventListener("question:ok",function(){ if(out){ out.ok=true; fire(out); } });
   /* лист опускается; текст летит в исходящий пузырь внизу ленты (FLIP) */
   function send(text,from,root){
     var hist=$("s-hist"), body=$("s-body");
@@ -850,6 +856,7 @@
   /* ответ не дошёл: вопрос жив, возвращаем лист после ухода старого */
   D.addEventListener("question:fail",function(){
     S.dismissed=null;
+    out=null;
     if(S.root&&S.more&&S.root.dataset.state==="open"){ S.busy=false; S.root.classList.remove("busy"); S.root.querySelectorAll(".picked").forEach(function(r){ r.classList.remove("picked"); }); }
     setTimeout(sync,450);
   });
