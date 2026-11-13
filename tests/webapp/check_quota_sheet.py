@@ -79,7 +79,7 @@ try:
 finally:
     srv.kill()
     _data.unlink(missing_ok=True)
-# Ждущие сессии: плитки свёрнуты в тихую строку, вынесенные строки (p:*) остаются в ней и красятся как плитки (13.11).
+# Ждущие сессии: плитки квот остаются плитками (владелец 13.11 01:52).
 QP = PORT + 2; QU = f"http://127.0.0.1:{QP}"
 _qdata = Path(tempfile.gettempdir()) / f"quota-quiet-{QP}.json"
 _qdata.write_text(json.dumps(json.loads((ROOT.parent / "stand" / "demo2.json").read_text())))
@@ -93,14 +93,13 @@ try:
     for eng in ("chromium", "webkit"):
         b = getattr(pw, eng).launch(); ctx = b.new_context(viewport={"width": 393, "height": 659}, has_touch=True, service_workers="block", locale="ru-RU")
         p = ctx.new_page(); p.goto(QU + "/app/"); p.wait_for_timeout(1500)
-        line = p.locator("#lab-q .lqline")
-        check(line.is_visible(), f"{eng}: waiters -> quiet line is shown")
-        check(p.locator("#lab-q .lqt:not([hidden])").count() == 0, f"{eng}: waiters -> tiles stay hidden")
-        txt = p.get_attribute("#lab-q", "aria-label")
-        check("GLM" in txt and "88" in txt, f"{eng}: quiet line carries the pinned row", txt)
-        check(p.locator("#lab-q .lqline .lqx.hot").count() == 1, f"{eng}: pinned hot row is marked hot like its tile")
-        fs = p.evaluate("getComputedStyle(document.querySelector('#lab-q .lqline')).fontSize")
-        check(fs == "13px", f"{eng}: quiet line is 13 px", fs)
+        # Владелец 13.11 01:52: плашки нужны и при ждущих сессиях, тихой строки больше нет.
+        check(not p.locator("#lab-q .lqline").is_visible(), f"{eng}: waiters -> no quiet line")
+        tiles = p.locator("#lab-q .lqt:not([hidden])")
+        check(tiles.count() >= 3, f"{eng}: waiters -> tiles are shown", tiles.count())
+        labs = tiles.evaluate_all("ts => ts.map(t => t.getAttribute('aria-label'))")
+        check(any("GLM" in l and "88" in l for l in labs), f"{eng}: pinned GLM tile is shown with its value", labs)
+        check(p.locator("#lab-q .lqt.hot:not([hidden])").count() >= 1, f"{eng}: pinned GLM tile is hot")
         b.close()
 finally:
     qsrv.kill(); _qdata.unlink(missing_ok=True)

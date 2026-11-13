@@ -1546,7 +1546,7 @@ function renderList(){
   appBadge(waitingN);
   const qh = bar(t("h5"), q.h5, q.h5_reset ? t("until", {t: q.h5_reset}) : "") + bar(t("d7"), q.d7, "")
     + (q.pinned || []).map(r => bar(esc(r.title + (r.sub ? " · " + r.sub : "")), r.pct, r.reset ? t("until", {t: r.reset}) : "").replace('class="qbar"', `class="qbar" data-k="p:${esc(r.id)}"`)).join("");
-  $("quota").dataset.waiters = waitingN ? "1" : "0";  // layers.js сворачивает плитки в строку, пока кто-то ждёт
+  // плитки квот видны всегда, и при ждущих сессиях (владелец 13.11 01:52, скрин IMG_5735)
   listHTML($("quota"), qh + (q.stale ? `<span></span><span style="grid-column:2/4">${t("staleQuota")}</span>` : ""));
   $("quota").hidden = !qh;
   listHTML($("sum"), parts.join("") || `<span>${t("noSessions")}</span>`);
