@@ -355,7 +355,7 @@ class H(http.server.BaseHTTPRequestHandler):
             generation = read_data().get("_test_case")
             if os.environ.get("ANSWER_LOG"):
                 with open(os.environ["ANSWER_LOG"], "a") as log:
-                    log.write(json.dumps(body, ensure_ascii=False) + "\n")
+                    log.write(json.dumps({k: v for k, v in body.items() if k != "step"}, ensure_ascii=False) + "\n")
         time.sleep(min(5, max(0, float(delay))))
         if scenario == "network":
             self.close_connection = True

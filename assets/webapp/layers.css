@@ -190,7 +190,7 @@ html[data-lab-theme="dark"] .lab-ask-scrim{background:rgba(0,0,0,.3)}
 .lab-ask-q{font-size:21px;line-height:1.28;font-weight:650;letter-spacing:-.3px;overflow-wrap:anywhere;text-wrap:balance}
 .lab-ask-list{display:grid;grid-auto-rows:max-content;gap:8px;padding:6px var(--gut,16px) 4px;overflow-y:auto;overscroll-behavior:contain;min-height:0;touch-action:none}
 .lab-ask-root.scrolls .lab-ask-list{touch-action:pan-y}
-.lab-ask-opt{display:flex;align-items:center;gap:14px;width:100%;min-height:56px;padding:9px 16px;border-radius:18px;text-align:left;
+.lab-ask-opt{display:flex;align-items:center;gap:14px;width:100%;min-height:56px;padding:9px 16px;border-radius:18px;text-align:left;-webkit-user-select:none;user-select:none;
   background:color-mix(in srgb,var(--glass-ink) 7%,transparent);color:inherit;font:inherit;
   transform:scale(1);transition:transform var(--m-state-t,302ms) var(--m-state),background-color var(--m-fade-t,180ms) var(--m-fade),color 180ms var(--m-fade),box-shadow 120ms var(--m-fade);
   animation:lab-ask-in var(--m-reveal-t,284ms) var(--m-reveal) both;animation-delay:180ms}  /* варианты вместе: без ступенчатости (designkit-owner) */
@@ -309,11 +309,12 @@ html .lq.many[data-n="4"]:not([hidden]){grid-template-columns:1fr 1fr}
 /* ждущие сессии: плитки сворачиваются в одну строку, тап открывает тот же лист */
 html .lq.quiet:not([hidden]){display:flex;align-items:center;min-height:44px;margin-top:12px;transition:background-color .15s ease-out}
 .lq.quiet .lqt,.lq.quiet .lqstale{display:none}
-.lqline{font-size:12px;line-height:1.35;color:var(--muted);font-variant-numeric:tabular-nums}
+.lqline{font-size:13px;line-height:1.35;color:var(--muted);font-variant-numeric:tabular-nums}
 .lqline .lqx{color:var(--ink);font-weight:600}
+.lqline .lqi{white-space:nowrap}
 .lqline .lqx.warn{color:var(--lq-warn)}
 .lqline .lqx.hot{color:var(--danger)}
-.lqline .lqn{font-size:12px;font-weight:600;letter-spacing:0;color:inherit;vertical-align:-.24em}  /* как .lab-sq: inline-flex+overflow садит базовую линию на низ */
+.lqline .lqn{font-size:13px;font-weight:600;letter-spacing:0;color:inherit;vertical-align:-.24em}  /* как .lab-sq: inline-flex+overflow садит базовую линию на низ */
 #lab-q.quiet:active{background:color-mix(in srgb,var(--canvas) 80%,var(--ink))}
 .lqstale{grid-column:1/-1;font-size:12px;color:var(--muted);padding:0 2px}
 /* одометр */

@@ -3927,6 +3927,156 @@ def type_into(fs, text, after_enter=None):
     fs.on_key = lambda ks, f: setattr(f, "screen", after_enter or EMPTY_PROMPT) if ks == ["Enter"] else None
 
 
+class MultiOwnTui:
+    """The multiSelect menu of Claude Code 2.1.323 as measured: a digit ticks a row (the empty own row also takes the
+    cursor and the focus); in the focused own field digits are typed as text; pasting ticks the row; Enter unticks it; C-u clears
+    one line, an empty field unticks; Up walks the caret to the first line, then leaves the field; Right moves to the next tab only outside the field."""
+
+    def __init__(self, fs, q, text="", focused=False):
+        self.fs, self.q, self.n = fs, q, len(q["options"]) + 1
+        self.checked, self.lines, self.focused, self.cursor, self.tab = set(), text.split("\n") if text else [], focused, 1, 0
+        if text:
+            self.checked.add(self.n)
+        if focused:
+            self.cursor = self.n
+        fs.on_key, fs.on_paste = self.key, self.paste
+        self.render()
+
+    def key(self, ks, f):
+        for k in ks:
+            if self.focused and k.isdigit():
+                self.lines = (self.lines or [""])
+                self.lines[-1] += k
+                self.checked.add(self.n)
+            elif k.isdigit():
+                d = int(k)
+                self.checked ^= {d}
+                if d == self.n and not self.lines:  # only the empty own row takes the cursor and the focus
+                    self.cursor, self.focused = d, True
+            elif k == "C-u" and self.focused:
+                if self.lines:
+                    self.lines.pop()
+                if not self.lines:
+                    self.checked.discard(self.n)
+            elif k == "Enter" and self.focused:
+                self.checked ^= {self.n}
+            elif k == "Up" and self.focused and getattr(self, "caret", 0) > 0:
+                self.caret -= 1  # Up inside the text walks the caret to the first line first
+            elif k == "Up":
+                self.focused, self.cursor = False, max(1, self.cursor - 1)
+            elif k == "Down" and not self.focused:
+                self.cursor = min(self.n, self.cursor + 1)
+                self.focused = self.cursor == self.n
+            elif k == "Right" and not self.focused:
+                self.tab += 1
+        self.render()
+
+    def paste(self, f):
+        self.lines = (self.lines or [""])
+        add = self.fs.pasted.split("\n")
+        self.lines[-1] += add[0]
+        self.lines += add[1:]
+        self.caret = len(self.lines) - 1
+        self.checked.add(self.n)
+        self.render()
+
+    def render(self):
+        rows = ["←  ☐ Добавки  ✔ Submit  →", "", self.q["question"], ""]
+        for i, o in enumerate(self.q["options"], 1):
+            rows.append("%s %d. [%s] %s" % ("❯" if self.cursor == i else " ", i, "✔" if i in self.checked else " ", o["label"]))
+        own = self.lines or ["Type something"]
+        rows.append("%s %d. [%s] %s" % ("❯" if self.cursor == self.n else " ", self.n, "✔" if self.n in self.checked else " ", own[0]))
+        rows += ["         " + l for l in own[1:]] + ["     Next", "  %d. Chat about this" % (self.n + 1), "", MENU_FOOT]
+        self.fs.screen = "\n".join(rows) if self.tab == 0 else "Size?\n\n❯ 1. S\n" + MENU_FOOT
+
+
+class OwnAnswerMultiTests(unittest.TestCase):
+    """12.11 iPhone: «Отправить» in «Свой ответ» on a multiSelect step left the row unticked, and every retry typed the
+    digit into the field («Ну и тд4Агент…» ×6)."""
+
+    def run_own(self, text, **tui):
+        w = WebEnv(self)
+        e = w.e
+        tr = os.path.join(e.tmp.name, "q.jsonl")
+        with open(tr, "wb") as f:
+            f.write(ask_line("toolu_1", [Q_TOP, Q_SIZE]))
+        mk(e, "s1", "working", 1, linkScanPath=tr)
+        e.bot.list_sessions(True)
+        fs = FakeScreen("")
+        fs.pasted = text
+        ui = MultiOwnTui(fs, Q_TOP, text=tui.get("prior", ""), focused=tui.get("focused", False))
+        e.bot.tmux = fs.tmux()
+        st, obj, _ = w.req("POST", "/api/session/s1/answer", {"action": "own", "text": text})
+        return obj, fs, ui, w
+
+    def test_fresh_own_answer_stays_ticked_and_leaves_the_field(self):
+        obj, fs, ui, w = self.run_own("агент внизу\nну и тд")
+        self.assertTrue(obj["ok"], obj)
+        self.assertEqual(ui.lines, ["агент внизу", "ну и тд"])
+        self.assertIn(ui.n, ui.checked)
+        self.assertNotIn("Enter", fs.flat_keys)
+        self.assertFalse(ui.focused)  # next taps (digits, Right) act on the menu, not on the text
+
+    def test_long_own_answer_still_leaves_the_field(self):
+        text = "\n".join("строка %d" % i for i in range(8))  # Up walks the caret line by line first
+        obj, fs, ui, w = self.run_own(text)
+        self.assertTrue(obj["ok"], obj)
+        self.assertEqual(len(ui.lines), 8)
+        self.assertFalse(ui.focused)
+
+    def test_own_answer_for_a_left_step_is_refused(self):
+        w = WebEnv(self)
+        e = w.e
+        tr = os.path.join(e.tmp.name, "q.jsonl")
+        with open(tr, "wb") as f:
+            f.write(ask_line("toolu_1", [Q_TOP, Q_SIZE]))
+        mk(e, "s1", "working", 1, linkScanPath=tr)
+        e.bot.list_sessions(True)
+        fs = FakeScreen("")
+        e.bot.tmux = fs.tmux()
+        st, obj, _ = w.req("POST", "/api/session/s1/answer", {"action": "own", "text": "своё", "step": 1})
+        self.assertFalse(obj["ok"])
+        self.assertEqual(fs.flat_keys, [])
+        q = e.bot.api_question_obj(1, "s1")
+        self.assertEqual(e.bot.question_own_do(q, 1, "своё")[2], "stale")
+
+    def test_retry_replaces_the_text_instead_of_appending(self):
+        obj, fs, ui, w = self.run_own("агент внизу", prior="агент внизу\nну и тд4", focused=True)
+        self.assertEqual(ui.lines, ["агент внизу"])
+        obj, fs, ui, w = self.run_own("новое", prior="старое")  # text left in the row, cursor elsewhere
+        self.assertTrue(obj["ok"], obj)
+        self.assertEqual(ui.lines, ["новое"])
+        self.assertIn(ui.n, ui.checked)
+        self.assertFalse(ui.focused)
+
+    def test_sheet_shows_the_own_answer_as_a_ticked_row_and_it_toggles(self):
+        obj, fs, ui, w = self.run_own("агент внизу")
+        rows = obj["question"]["options"]
+        self.assertEqual([r["label"] for r in rows], ["Сыр", "Лук", "агент внизу"])
+        self.assertTrue(rows[2]["marked"])
+        fs.keys.clear()
+        st, obj, _ = w.req("POST", "/api/session/s1/answer", {"action": "option", "index": 3})
+        self.assertTrue(obj["ok"], obj)
+        self.assertEqual(fs.flat_keys, ["3"])
+        self.assertNotIn(3, ui.checked)
+        self.assertFalse(obj["question"]["options"][2]["marked"])
+        st, obj, _ = w.req("POST", "/api/session/s1/answer", {"action": "option", "index": 3})
+        self.assertIn(3, ui.checked)
+        self.assertEqual(ui.lines, ["агент внизу"])  # the digit ticked the row, it was not typed into the text
+
+    def test_next_summary_names_the_own_answer(self):
+        obj, fs, ui, w = self.run_own("своё")
+        w.req("POST", "/api/session/s1/answer", {"action": "option", "index": 1})
+        st, obj, _ = w.req("POST", "/api/session/s1/answer", {"action": "next"})
+        self.assertTrue(obj["ok"], obj)
+        self.assertEqual(obj["question"]["answers"][0]["answer"], "Сыр, своё")
+
+    def test_next_after_own_moves_to_the_next_tab(self):
+        obj, fs, ui, w = self.run_own("своё")
+        st, obj, _ = w.req("POST", "/api/session/s1/answer", {"action": "next", "step": 0})
+        self.assertEqual(ui.tab, 1)
+
+
 class WebCommandTests(unittest.TestCase):
     def test_history_in_session_detail_is_chronological_and_cached(self):
         w = WebEnv(self)
@@ -7595,6 +7745,29 @@ class SdkTests(unittest.TestCase):
         res = e.bot.api_answer(1, SID, {"action": "option", "index": 3})
         self.assertTrue(res["ok"])
         self.assertEqual(fake.calls("session.answer")[0]["answers"], {"Размер?": "L"})
+
+    def test_sdk_multi_own_answer_via_miniapp(self):
+        # SDK sessions take no own row on the sheet (own_text is tmux-only): marks, own text and the view stay as before 2bff0f5
+        e, fake, q = self.ask_env([Q_TOP, Q_SIZE])
+        self.assertTrue(e.bot.api_answer(1, SID, {"action": "option", "index": 1, "step": 0})["ok"])
+        v = e.bot.api_answer(1, SID, {"action": "option", "index": 3, "step": 0})
+        self.assertFalse(v["ok"])  # no own row for SDK: option 3 does not exist
+        self.assertEqual(len(v["question"]["options"]), 2)
+        res = e.bot.api_answer(1, SID, {"action": "own", "text": "Перец", "step": 0})
+        self.assertTrue(res["ok"])
+        self.assertEqual((q["step"], q["answers"]["0"], q.get("own_text")), (1, "Перец", None))
+        self.assertEqual(res["question"]["step"], 1)
+        self.assertEqual(len(res["question"]["options"]), 3)
+        self.assertTrue(e.bot.api_answer(1, SID, {"action": "option", "index": 2, "step": 1})["ok"])
+        self.assertTrue(e.bot.api_answer(1, SID, {"action": "submit", "step": 2})["ok"])
+        self.assertEqual(fake.calls("session.answer")[0]["answers"], {"Добавки?": "Перец", "Размер?": "M"})
+
+    def test_question_api_stale_step_is_refused(self):
+        e, fake, q = self.ask_env([Q_SIZE])
+        res = e.bot.api_answer(1, SID, {"action": "option", "index": 3, "step": 1})
+        self.assertFalse(res["ok"])
+        self.assertEqual(fake.calls("session.answer"), [])
+        self.assertTrue(e.bot.api_answer(1, SID, {"action": "option", "index": 3, "step": 0})["ok"])
 
     def test_transcript_text_is_forwarded(self):
         fake = FakeSdk(self)

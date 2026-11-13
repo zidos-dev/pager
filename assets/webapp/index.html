@@ -348,6 +348,9 @@ html.list-scrolled .lbar{opacity:1}html.list-scrolled .top h1{opacity:0}html.loc
 .keys{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;margin-top:10px}
 .keys .btn{min-height:44px;padding:8px 4px}
 .slash{flex:none;width:44px;height:44px;color:var(--ink);border-radius:50%;background:var(--panel);font:600 18px ui-monospace,Menlo,monospace;display:grid;place-items:center}
+/* Telegram iOS вставляет :not(input):not(textarea):not([contenteditable="true"]){-webkit-user-select:none} и *{-webkit-touch-callout:none}: без !important текст не выделить */
+.msg,.msg *,.me,.lab-perm-body,.lab-perm-path,.lab-ask-q,.lab-ask-quote span,.lab-ask-ans{-webkit-user-select:text!important;user-select:text!important}
+.msg a,.msg img,.pv{-webkit-touch-callout:default!important}
 .msg{background:var(--panel);border-radius:20px;box-shadow:var(--shadow);padding:12px 14px;font-size:15.5px;line-height:1.45;overflow-wrap:anywhere;white-space:pre-wrap}
 .msg pre{white-space:pre-wrap;background:var(--soft);border-radius:10px;padding:10px;font-size:13px;overflow-x:auto;margin:6px 0}
 .msg.thinking{background:none;box-shadow:none;color:var(--muted);font-size:14px;line-height:1.45;padding:2px 14px}
@@ -1843,15 +1846,24 @@ function show(v){
   if (v === "new") $("new-screen").scrollTop = 0;
 }
 /* переписка по ключам: при опросе меняются только новые и изменившиеся записи */
+let histDefer = false;
+function selInHist(){ const s = getSelection(); return !!s && !s.isCollapsed && !!s.anchorNode && $("s-hist").contains(s.anchorNode); }
+document.addEventListener("selectionchange", () => { if (histDefer && !selInHist() && sess) renderSession(); });
 function renderHist(items){
   const box = $("s-hist");
   let ghosts = box.querySelectorAll(".pending").length;  // своё сообщение сменилось настоящим: въезд уже был у призрака
   box.querySelectorAll(".pending:not([data-flying])").forEach(g => g.remove());
   const empty = box.querySelector(":scope > .empty"); if (empty) empty.remove();
   if (!items.length){ box.innerHTML = `<div class="empty">${t("emptyHist")}</div>`; return; }
+  const newKeys = items.map(i => i.k).filter(k => k !== "live");
+  const inWin = new Set(newKeys);
+  // окно сервера сдвинулось: ушедшие сверху узлы убираем, остальные (и выделение в них) не трогаем
+  for (const c of Array.from(box.children)) if (c.dataset.k && c.dataset.k !== "live" && !inWin.has(c.dataset.k)) c.remove();
+  const have = new Map(Array.from(box.children).filter(c => c.dataset.k).map(c => [c.dataset.k, c]));
+  items.forEach((it, i) => { const nx = items[i + 1] && have.get(items[i + 1].k);  // the new head got a time separator it did not have
+    if (it.k.startsWith("t:") && !have.has(it.k) && nx){ const d = document.createElement("div"); d.className = "it"; d.dataset.k = it.k; d.innerHTML = it.html; d._h = it.html; box.insertBefore(d, nx); have.set(it.k, d); } });
   const cur = Array.from(box.children).filter(c => c.dataset.k);
   const curKeys = cur.map(c => c.dataset.k).filter(k => k !== "live");
-  const newKeys = items.map(i => i.k).filter(k => k !== "live");
   const prefix = curKeys.length <= newKeys.length && curKeys.every((k, i) => k === newKeys[i]);
   const mk = (it, animate) => { const d = document.createElement("div"); d.className = "it" + (animate ? " enter" : ""); d.dataset.k = it.k; d.innerHTML = it.html; d._h = it.html; return d; };
   if (!prefix || !cur.length){ box.replaceChildren(...items.map(it => mk(it, false))); return; }
@@ -1932,8 +1944,9 @@ function renderSession(){
   const items = live ? hh.concat([{k: "live", html: live}]) : hh;
   const sig = items.map(i => i.k + "\u0001" + i.html).join("\u0002");
   if (sig !== lastHist){
-    renderHist(items); lastHist = sig; setTimeout(hydrate, 0);
-    if (stick) requestAnimationFrame(() => toBottom());
+    if (selInHist()) histDefer = true;  // идёт выделение: ленту не трогаем, догоним после снятия (selectionchange) — lastHist не меняем
+    else { histDefer = false; renderHist(items); lastHist = sig; setTimeout(hydrate, 0);
+      if (stick) requestAnimationFrame(() => toBottom()); }
   }
   $("s-meta").textContent = [s.cwd, s.id].filter(Boolean).join(" · ");
   syncFoot();
@@ -2009,20 +2022,32 @@ function renderQuestion(){
     <div class="opts">${q.options.map((o, i) => `<button class="opt" type="button" data-a="option" data-i="${i + 1}" aria-pressed="${!!o.marked}"><span class="mk">${q.multi ? (o.marked ? '<svg class="ic" aria-hidden="true"><use href="#i-check"/></svg>' : "") : (i + 1)}</span><span>${esc(o.label)}${o.description && o.description.toLowerCase() !== o.label.toLowerCase() ? `<small>${esc(o.description)}</small>` : ""}</span></button>`).join("")}</div>
     <div class="row">${q.multi ? `<button class="btn pri" type="button" data-a="next">${t("next")}</button>` : ""}<button class="btn" type="button" data-a="own">${t("ownAns")}</button><button class="btn" type="button" data-a="cancel">${t("skip")}</button></div>`;
 }
-let answering = false;  // один ответ за раз: сервер берёт шаг из своего состояния, второй клик ответил бы на следующий
-$("s-question").addEventListener("click", async e => {
+/* Taps queue: marks (multiSelect option) go out in order, a closing action (next/submit/cancel/single option) goes after them and locks the sheet until loadSession().
+   A failed item drops the tail (qGens per session) and the layer gets question:fail. */
+let qTail = Promise.resolve(), qPending = 0; const qGens = new Map();  // generation per session: a failure in A does not drop taps of B
+$("s-question").addEventListener("click", e => {
   const b = e.target.closest("[data-a]"); if (!b || !sess) return;
   const a = b.dataset.a; if (a === "perm") return answerPermission(b);
   if (ownAnswerBusy(sess.id)) return;
-  let body = {action: a};
-  if (a === "option") body.index = +b.dataset.i;
-  if (a === "own") return $("s-question").dispatchEvent(new CustomEvent("question:own", {bubbles: true}));
-  if (answering) return;
-  answering = true; b.disabled = true; haptic();
-  const failed = () => $("s-question").dispatchEvent(new CustomEvent("question:fail", {bubbles: true})); /* слой вернёт лист */
-  try{ const r = await api(`session/${encodeURIComponent(sess.id)}/answer`, body); if (!r.ok){ toast(r.error || t("failed")); failed(); } else{ haptic("ok"); answered(sess.id); } await loadSession(); }
-  catch(x){ toast(t(x.message === "auth" ? "authMsg" : x instanceof TypeError ? "netRetry" : "failed")); failed(); }  /* fetch rejects with TypeError only when the network is down */
-  finally{ answering = false; b.disabled = false; }
+  const el = $("s-question");
+  if (a === "own") return el.dispatchEvent(new CustomEvent("question:own", {bubbles: true}));
+  if (el.dataset.qLocked) return;
+  const id = sess.id, gen = qGens.get(id) || 0, fin = !(a === "option" && el.dataset.multi === "true");
+  const body = {action: a}; if (a === "option") body.index = +b.dataset.i;
+  if (sess.question && Number.isInteger(sess.question.step)) body.step = sess.question.step;
+  if (fin) el.dataset.qLocked = "1";
+  qPending++; el.dataset.qBusy = "1"; haptic();
+  const failed = () => { if (sess && sess.id === id) el.dispatchEvent(new CustomEvent("question:fail", {bubbles: true})); }; /* слой вернёт лист */
+  qTail = qTail.then(async () => {
+    if (gen !== (qGens.get(id) || 0)) return;
+    let ok = false;
+    /* a hung POST must not lock the sheet (as perm, 2107): a late duplicate is rejected by the server step check */
+    try{ const r = await Promise.race([api(`session/${encodeURIComponent(id)}/answer`, body), new Promise((_, no) => setTimeout(() => no(new Error("timeout")), 30000))]); if (r.ok){ ok = true; haptic("ok"); answered(id); } else toast(r.error || t("failed")); }
+    catch(x){ toast(t(x.message === "auth" ? "authMsg" : x instanceof TypeError ? "netRetry" : "failed")); }  /* fetch rejects with TypeError only when the network is down */
+    if (!ok){ qGens.set(id, gen + 1); delete el.dataset.qLocked; failed(); }
+    if (fin || !ok || qPending === 1) await loadSession().catch(() => {});
+    if (ok && fin) delete el.dataset.qLocked;
+  }).catch(() => {}).finally(() => { if (--qPending === 0) delete el.dataset.qBusy; });
 });
 /* Keep the request and its draft bound to the originating session/question,
    including when navigation destroys the sheet before the response arrives. */
@@ -2031,7 +2056,8 @@ async function submitOwnAnswer(text, id, key){
   const request = {id, key, session: {...sess}, text, pending: true, error: "", result: null}; ownAnswerVersion++;
   ownAnswerRequests.set(id, request); renderQuestion();
   try{
-    const r = await api(`session/${encodeURIComponent(id)}/answer`, {action: "own", text});
+    const st = request.session.question && request.session.question.step;
+    const r = await api(`session/${encodeURIComponent(id)}/answer`, Number.isInteger(st) ? {action: "own", text, step: st} : {action: "own", text});
     request.result = r;
     if (r.ok) request.session.question = r.question || null;
     else request.error = r.error || t("failed");
@@ -2119,6 +2145,7 @@ async function openSession(id){
   stashDraft();
   permVersion++;
   ownAnswerVersion++;
+  histDefer = false; if (selInHist()) getSelection().removeAllRanges();  // the deferred feed belongs to the previous session
   afterAns = null; endLen = -1; current = id; document.querySelectorAll("#list .card").forEach(c => c.classList.toggle("cur", c.dataset.id === id)); sess = (data && data.sessions.find(s => s.id === id)) || {id, name: "…", group: "work"}; lastHist = ""; stick = true;
   const own = ownAnswerRequests.get(id);
   if (own) sess = {...own.session};
@@ -2972,6 +2999,7 @@ document.addEventListener("focusin", setVV); document.addEventListener("focusout
   document.addEventListener("touchstart", e => {
     if (!layerOf(view) || !$("lb").hidden || !$("shade").hidden || e.touches.length !== 1) return;
     const t = e.touches[0];
+    if (!navAnim && ((getSelection() && !getSelection().isCollapsed) || e.target.closest("textarea,input"))) return;  // выделение текста и поле ввода не отдаём свайпу «назад»
     if (t.clientX > 24 && !navAnim) return;  // от края; во время анимации — перехват с любого места
     if (navAnim && navAnim.morph) return;  // свёртку сессии морфом не перехватываем
     if (navAnim){ navAnim.stop(); navAnim = null; }

@@ -681,7 +681,7 @@
     var form=S.root.querySelector(".lab-ask-own");
     if(pending) form.setAttribute("aria-busy","true"); else form.removeAttribute("aria-busy");
     form.querySelector("textarea").readOnly=pending;
-    S.sheet.querySelectorAll("button").forEach(function(b){ b.disabled=pending||(S.own&&b.classList.contains("lab-ask-opt")); });
+    S.sheet.querySelectorAll("button").forEach(function(b){ b.disabled=pending; });
     if(S.own) sizeOwn();
   }
   function ownEditor(open){
@@ -690,7 +690,6 @@
     if(S.ownAnimation){ S.ownAnimation.cancel(); S.ownAnimation=null; }
     S.own=open; S.root.classList.toggle("own-open",open); form.hidden=!open;
     S.root.querySelector(".lab-ask-actions").hidden=open;
-    S.root.querySelectorAll(".lab-ask-opt").forEach(function(b){ b.disabled=open; });
     if(open){ sizeOwn(); ta.focus({preventScroll:true}); }
     else{
       $("s-question").dispatchEvent(new CustomEvent("question:own-reset",{detail:{id:S.sid,key:S.key}}));
@@ -718,15 +717,19 @@
       sync();
     }
   }
+  function take(nb){  // the native handler queues the tap and locks the sheet for a closing action; if it did not, the layer must not go away
+    var el=$("s-question"); if(!nb||el.dataset.qLocked) return false; nb.click(); return !!el.dataset.qLocked;
+  }
   function skip(sel){  // «Пропустить», а на шаге review — «Отправить ответы»/«Отмена»: родная кнопка, лист уходит
-    var root=S.root, n=nat(sel||'[data-a="cancel"]'); S.busy=true; S.dismissed=S.sig; if(n) n.click();
+    var root=S.root, n=nat(sel||'[data-a="cancel"]'); if(n&&!take(n)) return; S.busy=true; S.dismissed=S.sig;
     if(S.root!==root) return;  // клик уже построил лист следующего вопроса — его не убираем
     go("pill",true,true); /* лист убирается, пилюля не нужна */
     S.pill.style.opacity="0"; S.root.dataset.state="gone"; setTimeout(function(){ if(S.root===root) teardown(); },380);
   }
   function choose(k){
-    if(S.busy||!S.root||S.own) return;
+    if(S.busy||!S.root) return;
     var o=S.opts[k]; if(!o) return;
+    if(S.own) ownEditor(false);  // owner 13.11 01:21 «не выбирается ответ»: an open «Свой ответ» must not lock the options
     if(S.permission){
       var latest=parse(); if(!latest||sigOf(latest)!==S.sig) return;
       var native=nat('.opt[data-i="'+o.i+'"]'); if(native) native.click(); return;
@@ -738,21 +741,22 @@
       var nb=$("s-question").querySelector('.opt[data-i="'+o.i+'"]'); if(nb) nb.click();
       return;
     }
-    S.busy=true; S.dismissed=S.sig; var root=S.root;
+    var root=S.root, nb2=$("s-question").querySelector('.opt[data-i="'+o.i+'"]');
+    if(!take(nb2)) return;
+    S.busy=true; S.dismissed=S.sig;
     var row=S.sheet.querySelector('.lab-ask-opt[data-k="'+k+'"]');
     row.classList.add("picked"); S.root.classList.add("busy");
     try{ if(typeof haptic==="function") haptic(); }catch(e){}
     var title=row.querySelector(".lab-ask-t"), from=title.getBoundingClientRect();
-    var nb2=$("s-question").querySelector('.opt[data-i="'+o.i+'"]'); if(nb2) nb2.click();
     if(S.more) return;  // лист ждёт следующий шаг поднятым (build сменит его на месте)
     setTimeout(function(){ send(o.label,from,root); }, reduce()?60:190);
   }
   function finishMulti(){
     if(S.busy) return; var labs=S.opts.filter(function(o,k){return S.marks[k];}).map(function(o){return o.label;});
-    S.busy=true; S.dismissed=S.sig; S.root.classList.add("busy"); var root=S.root;
+    var root=S.root; if(!take(nat('[data-a="next"]'))) return;
+    S.busy=true; S.dismissed=S.sig; S.root.classList.add("busy");
     var btn=S.sheet.querySelector('[data-act="next"]'); btn.classList.add("picked");
     var from=btn.getBoundingClientRect();
-    var nb=nat('[data-a="next"]'); if(nb) nb.click();
     if(S.more) return;
     setTimeout(function(){ send(labs.join(", ")||"—",from,root); }, reduce()?60:190);
   }
@@ -806,7 +810,7 @@
     if(S.dismissed===sig){ return; }
     if(!S.root||S.sig!==sig) build(q);
     else if(q.permission) permColor(S.root);
-    else if(S.multi&&!S.busy&&!$("s-question").querySelector("button:disabled")){  /* no request in flight: marks follow the server (a dropped or failed tap must not stay checked) */
+    else if(S.multi&&!S.busy&&!$("s-question").dataset.qBusy){  /* no request in flight: marks follow the server (a dropped or failed tap must not stay checked) */
       q.opts.forEach(function(o,k){ if(S.marks[k]!==o.marked){ S.marks[k]=o.marked; var r=S.sheet.querySelector('.lab-ask-opt[data-k="'+k+'"]'); if(r) r.setAttribute("aria-pressed",String(o.marked)); } });
     }
     if(!q.permission){
@@ -979,15 +983,16 @@
     var ru=/ru/i.test(de.lang||"");
     if(!quiet){host.hidden=true;root.setAttribute("aria-label",ru?"Квоты":"Quotas");return;}
     host.hidden=false;
-    var order=["h5","d7"].filter(function(k){return r.vals[k];});
+    var order=["h5","d7"].filter(function(k){return r.vals[k];}),cl=order.length;
+    Object.keys(r.vals).forEach(function(k){if(k.slice(0,2)==="p:")order.push(k);});  // вынесенные строки — после Claude, в порядке листа
     var sig=order.map(function(k){return r.vals[k].raw;}).join(",")+"|"+(r.stale||"");
     if(host.dataset.sig!==sig){
       host.dataset.sig=sig;host.textContent="";qline.ctrs={};qline.xs={};
-      host.appendChild(document.createTextNode(order.length?"Claude":(ru?"Квоты":"Quotas")));
+      host.appendChild(document.createTextNode(cl?"Claude":order.length?"":(ru?"Квоты":"Quotas")));
       order.forEach(function(k){
         var inf=r.vals[k],x=el("span","lqx"),n=el("span");
-        host.appendChild(document.createTextNode(" · "+inf.raw+" "));
-        x.appendChild(n);x.appendChild(document.createTextNode(" %"));host.appendChild(x);
+        var w=el("span","lqi");host.appendChild(document.createTextNode(cl||k!==order[0]?" · ":""));  // пункт целиком: перенос только между пунктами
+        w.appendChild(document.createTextNode(inf.raw+" "));x.appendChild(n);x.appendChild(document.createTextNode(" %"));w.appendChild(x);host.appendChild(w);
         qline.ctrs[k]=new Counter(n);qline.xs[k]=x;qline.ctrs[k].set(inf.v,true);
       });
       if(r.stale)host.appendChild(document.createTextNode(ru?" · устарело":" · stale"));
@@ -999,7 +1004,7 @@
       ctr.set(v,instant);
     });
     var label=order.map(function(k){return r.vals[k].raw+" "+Math.round(r.vals[k].v)+" %";}).join(", ");
-    root.setAttribute("aria-label",label?"Claude, "+label:(ru?"Квоты":"Quotas"));
+    root.setAttribute("aria-label",label?(cl?"Claude, ":"")+label:(ru?"Квоты":"Quotas"));
   }
   function renderList(over,instantAll){
     var r=readList(),root=document.getElementById("lab-q");if(!root)return;

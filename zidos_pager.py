@@ -467,6 +467,7 @@ _RU = {
     "✏️ Name": "✏️ Имя",
     "✏️ Names": "✏️ Имена",
     "✏️ Your own answer": "✏️ Свой ответ",
+    "Your own answer": "Свой ответ",
     "✖ Cancel": "✖ Отмена",
     "✖ Close": "✖ Закрыть",
     "❌ No": "❌ Нет",
@@ -3025,6 +3026,38 @@ def first_line_prefix(text, n=15):
         if line.strip():
             return collapse(line)[:n]
     return ""
+
+
+def marks_summary(q, step):
+    """Labels of the ticked rows of a multiSelect step; the row after the options is «your own answer»."""
+    opts = q["questions"][step]["options"]
+    own = (q.get("own_text") or {}).get(str(step)) or _t("Your own answer")
+    return ", ".join(opts[k - 1]["label"] if k <= len(opts) else own
+                     for k in q["marks"].get(str(step), []) if 0 < k <= len(opts) + 1) or "—"
+
+
+def own_row_shown(q, step):
+    """A multiSelect step whose «your own answer» row has text: the sheet shows it as one more option."""
+    return int(bool(q["questions"][step]["multi"] and (q.get("own_text") or {}).get(str(step))))
+
+
+def cursor_row(pane):
+    """The number of the menu row under the ❯ cursor, or None (on «Next» or no menu)."""
+    for line in strip_ansi(pane).splitlines():
+        m = re.match(r"^[^\w\[]*❯\s*(\d+)\.", line.replace("\xa0", " "))
+        if m:
+            return int(m.group(1))
+    return None
+
+
+def cursor_on_row(pane, n):
+    return cursor_row(pane) == n
+
+
+def own_row_empty(pane, n):
+    """Is the «Type something» row N of a question menu empty (no text typed into it)?"""
+    return any(re.match(r"^[^\w\[]*%d\.\s*(\[.\]\s*)?Type something\s*$" % n, line.replace("\xa0", " "))
+               for line in strip_ansi(pane).splitlines())
 
 
 def paste_visible(pane, text):
@@ -10032,8 +10065,7 @@ class Bot:
                     decision = "allow"
         elif kind == "next":
             cur = qs[step]
-            q["answers"][str(step)] = ", ".join(
-                cur["options"][k - 1]["label"] for k in q["marks"].get(str(step), [])) or "—"
+            q["answers"][str(step)] = marks_summary(q, step)
             q["step"] = step + 1
         elif kind == "sub":
             decision = "allow"
@@ -10087,7 +10119,9 @@ class Bot:
                 self.tmux.keys(sid, str(k))
                 if cur.get("preview") and not cur["multi"]:
                     self.tmux.keys(sid, "Enter")
-                label = cur["options"][k - 1]["label"]
+                if k > len(cur["options"]):
+                    self.leave_own_row(sid, k)
+                label = cur["options"][k - 1]["label"] if k <= len(cur["options"]) else q["own_text"][str(step)]
                 if cur["multi"]:
                     marks = set(q["marks"].get(str(step), []))
                     marks.symmetric_difference_update({k})
@@ -10099,8 +10133,7 @@ class Bot:
             elif kind == "next":
                 self.tmux.keys(sid, "Right")
                 cur = qs[step]
-                q["answers"][str(step)] = ", ".join(
-                    cur["options"][k - 1]["label"] for k in q["marks"].get(str(step), [])) or "—"
+                q["answers"][str(step)] = marks_summary(q, step)
                 q["step"] = step + 1
             elif kind == "sub":
                 self.tmux.keys(sid, "1")
@@ -10144,6 +10177,31 @@ class Bot:
         except TGError as e:
             log("question_own tg error: %s" % e)
 
+    def focus_own_row(self, sid, n):
+        """Puts the caret into the «Type something» row N of a multiSelect menu. The digit does it only for the empty
+        row: on a row with text it just toggles the tick, so the cursor walks there with the arrows (CLI 2.1.323)."""
+        pane = self.tmux.capture(sid, ansi=True)
+        if own_row_empty(pane, n) and not cursor_on_row(pane, n):
+            self.tmux.keys(sid, str(n))
+            self.sleep(0.8)
+            return
+        for _ in range(12):
+            if cursor_on_row(pane, n):
+                return
+            r = cursor_row(pane)
+            self.tmux.keys(sid, "Down" if r is not None and r < n else "Up")
+            self.sleep(0.3)
+            pane = self.tmux.capture(sid, ansi=True)
+
+    def leave_own_row(self, sid, n, lines=1):
+        """Moves the menu cursor off the «Type something» row N: while it is there, digits and arrows edit the text.
+        Up from inside the text first walks the caret to the first line, so it is repeated until the cursor moves."""
+        for _ in range(6 + lines):  # a multi-line answer needs one Up per line before the cursor leaves the row
+            self.sleep(0.3)
+            if not cursor_on_row(self.tmux.capture(sid, ansi=True), n):
+                return
+            self.tmux.keys(sid, "Up")
+
     def question_own_do(self, q, step, text):
         """"Your own answer": digit N+1, paste without clearing the field, check, Enter. -> (ok, text, code)."""
         sid, qs = q["sid"], q["questions"]
@@ -10152,6 +10210,8 @@ class Bot:
             return False, _t("Empty answer."), "paste"
         if is_sdk(sid):
             return self.question_own_sdk(q, step, text.strip())
+        if step != q["step"] or step >= len(qs):
+            return False, _t("The question is already on another step."), "stale"
         with self.tmux.lock(sid):
             ok, err = self.tmux.ensure(sid)
             if not ok:
@@ -10175,8 +10235,18 @@ class Bot:
                     return False, _t("The question did not close. Open 📺 Screen."), "unconfirmed"
                 q["closed"] = True
             else:
-                self.tmux.keys(sid, str(len(qs[step]["options"]) + 1))
-                self.sleep(0.8)
+                own_n = len(qs[step]["options"]) + 1
+                if qs[step]["multi"]:
+                    self.focus_own_row(sid, own_n)
+                else:
+                    self.tmux.keys(sid, str(own_n))
+                    self.sleep(0.8)
+                # a failed try leaves its text (and a digit typed into the focused field): clear it line by line
+                for _ in range(30):
+                    if own_row_empty(self.tmux.capture(sid, ansi=True), own_n):
+                        break
+                    self.tmux.keys(sid, "C-e", "C-u")
+                    self.sleep(0.2)
             ok, err = self.tmux.paste_text(sid, text)
             if not ok:
                 return False, err, "paste"
@@ -10189,7 +10259,13 @@ class Bot:
                 return False, (_t("Not sure the text reached the answer, so Enter was not pressed. Open 📺 "
                                   "Screen.")), "unconfirmed"
             self.sleep(0.5)
-            self.tmux.keys(sid, "Enter")
+            if qs[step]["multi"]:
+                q.setdefault("own_text", {})[str(step)] = short(text, 60)
+                # the pasted text already ticks the row and Enter would untick it; leaving the field makes the next
+                # digits and Right act on the menu instead of being typed into the answer (CLI 2.1.323)
+                self.leave_own_row(sid, own_n, text.count("\n") + 1)
+            else:
+                self.tmux.keys(sid, "Enter")
             if not qs[step]["multi"]:
                 q["answers"][str(step)] = short(text, 60)
                 if len(qs) > 1:
@@ -10441,7 +10517,9 @@ class Bot:
                 "question": cur["question"], "multi": bool(cur["multi"]), "review": review,
                 "options": [] if review else [{"label": o["label"], "description": o["description"],
                                                "marked": (k in marks)}
-                                              for k, o in enumerate(cur["options"], 1)],
+                                              for k, o in enumerate(cur["options"], 1)]
+                + ([{"label": q["own_text"][str(step)], "description": _t("Your own answer"),
+                     "marked": (len(cur["options"]) + 1) in marks}] if not review and own_row_shown(q, step) else []),
                 "answers": [{"header": qq["header"], "question": qq["question"],
                              "answer": q.get("answers", {}).get(str(i))} for i, qq in enumerate(qs)]}
 
@@ -10999,12 +11077,19 @@ class Bot:
         self.single(chat, "devices", text, markup or None)
 
     def api_answer(self, uid, sid, body):
+        res = self._api_answer(uid, sid, body)
+        log("webapp answer %s %s: %s" % (sid, body.get("action"), "ok" if res.get("ok") else "error: " + short(str(res.get("error")), 90)))
+        return res
+
+    def _api_answer(self, uid, sid, body):
         self.webapp_touch[sid] = self.clock()
         q = self.api_question_obj(uid, sid)
         if q is None or q.get("closed"):
             return {"ok": False, "error": _t("No question, or it is already closed"), "question": None}
         action = body.get("action")
         step = q["step"]
+        if isinstance(body.get("step"), int) and not isinstance(body.get("step"), bool) and body["step"] != step:  # the sheet answers a step the server already left
+            return {"ok": False, "error": _t("The question is already on another step."), "question": self.api_question_view(q)}
         ok, err = True, None
         if action == "own":
             text = str(body.get("text") or "").strip()
@@ -11016,7 +11101,7 @@ class Bot:
                 k = int(body.get("index"))
             except (TypeError, ValueError):
                 k = 0
-            if step >= len(q["questions"]) or not 1 <= k <= len(q["questions"][step]["options"]):
+            if step >= len(q["questions"]) or not 1 <= k <= len(q["questions"][step]["options"]) + own_row_shown(q, step):
                 return {"ok": False, "error": _t("No such option"), "question": self.api_question_view(q)}
             ok, err, _ = self.question_do(uid, q, "o", step, "%d:%d" % (step, k))
         elif action in ("next", "submit", "cancel"):

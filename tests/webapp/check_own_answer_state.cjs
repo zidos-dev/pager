@@ -29,7 +29,7 @@ function setup() {
     histHold: false, peelHash() {}, setSessionAddr() {},  // l5: адрес #s= ведёт openSession, здесь не проверяется
     renderSession() { rendered.push(sandbox.sess.id); vm.runInContext('renderQuestion()', context); },
     view: 'session', current: 'a', sess: {id: 'a', question: q},
-    data: {sessions: [{id: 'a'}, {id: 'b'}]}, lastHist: '',
+    data: {sessions: [{id: 'a'}, {id: 'b'}]}, lastHist: '', histDefer: false, selInHist: () => false,  // feed selection deferral (13.11)
   };
   const context = vm.createContext(sandbox);
   const run = code => vm.runInContext(code, context);
@@ -56,7 +56,7 @@ async function races() {
     for (const returnPending of [true, false]) {
       const t = setup(), pending = t.start(), post = t.calls[0];
       assert.equal(post.url, 'session/a/answer');
-      assert.equal(JSON.stringify(post.body), '{"action":"own","text":"draft"}');
+      assert.equal(JSON.stringify(post.body), '{"action":"own","text":"draft","step":0}');
       await t.open('b', {...q, question: 'Other?'});
       if (returnPending) {
         await t.open('a', q);
@@ -140,7 +140,7 @@ function sheetTransitions() {
     de: {classList: {remove() {}, toggle() {}}},
     parse: () => sandbox.q, sigOf: value => value.sig, permColor() {},
     sizeOwn() {buttons[1].disabled = s.busy || !ta.value.trim();},
-    ownEditor() {assert.equal(s.busy, false); s.own = true; buttons[0].disabled = true;},
+    ownEditor() {assert.equal(s.busy, false); s.own = true;},
     teardown() {s.root = null;},
   };
   const ctx = vm.createContext(sandbox);
@@ -155,7 +155,7 @@ function sheetTransitions() {
   assert.equal(ta.value, 'saved'); assert.equal(ta.readOnly, false);
   assert.equal(error.textContent, 'failure'); assert.equal(error.hidden, false);
   assert.equal(buttons[1].disabled, false); assert.equal(buttons[2].disabled, false);
-  assert.equal(buttons[0].disabled, true); assert.equal(form.attrs['aria-busy'], undefined);
+  assert.equal(buttons[0].disabled, false); assert.equal(form.attrs['aria-busy'], undefined);  // options stay pickable with the editor open (13.11)
   // Sync caused by another session's completed promise leaves this editor alone.
   sandbox.q = {sig: 'a', pending: false, ownState: null};
   ta.value = 'unrelated draft'; error.hidden = true;

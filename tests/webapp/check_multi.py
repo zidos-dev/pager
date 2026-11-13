@@ -74,6 +74,39 @@ def server_error(page, state):
         page.context.clear_cookies()
 
 
+def slow_answer(page, state):
+    # 13.11: a tap made while the previous POST is in flight was dropped; the sheet hung «busy»
+    page.context.add_cookies([{"name": "answer_reply", "value": "next", "url": URL}, {"name": "answer_delay", "value": "1.5", "url": URL}])
+    try:
+        for second in (False, True):
+            state.answers.write_text("")
+            state.write(DATA)
+            page.goto(URL + "/app/?theme=tg-light", wait_until="load")
+            page.locator(f'.card[data-id="{SID}"]').click()
+            root = page.locator(OPEN)
+            expect(root).to_be_visible()
+            page.wait_for_timeout(1000)
+            root.locator(".lab-ask-opt").nth(0).click()
+            page.wait_for_timeout(300)
+            if second:
+                root.locator(".lab-ask-opt").nth(1).click()
+                state.wait(page, lambda: len(state.records(state.answers)) == 2, "second mark POST missing", timeout=8)
+                check(state.records(state.answers) == [{"action": "option", "index": 1}, {"action": "option", "index": 2}], "marks: " + state.answers.read_text())
+                page.wait_for_timeout(1500)
+                state.poll(page)
+                root = page.locator(OPEN)
+                expect(root.locator('.lab-ask-opt[data-k="0"]')).to_have_attribute("aria-pressed", "true", timeout=4000)
+                expect(root.locator('.lab-ask-opt[data-k="1"]')).to_have_attribute("aria-pressed", "true", timeout=4000)
+            else:
+                root.locator('.lab-ask-btn[data-act="next"]').click()
+                state.wait(page, lambda: len(state.records(state.answers)) == 2, "next POST missing", timeout=8)
+                check(state.records(state.answers) == [{"action": "option", "index": 1}, {"action": "next"}], "mark+next: " + state.answers.read_text())
+                expect(page.locator(OPEN)).to_contain_text("cache expiry", timeout=8000)
+                check("busy" not in page.locator(OPEN).get_attribute("class").split(), "sheet hangs busy on step 2")
+    finally:
+        page.context.clear_cookies()
+
+
 def main():
     failures = 0
     engines = [n.strip() for n in os.environ.get("BROWSERS", "chromium,webkit").split(",") if n.strip()]
@@ -112,6 +145,7 @@ def main():
                         multi(page, state)
                         state.write(DATA)
                         server_error(page, state)
+                        slow_answer(page, state)
                         check(not errors, f"page errors: {errors}")
                         print(f"PASS {engine} multi-select", flush=True)
                     except Exception as error:
