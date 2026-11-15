@@ -11038,6 +11038,60 @@ class ChatBotTests(unittest.TestCase):
         self.assertTrue(glob.glob(os.path.join(e.tmp.name, cc.MEDIA_DIR, "22", "*.jpg")))
         self.assertIn(os.path.join(cc.MEDIA_DIR, "22"), p)
 
+    def late_env(self):
+        e, fake = self.media_env()
+        jobs = []
+        e.bot.spawn = lambda fn, *a: jobs.append(lambda: fn(*a))  # the follow-up window of a question
+        return e, fake, jobs
+
+    VIDEO = {"file_id": "v1", "duration": 6, "file_size": 1000, "mime_type": "video/mp4"}
+
+    def test_video_sent_right_after_a_question_reaches_the_model(self):
+        e, fake, jobs = self.late_env()
+        e.bot.chat_update(gmsg("@sf_chat_bot идея — подбирать рисунок. посмотри", mid=50))
+        self.assertEqual(fake.calls("session.start"), [])  # waits for the follow-up media
+        e.bot.chat_update(gmsg(None, mid=51, video=self.VIDEO))
+        e.bot.chat_update(gmsg(None, mid=52, video=self.VIDEO))
+        self.assertEqual(fake.calls("session.start"), [])
+        jobs.pop()()
+        starts = fake.calls("session.start")
+        self.assertEqual(len(starts), 1)
+        self.assertIn("sent right after the question", starts[0]["prompt"])
+        self.assertIn(os.path.join(cc.MEDIA_DIR, "50"), starts[0]["prompt"])
+        self.assertGreater(len(glob.glob(os.path.join(e.tmp.name, cc.MEDIA_DIR, "50", "l51-frame-*.jpg"))), 1)
+        self.assertGreater(len(glob.glob(os.path.join(e.tmp.name, cc.MEDIA_DIR, "50", "l52-frame-*.jpg"))), 1)
+
+    def test_media_of_another_author_or_beyond_four_is_not_attached(self):
+        e, fake, jobs = self.late_env()
+        e.bot.chat_update(gmsg("@sf_chat_bot посмотри", mid=60))
+        e.bot.chat_update(gmsg(None, mid=61, uid=888, name="Олег", video=self.VIDEO))
+        for i in range(62, 68):
+            e.bot.chat_update(gmsg(None, mid=i, photo=[{"file_id": "p1"}]))
+        jobs.pop()()
+        p = fake.calls("session.start")[0]["prompt"]
+        self.assertEqual(p.count("sent right after the question"), cc.MEDIA_LATE_MAX)
+        self.assertFalse(os.path.exists(os.path.join(e.tmp.name, cc.MEDIA_DIR, "50")))
+        self.assertFalse(glob.glob(os.path.join(e.tmp.name, cc.MEDIA_DIR, "60", "l61*")))
+
+    def test_media_after_the_answer_began_makes_no_second_answer(self):
+        e, fake, jobs = self.late_env()
+        e.bot.chat_update(gmsg("@sf_chat_bot посмотри", mid=70))
+        jobs.pop()()  # the window is over: the question is answered
+        e.bot.responder_answer("ok")
+        n = (len(fake.calls("session.start")), len(fake.calls("session.send")))
+        e.bot.chat_update(gmsg(None, mid=71, video=self.VIDEO))
+        self.assertEqual(n, (len(fake.calls("session.start")), len(fake.calls("session.send"))))
+        self.assertEqual(jobs, [])
+
+    def test_question_without_media_is_answered_once_after_the_window(self):
+        e, fake, jobs = self.late_env()
+        e.bot.chat_update(gmsg("@sf_chat_bot привет", mid=80))
+        self.assertEqual(fake.calls("session.start"), [])
+        self.assertEqual(len(jobs), 1)
+        jobs.pop()()
+        self.assertEqual(len(fake.calls("session.start")), 1)
+        self.assertNotIn("sent right after", fake.calls("session.start")[0]["prompt"])
+
     def test_media_question_keeps_its_place_and_odd_media_is_handled(self):
         """Review 09.11: a text question after a video one was answered first; a video without a length took the first
         4 seconds; an empty file id went silent; the bot's own photo was fetched as «the message it replies to»."""

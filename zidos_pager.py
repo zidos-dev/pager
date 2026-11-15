@@ -4218,6 +4218,8 @@ CHAT_TAIL = 12  # last chat messages put into every question
 MEDIA_DIR = ".zidos-media"  # a question's pictures and video frames, in the chat clone: every engine reads it (bwrap sees only the clone)
 MEDIA_VIDEO_EXT = (".mp4", ".mov", ".webm", ".mkv", ".m4v", ".gif", ".3gp")  # what ffmpeg may open from a participant's file
 MEDIA_FPS, MEDIA_FRAMES = 2, (4, 24)  # frames of a video per second, at least/at most: 4 over 13 s lost the punch a quiz asked about
+RESPONDER_MEDIA_FOLLOW = 6  # s: a question without media waits for the same author's media sent right after it (a video uploads slower than text)
+MEDIA_LATE_MAX = 4          # media attached to one question after it was asked
 MEDIA_KEEP = 30             # the newest questions' media folders kept
 RESPONDER_WAIT = 1800  # s: a change the owner has not decided by then goes to the backlog, and the chat moves on
 RESPONDER_RUNNER_WAIT = 60  # s: a question waits this long for a runner that is still starting
@@ -7364,6 +7366,7 @@ class Bot:
         if _REPORT_WORD.fullmatch(q) and self.cfg.role != "responder" and self.responder_git():  # «отчёт», with or without the mention: the last day of the project
             return self.report_request(m)
         if not to_bot:
+            self.responder_late_media(m)
             return
         if re.fullmatch(r"/start(\s.*)?", q, re.S):  # Telegram posts /start@bot itself when the bot is added to a group
             return
@@ -7398,7 +7401,10 @@ class Bot:
         with self._resp_lock:
             if not self.responder_slot(now):
                 return
-            rec["wait"] = bool(srcs)  # in the queue at once, so the order holds; answered when its media is in
+            late = not srcs and RESPONDER_MEDIA_FOLLOW > 0  # no media yet: the window for media sent right after it
+            rec["wait"] = bool(srcs) or late  # in the queue at once, so the order holds; answered when its media is in
+            if late:
+                rec["late"], rec["nmedia"] = True, 0
             self._resp_queue.append(rec)
             handled[:] = (handled + [m.get("message_id")])[-200:]
         try:  # seen at once: the answer may take a while
@@ -7406,6 +7412,9 @@ class Bot:
                                                      "reaction": [{"type": "emoji", "emoji": "👀"}]})
         except TGError as e:
             log("responder reaction failed: %s" % e)
+        if late:
+            self.spawn(self.responder_follow_end, rec)  # injected spawn: tests run the window inline
+            return
         if not srcs:
             self.responder_next()
             return
@@ -7416,6 +7425,40 @@ class Bot:
                 rec["media"], rec["media_note"] = [x[0] for x in media], "".join("\n\n(%s)" % x[1] for x in media if x[1])
             finally:  # a crash must not hold the queue
                 rec["wait"] = False
+            self.responder_next()
+        self._spawn(fetch)
+
+    def responder_follow_end(self, rec):
+        """The window for media after a question is over: it is answered unless a late file is still being fetched."""
+        self.sleep(RESPONDER_MEDIA_FOLLOW)
+        with self._resp_lock:
+            rec["late"] = False
+            rec["wait"] = bool(rec.get("pend"))
+        self.responder_next()
+
+    def responder_late_media(self, m):
+        """A media message without a mention, from the author of a question that is still queued (not started): it belongs
+        to that question. Once the answer has begun nothing changes (no second answer). Up to MEDIA_LATE_MAX files."""
+        uid = (m.get("from") or {}).get("id")
+        if uid is None or m.get("reply_to_message") or m.get("external_reply") or not self.chat_media_att(m)[0]:
+            return
+        with self._resp_lock:
+            rec = next((r for r in self._resp_queue if r.get("from") == uid and r.get("nmedia", MEDIA_LATE_MAX) < MEDIA_LATE_MAX), None)
+            if not rec:
+                return
+            rec["nmedia"] += 1
+            rec["pend"] = rec.get("pend", 0) + 1
+            rec["wait"] = True
+
+        def fetch():
+            try:
+                x = self.responder_media(m, "l%s" % m.get("message_id"), "sent right after the question", rec["mid"])
+                rec["media"] = (rec.get("media") or []) + [x[0]]
+                rec["media_note"] = rec.get("media_note", "") + ("\n\n(%s)" % x[1] if x[1] else "")
+            finally:
+                with self._resp_lock:
+                    rec["pend"] -= 1
+                    rec["wait"] = bool(rec["pend"] or rec.get("late"))
             self.responder_next()
         self._spawn(fetch)
 
