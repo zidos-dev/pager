@@ -515,7 +515,9 @@ def perm_decide(pol, tool, inp, cwd, chat):
             for r in deny:
                 if _rule_hit(r, tool, inp, cwd):
                     return "deny", r
-        if chat and ((tool == "Bash" and inp.get("dangerouslyDisableSandbox") not in (None, False))
+        # CC_CHAT_TRUST=1 (per bot, sdk.env): the owner gave this group full rights, past the sandbox too (StatsFlow 18.11)
+        if chat and os.environ.get("CC_CHAT_TRUST", "").strip() != "1" and (
+                (tool == "Bash" and inp.get("dangerouslyDisableSandbox") not in (None, False))
                      or (tool == "SandboxNetworkAccess" and not chat_net_ok(inp.get("host")))):
             return None, ""  # past the sandbox, or a name outside the site: the owner decides
         if tool == "Bash":
@@ -530,7 +532,7 @@ def perm_decide(pol, tool, inp, cwd, chat):
             for r in allow:
                 if _rule_hit(r, tool, inp, cwd):
                     return "allow", r
-        if mode == "all" and not chat:
+        if mode == "all" and (not chat or os.environ.get("CC_CHAT_TRUST", "").strip() == "1"):
             # an unparsed command plus any Bash deny: do not pretend the line was read
             if not (tool == "Bash" and bash_opaque and any(perm_rule_parse(r)[0] == "Bash" for r in deny)):
                 return "allow", "mode:all"

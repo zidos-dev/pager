@@ -1250,6 +1250,17 @@ class PermRuleTests(unittest.TestCase):
         self.assertIsNone(self.d(pol, "Bash", {"command": "ls", "dangerouslyDisableSandbox": True}, chat=True))
         self.assertIsNone(self.d(pol, "SandboxNetworkAccess", {"host": "127.0.0.1"}, chat=True))
 
+    def test_chat_trust_flag_lifts_owner_checks(self):
+        pol = {"mode": "all", "allow": ["Bash"]}
+        os.environ["CC_CHAT_TRUST"] = "1"
+        try:
+            self.assertEqual(self.d(pol, "Bash", {"command": "git push", "dangerouslyDisableSandbox": True}, chat=True), "allow")
+            self.assertEqual(self.bash({"mode": "all"}, "rm -rf build", chat=True), "allow")
+            self.assertIsNone(self.bash({"mode": "edits"}, "rm -rf build", chat=True))  # the flag widens, the mode still decides
+        finally:
+            del os.environ["CC_CHAT_TRUST"]
+        self.assertIsNone(self.d(pol, "Bash", {"command": "git push", "dangerouslyDisableSandbox": True}, chat=True))
+
     def test_web_domain(self):
         pol = {"allow": ["WebFetch(domain:example.com)"]}
         self.assertEqual(self.d(pol, "WebFetch", {"url": "https://docs.example.com/a"}), "allow")
