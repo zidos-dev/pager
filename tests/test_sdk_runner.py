@@ -4,6 +4,7 @@ import contextlib
 import io
 import json
 import os
+import shutil
 import stat
 import sys
 import tempfile
@@ -293,6 +294,7 @@ class StartTests(Base):
         self.assertNotIn("apiKeyHelper", json.loads(kw["settings"]))
         self.assertNotIn("env", kw)  # no third-party endpoint: the CLI talks to Anthropic with its own sign-in
         self.assertNotIn("max_budget_usd", {k: v for k, v in kw.items() if v is not None})
+        self.assertEqual(kw.get("cli_path"), shutil.which("claude"))  # the machine's CLI, not the SDK's bundled copy
 
     async def test_login_mode_refuses_a_stray_key(self):
         os.environ.update(CC_SDK_AUTH="login")

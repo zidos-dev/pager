@@ -17,6 +17,7 @@ import os
 import re
 import shlex
 import socket
+import shutil
 import signal
 import subprocess
 import sys
@@ -1193,6 +1194,8 @@ class Runner:
         if s.chat:  # no project settings or MCP; secrets are denied by the CLI itself, not by the prompt
             kw.update(setting_sources=[], strict_mcp_config=True, tools=list(CHAT_TOOLS),
                       settings=self._helper_settings(list(CHAT_DENY) + s.cli_deny, chat_sandbox(s.cwd, s.write)))
+        if self.login and (cli := shutil.which("claude")):  # a sign-in: the machine's own CLI, updated with it, not the SDK's bundled copy
+            kw["cli_path"] = cli
         kw["resume" if resume else "session_id"] = s.session_id
         return sdk.ClaudeAgentOptions(**kw)
 
