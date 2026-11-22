@@ -4,7 +4,6 @@ import contextlib
 import io
 import json
 import os
-import shutil
 import stat
 import sys
 import tempfile
@@ -288,13 +287,14 @@ class StartTests(Base):
         await self.new_runner()
         FakeClient.script = None
         FakeClient.api_key_source = "none"  # what the CLI reports on a claude.ai sign-in
-        s = await self.start()
-        await self.wait_state(s["id"], "idle")  # no «API key is not available»
+        with unittest.mock.patch.object(sdk_runner.shutil, "which", return_value="/opt/bin/claude"):
+            s = await self.start()
+            await self.wait_state(s["id"], "idle")  # no «API key is not available»
         kw = FakeClient.instances[-1].options.kw
         self.assertNotIn("apiKeyHelper", json.loads(kw["settings"]))
         self.assertNotIn("env", kw)  # no third-party endpoint: the CLI talks to Anthropic with its own sign-in
         self.assertNotIn("max_budget_usd", {k: v for k, v in kw.items() if v is not None})
-        self.assertEqual(kw.get("cli_path"), shutil.which("claude"))  # the machine's CLI, not the SDK's bundled copy
+        self.assertEqual(kw["cli_path"], "/opt/bin/claude")  # the machine's CLI, not the SDK's bundled copy
 
     async def test_login_mode_refuses_without_the_machine_cli(self):
         os.environ.update(CC_SDK_AUTH="login")
@@ -308,8 +308,9 @@ class StartTests(Base):
         os.environ.update(CC_SDK_AUTH="login")
         await self.new_runner()
         FakeClient.api_key_source = "ANTHROPIC_API_KEY"
-        s = await self.start()
-        await self.wait_state(s["id"], "error")
+        with unittest.mock.patch.object(sdk_runner.shutil, "which", return_value="/opt/bin/claude"):
+            s = await self.start()
+            await self.wait_state(s["id"], "error")
 
     async def test_key_mode_refuses_the_subscription(self):
         await self.new_runner()
