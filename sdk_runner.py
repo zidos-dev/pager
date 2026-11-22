@@ -1194,7 +1194,11 @@ class Runner:
         if s.chat:  # no project settings or MCP; secrets are denied by the CLI itself, not by the prompt
             kw.update(setting_sources=[], strict_mcp_config=True, tools=list(CHAT_TOOLS),
                       settings=self._helper_settings(list(CHAT_DENY) + s.cli_deny, chat_sandbox(s.cwd, s.write)))
-        if self.login and (cli := shutil.which("claude")):  # a sign-in: the machine's own CLI, updated with it, not the SDK's bundled copy
+        if self.login:  # a sign-in: the machine's own CLI, updated with it, never the SDK's bundled copy
+            cli = shutil.which("claude")
+            if not cli:
+                log("no claude CLI on PATH", s.id)
+                raise RunnerError("unavailable", "sign-in mode needs the claude CLI on PATH")
             kw["cli_path"] = cli
         kw["resume" if resume else "session_id"] = s.session_id
         return sdk.ClaudeAgentOptions(**kw)

@@ -296,6 +296,14 @@ class StartTests(Base):
         self.assertNotIn("max_budget_usd", {k: v for k, v in kw.items() if v is not None})
         self.assertEqual(kw.get("cli_path"), shutil.which("claude"))  # the machine's CLI, not the SDK's bundled copy
 
+    async def test_login_mode_refuses_without_the_machine_cli(self):
+        os.environ.update(CC_SDK_AUTH="login")
+        await self.new_runner()
+        with unittest.mock.patch.object(sdk_runner.shutil, "which", return_value=None):
+            s = await self.start()
+            await self.wait_state(s["id"], "error")  # not a silent fall back to the SDK's bundled CLI
+        self.assertFalse(any("cli_path" not in c.options.kw for c in FakeClient.instances))
+
     async def test_login_mode_refuses_a_stray_key(self):
         os.environ.update(CC_SDK_AUTH="login")
         await self.new_runner()
