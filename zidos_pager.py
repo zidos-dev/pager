@@ -2917,6 +2917,16 @@ def parse_perm_dialog(pane):
             continue  # a wrapped continuation of the previous label
         else:
             break
+    unnumbered = False
+    if not opts:  # some dialogs (MCP OAuth confirmation) list "❯ No / Yes" without numbers
+        qi = next((i for i in range(end - 1, max(-1, end - 12), -1) if _PERM_Q_RE.match(lines[i])), None)
+        rows = [l for l in lines[qi + 1:end] if l.strip()] if qi is not None else []
+        if 2 <= len(rows) <= 9 and sum("❯" in r for r in rows) == 1:
+            for k, r in enumerate(rows, 1):
+                opts.append({"n": k, "label": r.strip().lstrip("│").strip().lstrip("❯").strip()})
+                if "❯" in r:
+                    selected = k
+            first, unnumbered = qi + 1, True
     if len(opts) < 2 or [o["n"] for o in opts] != list(range(1, len(opts) + 1)):
         return None
     qi = None
@@ -2954,7 +2964,16 @@ def parse_perm_dialog(pane):
     ind = min([len(l) - len(l.lstrip()) for l in body if l.strip()] or [0])
     return {"title": head[0] if head else "", "summary": " ".join(head[1:]),
             "body": "\n".join(l[ind:].rstrip() for l in body), "note": " ".join(note_lines),
-            "question": lines[qi].strip(), "options": opts, "selected": selected}
+            "question": lines[qi].strip(), "options": opts, "selected": selected,
+            **({"unnumbered": True} if unnumbered else {})}
+
+
+def perm_option_keys(perm, opt):
+    """tmux keys that choose `opt`: its digit, or arrows from the preselected row + Enter in an unnumbered dialog."""
+    if not perm.get("unnumbered"):
+        return [str(opt["n"])]
+    d = opt["n"] - perm["selected"]
+    return ["Down" if d > 0 else "Up"] * abs(d) + ["Enter"]
 
 
 def pult_qhash(question, labels):
@@ -11541,7 +11560,7 @@ class Bot:
             kind, opt = select(perm)
             if kind != "press":
                 return kind, perm
-            if opt is None or not self.tmux.keys(sid, str(opt["n"])):
+            if opt is None or not self.tmux.keys(sid, *perm_option_keys(perm, opt)):
                 return "err", perm
             self.perm_mark_answered(sid, perm)
             return "ok", after(perm) if after else opt

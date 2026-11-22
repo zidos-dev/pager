@@ -8955,6 +8955,20 @@ PERM_FETCH = ("─────────────────────�
               "   3. No, and tell Claude what to do differently (esc)\n"
               "\n"
               " Esc to cancel\n")
+PERM_MCP_AUTH = ("────────────────────────────────────────\n"
+                 " Tool use\n"
+                 " framer - Complete Authentication Tool: (MCP)\n"
+                 "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n"
+                 " callback_url:\n"
+                 "   │ http://localhost:50729/callback?code=abc&state=xyz\n"
+                 "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n"
+                 " │ Claude submitted this URL. Approve only if you started the flow.\n"
+                 "\n"
+                 " Do you want to proceed?\n"
+                 " ❯ No\n"
+                 "   Yes\n"
+                 "\n"
+                 " Esc to cancel · Tab to amend\n")
 PERM_BASH_OPTS = [{"n": 1, "label": "Yes"},
                   {"n": 2, "label": "Yes, and always allow access to /home/user/proj from this project"},
                   {"n": 3, "label": "Yes, and switch to auto mode · auto mode handles these prompts for you"},
@@ -8981,6 +8995,15 @@ class PermParseTests(unittest.TestCase):
         f = cc.parse_perm_dialog(PERM_FETCH)
         self.assertEqual((f["title"], f["selected"], len(f["options"])), ("Fetch", 2, 3))
         self.assertIn("https://example.com/page", f["body"] + f["summary"])
+
+    def test_unnumbered_options(self):
+        # 20.11: the MCP OAuth confirmation lists "❯ No / Yes" without numbers and No is preselected
+        p = cc.parse_perm_dialog(PERM_MCP_AUTH)
+        self.assertIsNotNone(p)
+        self.assertEqual((p["question"], p["selected"], p.get("unnumbered")), ("Do you want to proceed?", 1, True))
+        self.assertEqual(p["options"], [{"n": 1, "label": "No"}, {"n": 2, "label": "Yes"}])
+        self.assertIn("callback", p["body"] + p["summary"])
+        self.assertNotIn("unnumbered", cc.parse_perm_dialog(PERM_FIX))
 
     def test_not_permissions(self):
         for scr in (MENU_S, MENU_TABS, REVIEW, PANEL_S, EMPTY_PROMPT, "",
@@ -9060,6 +9083,14 @@ class PermApiTests(unittest.TestCase):
                                                          "sig": cc.perm_sig(cc.parse_perm_dialog(PERM_FIX))[:8]})
         self.assertEqual((st, obj), (200, {"ok": True, "perm": None}))
         self.assertEqual(fs.flat_keys, ["2"])
+
+    def test_post_unnumbered_presses_arrows_and_enter(self):
+        w, e, fs = perm_env(self, screen=PERM_MCP_AUTH)
+        fs.on_key = lambda ks, f: setattr(f, "screen", EMPTY_PROMPT)
+        st, obj, _ = w.req("POST", "/api/session/s1/perm", {"option": 2, "label": "Yes",
+                                                         "sig": cc.perm_sig(cc.parse_perm_dialog(PERM_MCP_AUTH))[:8]})
+        self.assertEqual((st, obj), (200, {"ok": True, "perm": None}))
+        self.assertEqual(fs.flat_keys, ["Down", "Enter"])
 
     def test_post_returns_next_dialog(self):
         w, e, fs = perm_env(self)
